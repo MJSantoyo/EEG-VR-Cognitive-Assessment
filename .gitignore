@@ -73,3 +73,18 @@ crashlytics-build.properties
 # Temporary auto-generated Android Assets
 /[Aa]ssets/[Ss]treamingAssets/aa.meta
 /[Aa]ssets/[Ss]treamingAssets/aa/*
+
+# EEG and participant data
+/[Dd]ata/
+/[Rr]awData/
+/[Rr]ecordings/
+/EEG_Data/
+/ParticipantData/
+/SessionData/
+
+# Local experiment outputs
+**/IKEA_EEG_Data/
+**/raw_eeg.csv
+
+# Backups
+/IKEA_EEG_BACKUP*/
