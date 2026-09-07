@@ -4,7 +4,7 @@ A Unity VR research prototype that runs a visual verbal-recognition memory task 
 
 ## About the project
 
-A participant wearing a Meta Quest 3 headset reads a list of words, is tested on which ones they recognise, does an unrelated task in a virtual showroom, and is then tested again after the delay. While that happens, EEG is streamed from an AURA amplifier into Unity over Lab Streaming Layer (LSL), and both the behavioural events and the EEG samples are written to disk with timestamps that can be lined up afterwards.
+A participant wearing a Meta Quest 2 headset reads a list of words, is tested on which ones they recognise, does an unrelated task in a virtual showroom, and is then tested again after the delay. While that happens, EEG is streamed from an AURA amplifier into Unity over Lab Streaming Layer (LSL), and both the behavioural events and the EEG samples are written to disk with timestamps that can be lined up afterwards.
 
 The point of the project, at this stage, is the data collection itself. Getting VR events and a separate EEG amplifier onto a common timeline is an engineering problem that has to be solved convincingly before any of the interesting questions about memory or workload can be asked. So most of the effort here has gone into recording everything needed to reconstruct a session from files alone, and into checking the signal quality rather than assuming it.
 
@@ -48,7 +48,7 @@ At least one complete synchronized VR and AURA EEG recording has been produced d
 
 | Status | Feature |
 | --- | --- |
-| Implemented and exercised | Three-area VR flow with Quest 3 controller interaction |
+| Implemented and exercised | Three-area VR flow with Quest 2 controller interaction |
 | Implemented and exercised | Visual word encoding, immediate and delayed recognition |
 | Implemented and exercised | Showroom chair task with deterministic, seed-based trial generation |
 | Implemented and exercised | Behavioural classification and 45-column event CSV logging |
@@ -95,7 +95,7 @@ After a session, the offline analyzer replays the recording through the same fil
 | Item | Requirement |
 | --- | --- |
 | Development computer | Windows PC able to run Meta Quest Link |
-| Headset | Meta Quest 3, connected via Meta Quest Link |
+| Headset | Meta Quest 2, connected via Meta Quest Link |
 | Unity Editor | `6000.3.21f1` |
 | Universal Render Pipeline | `17.3.0` |
 | XR Interaction Toolkit | `3.4.1` |
@@ -122,7 +122,7 @@ Open the project from Unity Hub and let the Package Manager restore the dependen
 Assets/IKEA_EEG/Scenes/IKEA_EEG_Experiment.unity
 ```
 
-Connect the Quest 3, start Quest Link, and press **Play**. The session begins at the language-selection screen; point with either controller and pull the trigger.
+Connect the Quest 2, start Quest Link, and press **Play**. The session begins at the language-selection screen; point with either controller and pull the trigger.
 
 There are some helpers under the `IKEA_EEG` menu in the Editor. `Validate Experiment Scene` checks the scene is intact, `Run Self Test` runs the automated test suite, and `Researcher > Replay Same Seed` reproduces a previous randomisation.
 
@@ -182,7 +182,7 @@ The event CSV schema is append-only — new columns go on the end, so older anal
 - [ ] Verify marker timing and event alignment across sessions
 - [ ] Resolve the inter-channel correlation issue at hardware or montage level
 - [ ] Further validate signal-quality checks and spectral features
-- [ ] Optimise the virtual environment for Meta Quest 3
+- [ ] Optimise the virtual environment for Meta Quest 2
 - [ ] Review the build scene list
 - [ ] Finish the experimental protocol documentation
 - [ ] Define decision rules for future EEG-driven adaptation
