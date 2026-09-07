@@ -1,3 +1,23 @@
+> # LEGACY DOCUMENT — DO NOT USE AS THE CURRENT REFERENCE
+>
+> This file documents the earlier **`FreeRecall`** protocol, in which five words
+> were **spoken aloud** and the participant recalled them verbally into a
+> microphone. It is retained as historical documentation of that protocol and of
+> the build that produced the sessions recorded under it.
+>
+> **The current default protocol is `Recognition`:** fifteen words presented
+> **visually**, followed by immediate and delayed recognition tests answered with
+> `SEEN BEFORE` / `NOT SEEN BEFORE`. Chair shape labels have also changed
+> (`Modern` / `Classic` / `Rounded` became `Solid` / `Slatted` / `Curved`).
+>
+> The authoritative overview of the current project is the root
+> [`README.md`](../../README.md).
+>
+> Everything below this notice describes the earlier protocol and is preserved
+> unchanged.
+
+---
+
 # IKEA_EEG — VR Cognitive Assessment Prototype
 
 Unity 6000.3.21f1 · URP 17.3 · XR Interaction Toolkit 3.4.1 · OpenXR 1.16.1
