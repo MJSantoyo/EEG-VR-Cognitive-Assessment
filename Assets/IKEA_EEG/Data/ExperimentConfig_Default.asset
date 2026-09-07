@@ -1,0 +1,196 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 59669579fcbfa4042886c8636844ce31, type: 3}
+  m_Name: ExperimentConfig_Default
+  m_EditorClassIdentifier: Assembly-CSharp::IkeaEeg.Experiment.ExperimentConfig
+  enableFamiliarization: 1
+  familiarizationInstructionText: '<b>VR Familiarization</b>
+
+
+    Before the cognitive
+    test begins, take a moment to learn the controls.
+
+
+    Point at the practice
+    objects and select them using either trigger that feels comfortable.
+
+
+    When
+    you are ready, press START EXPERIMENT.'
+  practicePromptText: '<b>Practice Selection</b>
+
+
+    Select the {COLOR} object.'
+  practiceSuccessText: Great! Selection successful.
+  practiceMinimumSelections: 2
+  practiceReadyText: You are ready to begin.
+  familiarizationNarrationClips:
+  - id: EN
+    clip: {fileID: 8300000, guid: 654d7ecc5394002488de801b8665382b, type: 3}
+  - id: ES
+    clip: {fileID: 8300000, guid: b78f5470c83545f478f33fa783196237, type: 3}
+  - id: JA
+    clip: {fileID: 8300000, guid: 58c10d3900528c1458ac8fe61db094dc, type: 3}
+  practiceIntroNarrationClips:
+  - id: EN
+    clip: {fileID: 8300000, guid: c5824ebfc372f66489836fbc0a29a5da, type: 3}
+  - id: ES
+    clip: {fileID: 8300000, guid: b67f0a1349818cb4f96de45c5ab8e781, type: 3}
+  - id: JA
+    clip: {fileID: 8300000, guid: 31d2460971befe348b46af86a37f4d49, type: 3}
+  practiceColorNarrationClips:
+  - id: EN_RED
+    clip: {fileID: 8300000, guid: bab4b44a3cc51e74ca8e1a2034e4e6a7, type: 3}
+  - id: EN_BLUE
+    clip: {fileID: 8300000, guid: 16b752f3046fdf54a8d01771dd2ac85a, type: 3}
+  - id: EN_YELLOW
+    clip: {fileID: 8300000, guid: 81b56dcf0b239b54c9ecda5adbd7fac4, type: 3}
+  - id: EN_GREEN
+    clip: {fileID: 8300000, guid: 50de0626f33044142b9153c66a94e620, type: 3}
+  - id: ES_RED
+    clip: {fileID: 8300000, guid: 0ca1be5d8f5f5cd4bac42edab4826093, type: 3}
+  - id: ES_BLUE
+    clip: {fileID: 8300000, guid: f25f25689670f4a418f40a456286afb0, type: 3}
+  - id: ES_YELLOW
+    clip: {fileID: 8300000, guid: 8d65db24d540f9d43a05c9437a4d0a70, type: 3}
+  - id: ES_GREEN
+    clip: {fileID: 8300000, guid: 62334f1cd6442784bb614f5c8fac7b1c, type: 3}
+  - id: JA_RED
+    clip: {fileID: 8300000, guid: 662d753a577dd5744bd47c311dfba8fd, type: 3}
+  - id: JA_BLUE
+    clip: {fileID: 8300000, guid: 0d1e4cc1241ba1c4d9c4db8dc3af720a, type: 3}
+  - id: JA_YELLOW
+    clip: {fileID: 8300000, guid: 128d74d632f3faa4194fe99bc88974f8, type: 3}
+  - id: JA_GREEN
+    clip: {fileID: 8300000, guid: 9ff9707a1c915324299dcad630acd822, type: 3}
+  practiceFeedbackNarrationClips:
+  - id: EN_CORRECT
+    clip: {fileID: 8300000, guid: 26b2f9a8c5ff65d458ad7ff4c616d082, type: 3}
+  - id: EN_ANOTHER
+    clip: {fileID: 8300000, guid: dc6a10e3c55c8e946951c31417cf25e4, type: 3}
+  - id: EN_INCORRECT
+    clip: {fileID: 8300000, guid: 63fb1a00927d19142b5101f1e95216f0, type: 3}
+  - id: EN_COMPLETE
+    clip: {fileID: 8300000, guid: c0ca3f9992e0f9344b6fe00f9cf10e7c, type: 3}
+  - id: ES_CORRECT
+    clip: {fileID: 8300000, guid: 063274fe15f0aae4aa34c4f15d8c40bb, type: 3}
+  - id: ES_ANOTHER
+    clip: {fileID: 8300000, guid: 2385aeda1e6452c409722f04fc52e21a, type: 3}
+  - id: ES_INCORRECT
+    clip: {fileID: 8300000, guid: 437df10cb29e8d34eb2698e7028b7cf7, type: 3}
+  - id: ES_COMPLETE
+    clip: {fileID: 8300000, guid: 9c3fc5a68e62daa49bdce3d306ae96fb, type: 3}
+  - id: JA_CORRECT
+    clip: {fileID: 8300000, guid: 765b3b08d679f0f41bef305cd82ea8e6, type: 3}
+  - id: JA_ANOTHER
+    clip: {fileID: 8300000, guid: 49e2f40fe37ebb444bb14077eeb3b5fa, type: 3}
+  - id: JA_INCORRECT
+    clip: {fileID: 8300000, guid: 3a598fa9bb6f30f429b2e554d9072b1c, type: 3}
+  - id: JA_COMPLETE
+    clip: {fileID: 8300000, guid: 7c2a280c8f58c9a41abde819fcb27f53, type: 3}
+  recognitionInstructionNarrationClips:
+  - id: EN
+    clip: {fileID: 8300000, guid: ff8d60493f2565d4084a782af82de74a, type: 3}
+  areaBInstructionNarrationClips:
+  - id: EN
+    clip: {fileID: 8300000, guid: d927e5a724758cc4683d4a9aa250af70, type: 3}
+  recognitionDelayedNarrationClips:
+  - id: EN
+    clip: {fileID: 8300000, guid: 56f9dfb26610842449fe4db7ec8a6ece, type: 3}
+  recordingActiveText: "Recording\u2026"
+  restartDeletesDiscardedRunFiles: 0
+  protocolMode: 1
+  wordList: {fileID: 11400000, guid: e1eb444c49108e64885eb331d74eb00a, type: 2}
+  wordSetIndex: 0
+  recognitionWordList: {fileID: 11400000, guid: 49e01d1092888c44a84a1eeeca42e629, type: 2}
+  recognitionWordDisplaySeconds: 2
+  recognitionInterWordGapSeconds: 0.25
+  recognitionResponseTimeoutSeconds: 15
+  recognitionInterItemGapSeconds: 0.15
+  enableRecognitionDeveloperCheatsheet: 0
+  instructionDurationSeconds: 8
+  wordDisplaySeconds: 2
+  interWordGapSeconds: 0.5
+  preFirstWordDelaySeconds: 1.5
+  preBeepDelaySeconds: 1
+  immediateRecallMaxDuration: 20
+  delayedRecallMaxDuration: 20
+  recallSilenceStopSeconds: 4
+  speechStartThreshold: 0.05
+  silenceThreshold: 0.015
+  minimumSpeechDuration: 0.35
+  delayedInstructionDurationSeconds: 7
+  seedMode: 0
+  fixedSeed: 20250812
+  chairTrialsPerRun: 3
+  difficultySequence: 000000000100000002000000
+  difficultyProfiles:
+  - level: 0
+    distractorSharedAttributes: 0000000000000000000000000000000001000000
+    description: PROTOTYPE DEFAULT. Distractors share at most one target attribute;
+      four share none.
+  - level: 1
+    distractorSharedAttributes: 0000000000000000010000000100000001000000
+    description: PROTOTYPE DEFAULT. Three distractors share exactly one target attribute;
+      none is a near-match.
+  - level: 2
+    distractorSharedAttributes: 0100000002000000020000000200000002000000
+    description: PROTOTYPE DEFAULT. Four near-matches share two of the three target
+      attributes; exactly one chair matches all three.
+  targetChair:
+    color: 1
+    size: 2
+    shape: 0
+  useGeneratedChairTrials: 1
+  preTargetIntervalSeconds: 0.75
+  chairInstructionDurationSeconds: 5
+  chairFeedbackDurationSeconds: 1.5
+  interTrialIntervalSeconds: 1.5
+  playChairInstructionCue: 1
+  logChairHoverEvents: 0
+  areaAInstructionText: 'You will hear five words. Remember them.
+
+
+    After the
+    beep, repeat the five words in the same order.'
+  encodingListenPromptText: Listen carefully.
+  immediateRecallPromptText: Please repeat the five words now.
+  readyForAreaBText: 'Well done.
+
+
+    Press ENTER SHOWROOM to continue.'
+  areaBGeneralInstructionText: '<b>Executive Task</b>
+
+
+    You will be shown a set
+    of characteristics.
+
+
+    Select the ONE chair that matches
+
+    ALL THREE characteristics.
+
+
+    Use
+    the controller trigger to select.
+
+
+    Press READY when you understand the task.'
+  chairTargetHeaderText: 'Find the chair that is:'
+  showShapeLegendOnInstructions: 1
+  chairSelectedFeedbackText: Selection recorded.
+  executiveTaskCompleteText: Executive task complete
+  areaCInstructionText: Once you hear the beep, repeat the five words that were presented
+    at the beginning of the session.
+  delayedRecallPromptText: Please repeat the five words now.
+  showCorrectnessToParticipant: 0
+  chairBlockCompleteText: Press EXIT SHOWROOM to continue.

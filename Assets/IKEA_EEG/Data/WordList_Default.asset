@@ -1,0 +1,395 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5be3d318b15351d4ababf4b313065c03, type: 3}
+  m_Name: WordList_Default
+  m_EditorClassIdentifier: Assembly-CSharp::IkeaEeg.Experiment.WordListDefinition
+  m_WordsPerSet: 5
+  m_Sets:
+  - wordSetId: SET_A
+    setName: Set A (prototype)
+    language: 1
+    validatedForResearch: 0
+    validationNote: "PROTOTYPE (English). Chosen for development, not validated as
+      a verbal-memory instrument. Spanish and Japanese need their own language-specific
+      lists \u2014 NOT translations of this one."
+    wordSource: 
+    sourceForm: 
+    sourceStartIndex: 0
+    sourceFormWordCount: 0
+    words:
+    - River
+    - Copper
+    - Lantern
+    - Falcon
+    - Sugar
+    wordClips:
+    - {fileID: 8300000, guid: d439ff0f19d9c1746912b58ea7ade543, type: 3}
+    - {fileID: 8300000, guid: 71b30a4ca56388342aaa0652e70e3fab, type: 3}
+    - {fileID: 8300000, guid: cf1e09f54b6911d4189e2e3a3138bfad, type: 3}
+    - {fileID: 8300000, guid: 8d7ef70564aca5a49addcd5eff26f569, type: 3}
+    - {fileID: 8300000, guid: 629b424d2439b5c48b68eae87e6c17ad, type: 3}
+  - wordSetId: SET_B
+    setName: Set B (parallel, spare)
+    language: 1
+    validatedForResearch: 0
+    validationNote: "PROTOTYPE (English). Chosen for development, not validated as
+      a verbal-memory instrument. Spanish and Japanese need their own language-specific
+      lists \u2014 NOT translations of this one."
+    wordSource: 
+    sourceForm: 
+    sourceStartIndex: 0
+    sourceFormWordCount: 0
+    words:
+    - Harbour
+    - Velvet
+    - Compass
+    - Thunder
+    - Pepper
+    wordClips:
+    - {fileID: 8300000, guid: 90c329cc29e316047a99c742c6a19eb1, type: 3}
+    - {fileID: 8300000, guid: b9234f49d8d490244bd8cf3ec286be12, type: 3}
+    - {fileID: 8300000, guid: c09ff8b00a4cc5c48a87e2b28db63ba7, type: 3}
+    - {fileID: 8300000, guid: e7386b42a46c9cd4db193c3bbda0de28, type: 3}
+    - {fileID: 8300000, guid: 2d06587d2fd270041beb17880efbf684, type: 3}
+  - wordSetId: ES_F1_MAIN_A
+    setName: "Spanish RAVLT Wordlist 1 \u2014 main list \u2014 items 1-5"
+    language: 2
+    validatedForResearch: 0
+    validationNote: Research-sourced Spanish RAVLT lexical stimuli; IKEA_EEG administration
+      is adapted and not a standardized RAVLT administration.
+    wordSource: RAVLT-derived Spanish adaptation
+    sourceForm: ES_F1_MAIN
+    sourceStartIndex: 0
+    sourceFormWordCount: 15
+    words:
+    - Tambor
+    - Cortina
+    - Campana
+    - "Caf\xE9"
+    - Escuela
+    wordClips:
+    - {fileID: 8300000, guid: a08c2f2c4dba71c40bdf53bbd029b558, type: 3}
+    - {fileID: 8300000, guid: a7b8d387a17206c4780fa3d49c27f013, type: 3}
+    - {fileID: 8300000, guid: 9a6fc389a394df14e98237e1fd86e153, type: 3}
+    - {fileID: 8300000, guid: 85e43a3564e6a8148957f4c9b3e534d5, type: 3}
+    - {fileID: 8300000, guid: 9a01151f252ac274e941c6703b2a6062, type: 3}
+  - wordSetId: ES_F1_MAIN_B
+    setName: "Spanish RAVLT Wordlist 1 \u2014 main list \u2014 items 6-10"
+    language: 2
+    validatedForResearch: 0
+    validationNote: Research-sourced Spanish RAVLT lexical stimuli; IKEA_EEG administration
+      is adapted and not a standardized RAVLT administration.
+    wordSource: RAVLT-derived Spanish adaptation
+    sourceForm: ES_F1_MAIN
+    sourceStartIndex: 5
+    sourceFormWordCount: 15
+    words:
+    - Padre
+    - Luna
+    - "Jard\xEDn"
+    - Sombrero
+    - Granjero
+    wordClips:
+    - {fileID: 8300000, guid: 24ee6e34521159a46837e6dff2ad32dc, type: 3}
+    - {fileID: 8300000, guid: ee1530a02dbbef54db33cafae3e0b40e, type: 3}
+    - {fileID: 8300000, guid: efb1755eb2e07d44381699a413ae1555, type: 3}
+    - {fileID: 8300000, guid: 8fa10d3f47659234c8bff00e83fa7c7c, type: 3}
+    - {fileID: 8300000, guid: 1a7698376a360ea4bb59e4027c521c8f, type: 3}
+  - wordSetId: ES_F1_MAIN_C
+    setName: "Spanish RAVLT Wordlist 1 \u2014 main list \u2014 items 11-15"
+    language: 2
+    validatedForResearch: 0
+    validationNote: Research-sourced Spanish RAVLT lexical stimuli; IKEA_EEG administration
+      is adapted and not a standardized RAVLT administration.
+    wordSource: RAVLT-derived Spanish adaptation
+    sourceForm: ES_F1_MAIN
+    sourceStartIndex: 10
+    sourceFormWordCount: 15
+    words:
+    - Nariz
+    - Pavo
+    - Color
+    - Casa
+    - "R\xEDo"
+    wordClips:
+    - {fileID: 8300000, guid: 7ce3737c4a6aaf94f9a086bda9a752d4, type: 3}
+    - {fileID: 8300000, guid: 4fc41f4aed07c544ca06b2ae2d150bf3, type: 3}
+    - {fileID: 8300000, guid: 3e749b47bed824a45b583d1f2379ae7d, type: 3}
+    - {fileID: 8300000, guid: 79f35d78c9a738f4a9978a4a5dd8a9d8, type: 3}
+    - {fileID: 8300000, guid: e55e40daf171f254d8b9eb3456e35594, type: 3}
+  - wordSetId: ES_F1_INTERFERENCE_A
+    setName: "Spanish RAVLT Wordlist 1 \u2014 interference list \u2014 items 1-5"
+    language: 2
+    validatedForResearch: 0
+    validationNote: Research-sourced Spanish RAVLT lexical stimuli; IKEA_EEG administration
+      is adapted and not a standardized RAVLT administration.
+    wordSource: RAVLT-derived Spanish adaptation
+    sourceForm: ES_F1_INTERFERENCE
+    sourceStartIndex: 0
+    sourceFormWordCount: 15
+    words:
+    - Escritorio
+    - Guardabosque
+    - "P\xE1jaro"
+    - Zapato
+    - Horno
+    wordClips:
+    - {fileID: 8300000, guid: 6ec1679b4aa347a45ac3a9d64def452c, type: 3}
+    - {fileID: 8300000, guid: d2dca2f38abe60149880b74768d482b4, type: 3}
+    - {fileID: 8300000, guid: f992e7bab58082e4a9fb36595c5e1ee1, type: 3}
+    - {fileID: 8300000, guid: 1774261f20537c14a9e6cffb8d5e1ee8, type: 3}
+    - {fileID: 8300000, guid: 8c19a6e1c095045479c5c52db9bdeb3d, type: 3}
+  - wordSetId: ES_F1_INTERFERENCE_B
+    setName: "Spanish RAVLT Wordlist 1 \u2014 interference list \u2014 items 6-10"
+    language: 2
+    validatedForResearch: 0
+    validationNote: Research-sourced Spanish RAVLT lexical stimuli; IKEA_EEG administration
+      is adapted and not a standardized RAVLT administration.
+    wordSource: RAVLT-derived Spanish adaptation
+    sourceForm: ES_F1_INTERFERENCE
+    sourceStartIndex: 5
+    sourceFormWordCount: 15
+    words:
+    - "Monta\xF1a"
+    - Gafas
+    - Toalla
+    - Nube
+    - Barca
+    wordClips:
+    - {fileID: 8300000, guid: ee77e110b1adfd748acee159a9ad9a05, type: 3}
+    - {fileID: 8300000, guid: 7334902c8a89ace4b8443c0e5fd09551, type: 3}
+    - {fileID: 8300000, guid: 1ce790acdf6a41b4abe61752c93407c0, type: 3}
+    - {fileID: 8300000, guid: 3bc07643cfb2cf443b9466e6144b20a8, type: 3}
+    - {fileID: 8300000, guid: bdaeb7623572cc042bf552641bd8a08b, type: 3}
+  - wordSetId: ES_F1_INTERFERENCE_C
+    setName: "Spanish RAVLT Wordlist 1 \u2014 interference list \u2014 items 11-15"
+    language: 2
+    validatedForResearch: 0
+    validationNote: Research-sourced Spanish RAVLT lexical stimuli; IKEA_EEG administration
+      is adapted and not a standardized RAVLT administration.
+    wordSource: RAVLT-derived Spanish adaptation
+    sourceForm: ES_F1_INTERFERENCE
+    sourceStartIndex: 10
+    sourceFormWordCount: 15
+    words:
+    - Cordero
+    - Rifle
+    - "L\xE1piz"
+    - Iglesia
+    - Pez
+    wordClips:
+    - {fileID: 8300000, guid: 9af44349412424242ab1c8f8351b6885, type: 3}
+    - {fileID: 8300000, guid: 7d08081b7a3072043b341ff18883c54e, type: 3}
+    - {fileID: 8300000, guid: 6a3c15cf4b5a97845bb89fa0ece8a723, type: 3}
+    - {fileID: 8300000, guid: 09af7295529d84e46a759a7d2bf585e1, type: 3}
+    - {fileID: 8300000, guid: 4c3fc844598fb8d45b40f054f16fd1c2, type: 3}
+  - wordSetId: ES_F2_MAIN_A
+    setName: "Spanish RAVLT parallel Form 2 \u2014 main list \u2014 items 1-5"
+    language: 2
+    validatedForResearch: 0
+    validationNote: Research-sourced Spanish RAVLT lexical stimuli; IKEA_EEG administration
+      is adapted and not a standardized RAVLT administration.
+    wordSource: RAVLT-derived Spanish adaptation
+    sourceForm: ES_F2_MAIN
+    sourceStartIndex: 0
+    sourceFormWordCount: 15
+    words:
+    - "Viol\xEDn"
+    - "\xC1rbol"
+    - Bufanda
+    - "Jam\xF3n"
+    - Maleta
+    wordClips:
+    - {fileID: 8300000, guid: 79dd7c80d181f514cb5064a6a359aa00, type: 3}
+    - {fileID: 8300000, guid: 0038432e6108dcc49ae9be5b0210c002, type: 3}
+    - {fileID: 8300000, guid: a2ddc31c3bd2cb3409aba03ee730ceb5, type: 3}
+    - {fileID: 8300000, guid: 591a97b16021d984d86baf600216d854, type: 3}
+    - {fileID: 8300000, guid: 9a3c8a1540a8a8541ba196ef3cb25ddc, type: 3}
+  - wordSetId: ES_F2_MAIN_B
+    setName: "Spanish RAVLT parallel Form 2 \u2014 main list \u2014 items 6-10"
+    language: 2
+    validatedForResearch: 0
+    validationNote: Research-sourced Spanish RAVLT lexical stimuli; IKEA_EEG administration
+      is adapted and not a standardized RAVLT administration.
+    wordSource: RAVLT-derived Spanish adaptation
+    sourceForm: ES_F2_MAIN
+    sourceStartIndex: 5
+    sourceFormWordCount: 15
+    words:
+    - Primo
+    - Tierra
+    - Escaleras
+    - Perro
+    - "Pl\xE1tano"
+    wordClips:
+    - {fileID: 8300000, guid: 6d1ba9452b12f04429c2fab6d7e2f9d7, type: 3}
+    - {fileID: 8300000, guid: 67ab2754ab328e948abb2f071b98a2e4, type: 3}
+    - {fileID: 8300000, guid: 9357654c05d55f2419a9372b2a16dcea, type: 3}
+    - {fileID: 8300000, guid: d6446c382af86fc45a540c5548bfa6a4, type: 3}
+    - {fileID: 8300000, guid: dbdfb7a9463c1d942ae02f7c4bbabf87, type: 3}
+  - wordSetId: ES_F2_MAIN_C
+    setName: "Spanish RAVLT parallel Form 2 \u2014 main list \u2014 items 11-15"
+    language: 2
+    validatedForResearch: 0
+    validationNote: Research-sourced Spanish RAVLT lexical stimuli; IKEA_EEG administration
+      is adapted and not a standardized RAVLT administration.
+    wordSource: RAVLT-derived Spanish adaptation
+    sourceForm: ES_F2_MAIN
+    sourceStartIndex: 10
+    sourceFormWordCount: 15
+    words:
+    - Pueblo
+    - Radio
+    - Cazador
+    - Cubo
+    - Campo
+    wordClips:
+    - {fileID: 8300000, guid: 6226af7a9d4975c4cb293876048e6701, type: 3}
+    - {fileID: 8300000, guid: 094b5f83a6155274ba89467f7fe87286, type: 3}
+    - {fileID: 8300000, guid: 15193e60c1d07e74297515d5aaedae85, type: 3}
+    - {fileID: 8300000, guid: 05a2815dd8c6d3f4d9e90d9ed83f5ab7, type: 3}
+    - {fileID: 8300000, guid: 7ce22e4e5d7cfdd409da42132d3a2011, type: 3}
+  - wordSetId: ES_F3_MAIN_A
+    setName: "Spanish RAVLT parallel Form 3 \u2014 main list \u2014 items 1-5"
+    language: 2
+    validatedForResearch: 0
+    validationNote: Research-sourced Spanish RAVLT lexical stimuli; IKEA_EEG administration
+      is adapted and not a standardized RAVLT administration.
+    wordSource: RAVLT-derived Spanish adaptation
+    sourceForm: ES_F3_MAIN
+    sourceStartIndex: 0
+    sourceFormWordCount: 15
+    words:
+    - "Mu\xF1eca"
+    - Espejo
+    - "U\xF1a"
+    - Marinero
+    - "Coraz\xF3n"
+    wordClips:
+    - {fileID: 8300000, guid: 6af6288e02152794b84fa00fba049814, type: 3}
+    - {fileID: 8300000, guid: 7a300c76bd595d247950c69a8abbe92c, type: 3}
+    - {fileID: 8300000, guid: 00e5cf3df43bd9c4288850364be22e8b, type: 3}
+    - {fileID: 8300000, guid: 7dea8bf8fe581f3428045b6ed6425e4b, type: 3}
+    - {fileID: 8300000, guid: 5d32adf3b248cd94cb199d3d22ffcb32, type: 3}
+  - wordSetId: ES_F3_MAIN_B
+    setName: "Spanish RAVLT parallel Form 3 \u2014 main list \u2014 items 6-10"
+    language: 2
+    validatedForResearch: 0
+    validationNote: Research-sourced Spanish RAVLT lexical stimuli; IKEA_EEG administration
+      is adapted and not a standardized RAVLT administration.
+    wordSource: RAVLT-derived Spanish adaptation
+    sourceForm: ES_F3_MAIN
+    sourceStartIndex: 5
+    sourceFormWordCount: 15
+    words:
+    - Desierto
+    - Cara
+    - Carta
+    - Cama
+    - "M\xE1quina"
+    wordClips:
+    - {fileID: 8300000, guid: 0bcc4f45324ee8c4fbfa1994c20b1207, type: 3}
+    - {fileID: 8300000, guid: 7b972a50731c3504a9d0a794e4f27914, type: 3}
+    - {fileID: 8300000, guid: 1e8e5ac22b59def479c2fb1eeca47234, type: 3}
+    - {fileID: 8300000, guid: bdbc5deff20653c44b9bbb26fde4aabe, type: 3}
+    - {fileID: 8300000, guid: 552fab4054c949b4687568322c65bfb5, type: 3}
+  - wordSetId: ES_F3_MAIN_C
+    setName: "Spanish RAVLT parallel Form 3 \u2014 main list \u2014 items 11-15"
+    language: 2
+    validatedForResearch: 0
+    validationNote: Research-sourced Spanish RAVLT lexical stimuli; IKEA_EEG administration
+      is adapted and not a standardized RAVLT administration.
+    wordSource: RAVLT-derived Spanish adaptation
+    sourceForm: ES_F3_MAIN
+    sourceStartIndex: 10
+    sourceFormWordCount: 15
+    words:
+    - Leche
+    - Casco
+    - "M\xFAsica"
+    - Caballo
+    - Calle
+    wordClips:
+    - {fileID: 8300000, guid: a44b2a17d14dbcd43a23d8aa14b0ed08, type: 3}
+    - {fileID: 8300000, guid: 74748aaf080ed0646b7c6200be4cb909, type: 3}
+    - {fileID: 8300000, guid: 73a5f3b0ae7d6db4481a92ce9f7f4a7c, type: 3}
+    - {fileID: 8300000, guid: 784b584e0b95bce4096911877469cd41, type: 3}
+    - {fileID: 8300000, guid: 164d5b0ec07dd834b98cd2af02a849e0, type: 3}
+  - wordSetId: JA_W1_MAIN_A
+    setName: "Japanese RAVLT adaptation \u2014 main list \u2014 items 1-5"
+    language: 3
+    validatedForResearch: 0
+    validationNote: Research-sourced Japanese RAVLT lexical stimuli; IKEA_EEG administration
+      is adapted and not a standardized RAVLT administration.
+    wordSource: RAVLT-derived Japanese adaptation (Wada 2016; list attributed to
+      Wakamatsu, Anamizu & Kato 2003)
+    sourceForm: JA_W1_MAIN
+    sourceStartIndex: 0
+    sourceFormWordCount: 15
+    words:
+    - "\u5927\u6839"
+    - "\u306F\u3055\u307F"
+    - "\u30D4\u30A2\u30CE"
+    - "\u819D"
+    - "\u3068\u3093\u307C"
+    wordClips:
+    - {fileID: 8300000, guid: ae78017657c2d354fbc7e0f56c44c841, type: 3}
+    - {fileID: 8300000, guid: 2791d15120309b4459c4ca84ce50232a, type: 3}
+    - {fileID: 8300000, guid: 78e938966112ec849be8eadc26319882, type: 3}
+    - {fileID: 8300000, guid: 12feaafb39ff0b94eaf918c5745da250, type: 3}
+    - {fileID: 8300000, guid: d13bf38d5dd3cea47a0607612432e877, type: 3}
+  - wordSetId: JA_W1_MAIN_B
+    setName: "Japanese RAVLT adaptation \u2014 main list \u2014 items 6-10"
+    language: 3
+    validatedForResearch: 0
+    validationNote: Research-sourced Japanese RAVLT lexical stimuli; IKEA_EEG administration
+      is adapted and not a standardized RAVLT administration.
+    wordSource: RAVLT-derived Japanese adaptation (Wada 2016; list attributed to
+      Wakamatsu, Anamizu & Kato 2003)
+    sourceForm: JA_W1_MAIN
+    sourceStartIndex: 5
+    sourceFormWordCount: 15
+    words:
+    - "\u68EE"
+    - "\u91CE\u83DC"
+    - "\u307E\u3050\u308D"
+    - "\u3055\u304F\u3089"
+    - "\u7DD1"
+    wordClips:
+    - {fileID: 8300000, guid: 398d6ee6e72f84b49a1f47cdc2762068, type: 3}
+    - {fileID: 8300000, guid: 496d0ba1a87dfab4eae0a1f6160c23b3, type: 3}
+    - {fileID: 8300000, guid: bb2ab8ca302073542b19a3022c0027b8, type: 3}
+    - {fileID: 8300000, guid: f7d8d48542d16724aa4127d3a93d9b29, type: 3}
+    - {fileID: 8300000, guid: 7bb0d6945e49501448c20f3e8fd0ce7c, type: 3}
+  - wordSetId: JA_W1_MAIN_C
+    setName: "Japanese RAVLT adaptation \u2014 main list \u2014 items 11-15"
+    language: 3
+    validatedForResearch: 0
+    validationNote: Research-sourced Japanese RAVLT lexical stimuli; IKEA_EEG administration
+      is adapted and not a standardized RAVLT administration.
+    wordSource: RAVLT-derived Japanese adaptation (Wada 2016; list attributed to
+      Wakamatsu, Anamizu & Kato 2003)
+    sourceForm: JA_W1_MAIN
+    sourceStartIndex: 10
+    sourceFormWordCount: 15
+    words:
+    - "\u9774\u4E0B"
+    - "\u96C0"
+    - "\u308A\u3093\u3054"
+    - "\u9244"
+    - "\u99AC"
+    wordClips:
+    - {fileID: 8300000, guid: 64f6ff649913d154db1becb241fb1cd2, type: 3}
+    - {fileID: 8300000, guid: 7453f31cc03c78344a0727a9ad3fab45, type: 3}
+    - {fileID: 8300000, guid: e9ff3c1e4c16d064d84bc577c7e5f610, type: 3}
+    - {fileID: 8300000, guid: 87bf9e82b41ad7d4abe3d81dd6f44b36, type: 3}
+    - {fileID: 8300000, guid: 7cd5310880316d4459880af4b026af83, type: 3}

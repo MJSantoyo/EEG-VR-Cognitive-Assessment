@@ -1,0 +1,70 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a58b4487cea445e478aca9317d3411c8, type: 3}
+  m_Name: RecognitionWordList_PLACEHOLDER
+  m_EditorClassIdentifier: Assembly-CSharp::IkeaEeg.Experiment.RecognitionWordList
+  m_ValidatedForResearch: 0
+  m_ProvenanceNote: "DEVELOPMENT ONLY \u2014 NOT CNS STIMULI.\nGenerated placeholders
+    for functional testing of the recognition architecture. These are NOT the CNS
+    Vital Signs word list and were not derived from it. They are uncontrolled for
+    frequency, imageability, length and semantic category, carry no norms, and must
+    not be used for data collection or reported as a memory measure. Replace with
+    the authorised list and set validatedForResearch before any participant runs."
+  m_Language: 1
+  m_TargetWords:
+  - TABLE
+  - RIVER
+  - CANDLE
+  - MARKET
+  - PILLOW
+  - GARDEN
+  - BOTTLE
+  - WINDOW
+  - FOREST
+  - BASKET
+  - MIRROR
+  - TUNNEL
+  - SADDLE
+  - HARBOR
+  - LANTERN
+  m_ImmediateRecognitionLures:
+  - COPPER
+  - MEADOW
+  - KETTLE
+  - STATION
+  - BLANKET
+  - ORCHARD
+  - BUCKET
+  - CORNER
+  - VALLEY
+  - RIBBON
+  - PICTURE
+  - BRIDGE
+  - COLLAR
+  - ISLAND
+  - CANDLE_B
+  m_DelayedRecognitionLures:
+  - PEBBLE
+  - CHIMNEY
+  - WAGON
+  - PASTURE
+  - CUSHION
+  - THICKET
+  - JUG
+  - LEDGE
+  - CANYON
+  - LACE
+  - PORTRAIT
+  - TOWER
+  - CUFF
+  - PENINSULA
+  - TORCH
