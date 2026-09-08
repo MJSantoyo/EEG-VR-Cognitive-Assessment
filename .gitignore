@@ -88,3 +88,11 @@ crashlytics-build.properties
 
 # Backups
 /IKEA_EEG_BACKUP*/
+
+# Locally imported third-party Unity Asset Store packages.
+# Licensed per seat and redistributed by their vendors, so they must never reach
+# the public repository. They stay on disk and remain fully usable inside Unity.
+/Assets/JeffamazedDev/
+/Assets/JeffamazedDev.meta
+/Assets/Urban_Props_Pack_Rozity/
+/Assets/Urban_Props_Pack_Rozity.meta
