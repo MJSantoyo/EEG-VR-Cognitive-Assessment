@@ -3023,7 +3023,7 @@ MeshRenderer:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 135314351}
-  m_Enabled: 1
+  m_Enabled: 0
   m_CastShadows: 1
   m_ReceiveShadows: 1
   m_DynamicOccludee: 1
@@ -6299,6 +6299,18 @@ MonoBehaviour:
   m_WelchSegmentSeconds: 2
   m_Montage: {fileID: 0}
   m_FilteredHistorySeconds: 30
+  m_QualityThresholds:
+    nearIdenticalCorrelation: 0.99
+    nearIdenticalMinimumPairs: 1
+    degradationDecades: 2
+    degradationConsecutiveWindows: 3
+    excursionRangeRatio: 8
+    variabilityCollapseRatio: 0.1
+    saturationRepeatFraction: 0.5
+    discontinuityStepRatio: 20
+    baselineWindows: 5
+    recoveryWindows: 5
+  m_InvalidateRoiOnDegradedChannel: 1
 --- !u!114 &270926542
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -16817,7 +16829,7 @@ MeshRenderer:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 708601781}
-  m_Enabled: 1
+  m_Enabled: 0
   m_CastShadows: 1
   m_ReceiveShadows: 1
   m_DynamicOccludee: 1
@@ -37875,7 +37887,7 @@ MeshRenderer:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1828375848}
-  m_Enabled: 1
+  m_Enabled: 0
   m_CastShadows: 1
   m_ReceiveShadows: 1
   m_DynamicOccludee: 1
@@ -43733,7 +43745,7 @@ Transform:
   - {fileID: 135314352}
   - {fileID: 135693023}
   - {fileID: 448501606}
-  - {fileID: 5166385076022468303}
+  - {fileID: 5548529284469751734}
   m_Father: {fileID: 1446808414}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &2140440093
@@ -43859,7 +43871,7 @@ Canvas:
   m_SortingLayerID: 0
   m_SortingOrder: 0
   m_TargetDisplay: 0
---- !u!1001 &5166385076022468302
+--- !u!1001 &5548529284469751733
 PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
@@ -43916,10 +43928,10 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: c647212bb7aec9d489d4aeb61db9b181, type: 3}
---- !u!4 &5166385076022468303 stripped
+--- !u!4 &5548529284469751734 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 5748102662606766891, guid: c647212bb7aec9d489d4aeb61db9b181, type: 3}
-  m_PrefabInstance: {fileID: 5166385076022468302}
+  m_PrefabInstance: {fileID: 5548529284469751733}
   m_PrefabAsset: {fileID: 0}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:

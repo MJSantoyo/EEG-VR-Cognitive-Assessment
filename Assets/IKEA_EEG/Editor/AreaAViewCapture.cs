@@ -104,6 +104,80 @@ namespace IkeaEeg.EditorTools
                 lookAt = new Vector3(0.30f, 1.55f, 1.60f),
                 fieldOfView = 68f, width = 1600, height = 900,
             };
+
+            // The two sides the graybox walls used to close off. Taken from the spawn eye so
+            // they show what the participant actually sees when they turn their head — and
+            // therefore whether the other experiment areas are still visible on the horizon.
+            yield return new View
+            {
+                name = "09_AreaA_LateralLeft_Open",
+                position = k_SpawnEye,
+                lookAt = new Vector3(-7.0f, 1.55f, -1.60f),
+                fieldOfView = 80f, width = 1600, height = 900,
+            };
+
+            yield return new View
+            {
+                name = "10_AreaA_LateralRight_Open",
+                position = k_SpawnEye,
+                lookAt = new Vector3(7.0f, 1.55f, -1.60f),
+                fieldOfView = 80f, width = 1600, height = 900,
+            };
+
+            // The whole 28 m storefront, from far enough back that it fits in frame.
+            yield return new View
+            {
+                name = "12_AreaA_FullStorefront",
+                position = new Vector3(0f, 1.75f, -19.0f),
+                lookAt = new Vector3(0f, 2.60f, 1.9f),
+                fieldOfView = 52f, width = 1920, height = 1080,
+            };
+
+            // The zone sequence: plaza, kerb, gutter, asphalt and its markings.
+            yield return new View
+            {
+                name = "13_AreaA_PlazaKerbRoad",
+                position = new Vector3(-4.60f, 2.55f, -13.5f),
+                lookAt = new Vector3(1.20f, 0.35f, -3.0f),
+                fieldOfView = 58f, width = 1920, height = 1080,
+            };
+
+            // The two facade sample panels side by side: current flat blue on the LEFT,
+            // the new textured metal-panel material on the RIGHT, under identical light.
+            yield return new View
+            {
+                name = "21_AreaA_MaterialSample_Comparison",
+                position = new Vector3(6.35f, 1.80f, -5.40f),
+                lookAt = new Vector3(6.35f, 1.80f, 1.80f),
+                fieldOfView = 62f, width = 1920, height = 1080,
+            };
+
+            // Closer, at a grazing angle, so the normal-map relief and the gloss response are
+            // actually judgeable rather than flattened by a head-on view.
+            yield return new View
+            {
+                name = "22_AreaA_MaterialSample_Grazing",
+                position = new Vector3(2.60f, 1.70f, -2.20f),
+                lookAt = new Vector3(8.60f, 1.60f, 1.80f),
+                fieldOfView = 55f, width = 1920, height = 1080,
+            };
+
+            // Three-quarter pair, from outside the plaza looking back at the entrance.
+            yield return new View
+            {
+                name = "14_AreaA_ThreeQuarter_Left",
+                position = new Vector3(-11.0f, 2.10f, -9.0f),
+                lookAt = new Vector3(0f, 2.20f, 1.9f),
+                fieldOfView = 56f, width = 1920, height = 1080,
+            };
+
+            yield return new View
+            {
+                name = "15_AreaA_ThreeQuarter_Right",
+                position = new Vector3(11.0f, 2.10f, -9.0f),
+                lookAt = new Vector3(0f, 2.20f, 1.9f),
+                fieldOfView = 56f, width = 1920, height = 1080,
+            };
         }
 
         [MenuItem("IKEA_EEG/Visuals/Capture Area A Views", false, 202)]
