@@ -3472,6 +3472,11 @@ them should be made implicitly by whoever writes the first `CaptureBaseline` cal
 
 ## 16.1 The flag enum **[CODE]** — `EegQualityFlags`, `[Flags]`
 
+> **Superseded in part — see 16.5.** Four flags have been appended since this was written
+> (`ChannelPowerOutlier`, `TransientArtifactSuspected`, `NearIdenticalChannels`,
+> `ChannelDegraded`). The list below stops at `1 << 9` and is no longer complete. The
+> append-only contract it describes still holds and is still asserted by the self-test.
+
 ```csharp
 None                 = 0
 FilterNotSettled     = 1 << 0   //   1
@@ -3696,6 +3701,10 @@ The detail string is composed to name *which* channels matched and, if applicabl
 
 ### Why EXACT equality and no correlation threshold — the argument **[CODE]**
 
+> **Superseded — see 16.5.** A configurable correlation check now exists alongside the
+> bit-identity test. The reasoning below records why identity alone was chosen at the time and
+> remains a fair statement of that decision; it is no longer a description of current behaviour.
+
 The doc-comment states it directly:
 
 > "EXACT EQUALITY, deliberately. No tolerance, no correlation threshold. Two electrodes that are
@@ -3738,8 +3747,8 @@ reported as `PASS` / valid" **[synthetic LIVE]**.
 
 | Missing check | Why it would matter |
 |---|---|
-| **Inter-channel correlation** (as opposed to identity) | Would catch *near*-duplication, common-mode domination and bridged electrodes. Deliberately omitted, with an argument (16.3). Reconsider once the reference scheme is documented. |
-| **Per-electrode rejection** | All flags are window-level. One bad electrode flags the whole window; it cannot be excluded from an ROI mean while retaining the other two. |
+| ~~**Inter-channel correlation** (as opposed to identity)~~ | **CLOSED — see 16.5.** Implemented as a configurable near-identity check on filtered signal. |
+| ~~**Per-electrode rejection**~~ | **CLOSED differently — see 16.5.** Per-ROI validity now exists: a flagged electrode invalidates only the ROIs it belongs to. The electrode is still never *excluded* from an ROI mean, by design. |
 | **Impedance / contact quality** | Not available from the stream (PART 2.9). No software fix possible. |
 | **Ocular artefact detection** | No EOG channel, no blink detection, no ICA. Fp1 is present but unused. Frontal theta is exactly the feature most vulnerable to this. |
 | **EMG / muscle detection** | No high-frequency power check. The 40 Hz low-pass removes much of the EMG band but not its low-frequency tail, and in VR (headset weight, neck tension, speech) EMG is a live concern. |
@@ -3747,7 +3756,112 @@ reported as `PASS` / valid" **[synthetic LIVE]**.
 | **Line-noise monitoring** | No check for a 50/60 Hz peak, which is the standard early-warning sign of a bad electrode contact. The low-pass removes it from the analysed band, so a deteriorating contact would go unnoticed. |
 | **Dynamic-range reference contamination** | The EMA updates even on flagged windows (16.2). |
 | **First-window blind spot** | `ExtremeDynamicRange` cannot fire on the first analysed window. |
-| **A persisted quality record** | Flags live only on the in-memory `LatestEegFeatures`. Nothing writes them to the run's CSV or session summary, so a completed session leaves no record of which windows were flagged. |
+| **A persisted quality record** | **PARTIALLY CLOSED — see 16.5.** Channel health transitions are exported by the offline analyzer as `eeg_qc_transitions.csv`, and the pipeline keeps them in `qcTransitions`. Live per-window flags are still not written to the run's CSV or session summary. |
+
+## 16.5 Current QC implementation (2026-09) **[CODE]**
+
+**What QC means here.** Quality control in this project decides whether a computed feature may be
+trusted. It never changes the signal. Nothing is interpolated, re-referenced, artefact-rejected or
+substituted anywhere in the pipeline; a suspect window keeps its data and gains a flag, so what was
+rejected stays inspectable.
+
+The rules live in one place — `Scripts/Data/EegChannelQualityRules.cs` (`EegChannelQualityRules`,
+`EegChannelHealthTracker`, `EegQualityThresholds`) — and are called by both the live
+`EegFeaturePipeline` and `Editor/OfflineSessionAnalyzer.cs`, so a recording replayed offline is
+judged by exactly the rules the live session applied.
+
+| Check | Protects against | On failure |
+|---|---|---|
+| Flatline | A dead or disconnected lead reading a constant | Flag `Flatline`; ROI invalid if the electrode is in one |
+| Saturation / clipping | A stuck ADC or a railed amplifier | Flag `SaturationLike`; ROI invalid if in one |
+| Non-finite samples | NaN or infinity reaching a spectrum | Flags `NaNPresent` / `InfinityPresent`; feature validity false |
+| Abrupt discontinuity | Electrode pops, connector events, amplifier steps | Flag `AbruptDiscontinuity` |
+| Extreme dynamic range | A window wildly unlike the channel's own history | Flag `ExtremeDynamicRange` |
+| Channel power outlier | One channel orders of magnitude off the others | Flag `ChannelPowerOutlier`, channel named |
+| Transient artefact | Non-stationary windows (movement, settling) | Flag `TransientArtifactSuspected` |
+| Bit-identical channels | Duplicated leads, amplifier test patterns | Flag `IdenticalChannels`, pairs named |
+| Near-identical channels | Acquisition, reference or common-mode problems | Flag `NearIdenticalChannels`, pairs and *r* named |
+| Channel degradation / dropout | An electrode that worked and then failed mid-session | Flag `ChannelDegraded`; `Debug.LogWarning` naming electrode, time and reason; ROI invalid |
+| ROI validity | A regional mean containing a known-bad electrode | `frontalThetaValid` / `posteriorAlphaValid` set false, each independently, with a reason |
+| Filter settling / sample count | Analysing start-up transient or a short window | Flags `FilterNotSettled` / `InsufficientSamples`; window excluded from health baselines |
+| Timing gaps | Epochs silently spanning missing data | `RawEegRingBuffer` treats a step beyond 4 nominal sample intervals as a gap; the offline analyzer counts gaps and marks affected windows invalid |
+
+**Degradation and recovery** are the only stateful checks. Each channel accumulates a baseline from
+its own clean windows, then must fail `degradationConsecutiveWindows` in a row to be called degraded
+and pass `recoveryWindows` in a row to be called recovered — deliberately harder to clear than to
+condemn, because a prematurely cleared channel silently re-enters an ROI mean. Every transition is
+recorded with electrode, timestamp, reason and affected ROI, exposed as
+`EegFeaturePipeline.qcTransitions` and written by the offline analyzer to `eeg_qc_transitions.csv`.
+
+**ROI invalidation is per region and never substitutes.** A failure at P3 invalidates posterior
+alpha and leaves frontal theta untouched. The bad electrode is not dropped and the ROI is not
+re-averaged over the survivors: an ROI over two electrodes instead of three is a different
+measurement wearing the same name. The value is still computed and reported, marked unusable.
+
+### Thresholds: engineering heuristics, not physiological criteria **[GAP]**
+
+Every threshold below is an **engineering heuristic**. None is a scientifically validated
+physiological criterion, none is derived from a published method, and none is in µV — each is a
+correlation, a ratio against the channel's own history, or a count of windows, which is what lets
+them mean anything while the amplitude scaling stays unverified (PART 7). They are serialized on
+`EegFeaturePipeline` and configurable in the inspector.
+
+| Threshold | Default | Meaning |
+|---|---|---|
+| `nearIdenticalCorrelation` | 0.99 | Pearson *r* on filtered signal above which a pair is flagged |
+| `nearIdenticalMinimumPairs` | 1 | Pairs required before the window is flagged |
+| `degradationDecades` | 2.0 | Distance from a channel's own baseline band power |
+| `degradationConsecutiveWindows` | 3 | Consecutive failures before "degraded" |
+| `recoveryWindows` | 5 | Consecutive clean windows before "recovered" |
+| `excursionRangeRatio` | 8.0 | Window range against the channel's own baseline range |
+| `variabilityCollapseRatio` | 0.1 | Range collapse against the channel's own baseline |
+| `saturationRepeatFraction` | 0.5 | Fraction of bit-identical consecutive samples |
+| `discontinuityStepRatio` | 20.0 | Largest step against the channel's own mean step |
+| `baselineWindows` | 5 | Clean windows before a channel's baseline is usable |
+
+**No threshold here should be tuned to make a session pass.** Out-of-range values fall back to the
+documented defaults rather than silently disabling a check.
+
+### Why the near-identity check exists **[CODE]**
+
+It is **not** a requirement that EEG channels be statistically independent. Neighbouring scalp
+electrodes sharing a reference are genuinely and legitimately correlated, and that is ordinary
+physiology, not a defect.
+
+What the check looks for is *suspiciously near-identical temporal dynamics* — traces carrying so
+little independent variance that the likely explanation lies upstream of the scalp: an acquisition,
+reference or common-mode problem, a montage error, or a duplicated channel. The bit-identity test
+could not see this, because such channels are not bit-equal; they differ in the last few bits and by
+a small gain.
+
+The check runs on **filtered** signal, and that is essential rather than incidental: on raw AURA
+samples a shared DC offset and slow drift dominate the correlation, so nearly any pair would clear
+nearly any threshold and the result would carry no information.
+
+It is a **quality-control flag only**. It triggers no correction, no re-referencing and no channel
+removal, and it does not identify a cause — it reports that a recording looks wrong in a specific,
+measurable way and leaves the diagnosis to the hardware.
+
+### Acquisition validation note **[VALIDATED]**
+
+Acquisition testing compared the AURA internal recording, the AURA LSL stream captured
+independently with LabRecorder, and Unity's `raw_eeg.csv`.
+
+**Validated conclusion: Unity preserved the LSL EEG samples without channel mixing or numerical
+modification.** This concerns the transport and recording path only. It says nothing about
+electrode placement, reference configuration or signal quality.
+
+### Reference configuration observation **[ENGINEERING OBSERVATION — NOT FINAL]**
+
+Changing from a shared ear-clip REF/GND to separated mastoid REF and GND produced a substantially
+more heterogeneous inter-channel correlation structure during engineering validation.
+
+This is a strong engineering observation, not a settled result. It comes from development testing
+rather than a controlled comparison, and no causal claim is made: montage, electrode placement and
+preparation all varied together. The reference configuration is **not** scientifically finalised on
+the basis of this test, and continued validation across repeated sessions is required before any
+recording from this setup can support a regional or spatial interpretation.
+
 
 ---
 
