@@ -1,94 +1,65 @@
-using System.Collections.Generic;
-
 namespace IkeaEeg.Neuro
 {
     /// <summary>
-    /// Per-session baseline for the two ROI band powers, built from ACCEPTED windows only.
+    /// A HOLDER for a baseline that an approved protocol supplies from outside. It computes
+    /// nothing and infers nothing.
     ///
-    /// WHAT THIS DELIBERATELY DOES NOT DO: it applies no outlier rejection of its own. The
-    /// numerical rejection thresholds are pending scientific review, and inventing them here —
-    /// even "reasonable" ones — would silently bake an unreviewed decision into every later
-    /// figure. Windows arrive already screened by the EEG pipeline's own quality rules; this
-    /// class only refuses to produce a baseline when there is not enough accepted material.
+    /// WHY THIS CLASS NO LONGER ACCUMULATES. An earlier revision built a baseline by pooling
+    /// the median of the first N accepted task windows, with N = 8. Every part of that was an
+    /// unreviewed scientific decision wearing the clothes of an implementation detail: which
+    /// windows count as baseline material, how many are enough, how they are pooled, and
+    /// whether task windows may serve as their own reference at all. A baseline derived from
+    /// the very activity being measured is not a baseline, and none of those choices had been
+    /// approved.
     ///
-    /// The median is used rather than the mean because the 8 September session's delayed phase
-    /// showed exactly the failure mode a mean cannot survive: a frontocentral theta mean of
-    /// 112 267 against a median of 29.0. A single artefact window moves a mean by four orders
-    /// of magnitude and leaves a median untouched.
+    /// So the rule is now explicit: a baseline exists only when an approved provider hands one
+    /// over. In Phase 1 no such provider exists, nothing calls
+    /// <see cref="SupplyApprovedBaseline"/>, and <see cref="isValid"/> is therefore always
+    /// false. That is the correct state, not a gap to be filled in with a default.
     /// </summary>
     public sealed class ShadowBaseline
     {
-        /// <summary>
-        /// Minimum accepted windows before a baseline is offered at all. Below this the
-        /// answer is "insufficient", never an estimate from two samples.
-        /// </summary>
-        public const int MinimumWindows = 8;
-
-        readonly List<double> m_Theta = new List<double>();
-        readonly List<double> m_Alpha = new List<double>();
-
-        public int acceptedWindowCount => m_Theta.Count;
-
-        public bool isValid => m_Theta.Count >= MinimumWindows &&
-                               IsUsable(Median(m_Theta)) &&
-                               IsUsable(Median(m_Alpha));
-
-        public double thetaBaseline => m_Theta.Count == 0 ? double.NaN : Median(m_Theta);
-        public double alphaBaseline => m_Alpha.Count == 0 ? double.NaN : Median(m_Alpha);
+        /// <summary>Identifier of whatever supplied the values. Empty while none has.</summary>
+        public string providerId { get; private set; } = string.Empty;
 
         /// <summary>
-        /// Adds one window's ROI values. The caller decides what "accepted" means; this class
-        /// only stores finite, positive values, because a band power of zero or below cannot
-        /// serve as a denominator.
+        /// False until an approved provider supplies a baseline. There is deliberately no
+        /// window count, duration or sufficiency criterion behind this: inventing one is
+        /// exactly what the correction removed.
         /// </summary>
-        public void Accumulate(double frontocentralTheta, double posteriorAlpha)
+        public bool isValid { get; private set; }
+
+        public double thetaBaseline { get; private set; } = double.NaN;
+        public double alphaBaseline { get; private set; } = double.NaN;
+
+        /// <summary>
+        /// The ONLY way a baseline can come to exist. Intentionally unused in Phase 1.
+        ///
+        /// The checks here are arithmetic, not scientific: a non-finite or non-positive value
+        /// cannot serve as a reference whatever protocol produced it. No threshold, duration,
+        /// window count, outlier rule or pooling rule is applied or implied — those belong to
+        /// the approved protocol, which does not exist yet.
+        /// </summary>
+        public bool SupplyApprovedBaseline(double theta, double alpha, string providerId)
         {
-            if (!IsUsable(frontocentralTheta) || !IsUsable(posteriorAlpha))
-                return;
+            if (!IsUsable(theta) || !IsUsable(alpha) || string.IsNullOrWhiteSpace(providerId))
+                return false;
 
-            m_Theta.Add(frontocentralTheta);
-            m_Alpha.Add(posteriorAlpha);
-        }
-
-        /// <summary>
-        /// Theta/alpha ratio expressed against the session baseline, or NaN when the baseline
-        /// is not usable. NaN is a deliberate, checkable outcome — never a substituted 0 or 1.
-        /// </summary>
-        public double Normalise(double frontocentralTheta, double posteriorAlpha)
-        {
-            if (!isValid || !IsUsable(frontocentralTheta) || !IsUsable(posteriorAlpha))
-                return double.NaN;
-
-            var thetaRatio = frontocentralTheta / thetaBaseline;
-            var alphaRatio = posteriorAlpha / alphaBaseline;
-
-            if (!IsUsable(alphaRatio))
-                return double.NaN;
-
-            var index = thetaRatio / alphaRatio;
-            return IsUsable(index) ? index : double.NaN;
+            thetaBaseline = theta;
+            alphaBaseline = alpha;
+            this.providerId = providerId;
+            isValid = true;
+            return true;
         }
 
         public void Reset()
         {
-            m_Theta.Clear();
-            m_Alpha.Clear();
+            thetaBaseline = double.NaN;
+            alphaBaseline = double.NaN;
+            providerId = string.Empty;
+            isValid = false;
         }
 
         static bool IsUsable(double v) => !double.IsNaN(v) && !double.IsInfinity(v) && v > 0d;
-
-        static double Median(List<double> values)
-        {
-            if (values.Count == 0)
-                return double.NaN;
-
-            var copy = new List<double>(values);
-            copy.Sort();
-
-            var mid = copy.Count / 2;
-            return copy.Count % 2 == 1
-                ? copy[mid]
-                : (copy[mid - 1] + copy[mid]) * 0.5d;
-        }
     }
 }

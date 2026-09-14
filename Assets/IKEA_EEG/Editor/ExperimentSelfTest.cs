@@ -8477,8 +8477,9 @@ namespace IkeaEeg.EditorTools
         /// <summary>
         /// The decision path, driven directly with synthetic feature windows.
         ///
-        /// No scene, no pipeline and no headset: the controller's Evaluate is pure given its
-        /// accumulated baseline, which is exactly what makes shadow mode auditable.
+        /// No scene, no pipeline and no headset: Evaluate is pure given the current baseline,
+        /// which is exactly what makes shadow mode auditable. These checks enforce the Phase 1
+        /// scientific position — undecided, and explicit about why.
         /// </summary>
         static void CheckShadowModeDecisions()
         {
@@ -8488,73 +8489,132 @@ namespace IkeaEeg.EditorTools
             {
                 var controller = host.AddComponent<IkeaEeg.Neuro.ShadowModeController>();
 
-                // ---- null and invalid inputs -> Indeterminate ---------------------------
+                // ---- 1. null / invalid input -> INDETERMINATE ---------------------------
                 var nullDecision = controller.Evaluate(null);
 
                 Assert(nullDecision.level == IkeaEeg.Neuro.WorkloadLevel.Indeterminate &&
                        nullDecision.rejectedReason == IkeaEeg.Neuro.ShadowRejection.FeatureInvalid,
-                    $"a null window yields Indeterminate/FeatureInvalid ({nullDecision.level}/" +
+                    $"a null window yields INDETERMINATE/FEATUREINVALID ({nullDecision.level}/" +
                     $"{nullDecision.rejectedReason})");
 
-                var invalid = Window(theta: 40d, alpha: 12d);
+                var invalid = Window(40d, 12d);
                 invalid.featureValidity = false;
-
                 var invalidDecision = controller.Evaluate(invalid);
 
                 Assert(invalidDecision.level == IkeaEeg.Neuro.WorkloadLevel.Indeterminate,
-                    "a window the pipeline marked invalid yields Indeterminate");
-                Assert(!invalidDecision.baselineValid,
-                    "an invalid window does not create a baseline");
+                    "a window the pipeline marked invalid yields INDETERMINATE");
 
-                // ---- rejected windows are still recorded --------------------------------
+                // ---- 2. rejected windows still produce a row ----------------------------
                 Assert(invalidDecision.rejectedReason != IkeaEeg.Neuro.ShadowRejection.None &&
-                       !string.IsNullOrEmpty(invalidDecision.ToCsvRow()),
-                    "a rejected window still produces a full output row carrying its reason");
+                       invalidDecision.ToCsvRow().Split(',').Length ==
+                           IkeaEeg.Neuro.ShadowDecision.CsvHeader.Split(',').Length,
+                    "a rejected window still produces a complete row carrying its reason");
 
-                // ---- insufficient baseline -> Indeterminate -----------------------------
+                // ---- 3/4/5/6/7. a VALID window is still undecided, and changes nothing ---
                 controller.ResetSession();
 
-                var early = controller.Evaluate(Window(40d, 12d));
+                IkeaEeg.Neuro.ShadowDecision valid = default;
+                for (var i = 0; i < 20; i++)
+                    valid = controller.Evaluate(Window(40d + i, 12d + i * 0.1d));
 
-                Assert(early.level == IkeaEeg.Neuro.WorkloadLevel.Indeterminate &&
-                       early.rejectedReason == IkeaEeg.Neuro.ShadowRejection.BaselineInsufficient,
-                    $"the first valid window reports BaselineInsufficient ({early.rejectedReason})");
+                Assert(valid.montageStatus == "UNVERIFIED",
+                    $"montage_status remains UNVERIFIED ({valid.montageStatus})");
 
-                // ---- a full baseline still yields Indeterminate while no rule is approved -
+                Assert(valid.rejectedReason == IkeaEeg.Neuro.ShadowRejection.MontageUnverified,
+                    $"a valid window is gated by MONTAGEUNVERIFIED ({valid.rejectedReason})");
+
+                Assert(!controller.baseline.isValid && !valid.baselineValid,
+                    "20 valid task windows do NOT create a baseline — accumulation is gone");
+
+                Assert(double.IsNaN(valid.baselineTheta) && double.IsNaN(valid.baselineAlpha),
+                    "no baseline values are inferred from task windows");
+
+                Assert(double.IsNaN(valid.normalizedIndex),
+                    "normalized_index stays NaN — no normalization method is frozen");
+
+                Assert(valid.ToCsvRow().Split(',')[8] == string.Empty,
+                    "normalized_index is written as an empty field, never a substituted 0");
+
+                Assert(valid.level == IkeaEeg.Neuro.WorkloadLevel.Indeterminate,
+                    "LOW / MODERATE / HIGH are not emitted for a valid window in Phase 1");
+
+                // No level other than Indeterminate may appear across a long mixed run.
                 controller.ResetSession();
+                var emittedLevels = new HashSet<IkeaEeg.Neuro.WorkloadLevel>();
 
-                IkeaEeg.Neuro.ShadowDecision last = default;
-                for (var i = 0; i < IkeaEeg.Neuro.ShadowBaseline.MinimumWindows + 2; i++)
-                    last = controller.Evaluate(Window(40d + i, 12d + i * 0.1d));
-
-                Assert(last.baselineValid,
-                    $"a baseline forms after {IkeaEeg.Neuro.ShadowBaseline.MinimumWindows} " +
-                    $"accepted windows ({controller.acceptedBaselineWindows} accepted)");
-                Assert(!double.IsNaN(last.normalizedIndex),
-                    "the normalised index is computed once the baseline is valid");
-                Assert(last.level == IkeaEeg.Neuro.WorkloadLevel.Indeterminate &&
-                       last.rejectedReason == IkeaEeg.Neuro.ShadowRejection.NoApprovedRule,
-                    $"with no approved rule the label stays Indeterminate/NoApprovedRule " +
-                    $"({last.level}/{last.rejectedReason}) — thresholds are not invented");
-
-                // ---- required output fields ---------------------------------------------
-                Assert(last.montageStatus == "UNVERIFIED",
-                    $"montage_status is pinned UNVERIFIED ({last.montageStatus})");
-                Assert(!string.IsNullOrEmpty(last.qualityRuleVersion) &&
-                       !string.IsNullOrEmpty(last.controllerVersion),
-                    "quality_rule_version and controller_version are stamped on every row");
-
-                foreach (var column in new[]
-                         {
-                             "montage_status", "baseline_valid", "quality_rule_version",
-                             "controller_version", "rejected_reason",
-                         })
+                for (var i = 0; i < 60; i++)
                 {
-                    Assert(IkeaEeg.Neuro.ShadowDecision.CsvHeader.Contains(column),
-                        $"the output header declares {column}");
+                    var w = Window(20d + i * 3d, 8d + i * 0.5d);
+                    if (i % 7 == 0) w.featureValidity = false;
+                    if (i % 11 == 0) w.roiValid = false;
+                    emittedLevels.Add(controller.Evaluate(w).level);
                 }
 
-                // ---- reproducibility -----------------------------------------------------
+                Assert(emittedLevels.Count == 1 &&
+                       emittedLevels.Contains(IkeaEeg.Neuro.WorkloadLevel.Indeterminate),
+                    $"across 60 mixed windows the only level emitted is INDETERMINATE " +
+                    $"({string.Join("/", emittedLevels)})");
+
+                // ---- baseline only ever arrives from an approved provider ---------------
+                var supplied = new IkeaEeg.Neuro.ShadowBaseline();
+
+                Assert(!supplied.isValid, "a fresh ShadowBaseline is invalid");
+                Assert(supplied.SupplyApprovedBaseline(30d, 10d, "unit-test-provider") &&
+                       supplied.isValid,
+                    "a baseline becomes valid ONLY when an approved provider supplies one");
+                Assert(!supplied.SupplyApprovedBaseline(0d, 10d, "unit-test-provider"),
+                    "a non-positive baseline value is refused");
+
+                Assert(typeof(IkeaEeg.Neuro.ShadowBaseline).GetMethod("Accumulate") == null &&
+                       typeof(IkeaEeg.Neuro.ShadowBaseline).GetMethod("Normalise") == null &&
+                       typeof(IkeaEeg.Neuro.ShadowBaseline).GetField("MinimumWindows") == null,
+                    "ShadowBaseline exposes no Accumulate, no Normalise and no MinimumWindows");
+
+                // ---- the gate chain, including gates Phase 1 never reaches ---------------
+                var G = typeof(IkeaEeg.Neuro.ShadowModeController);
+                var gate = G.GetMethod("FirstUnmetGate", BindingFlags.Public | BindingFlags.Static);
+
+                Assert(gate != null, "the gate chain is exposed as a pure static function");
+
+                if (gate != null)
+                {
+                    IkeaEeg.Neuro.ShadowRejection Call(bool fv, bool rc, bool rv, bool mv,
+                        bool na, bool bv, bool ra) =>
+                        (IkeaEeg.Neuro.ShadowRejection)gate.Invoke(null,
+                            new object[] { fv, rc, rv, mv, na, bv, ra });
+
+                    Assert(Call(false, true, true, true, true, true, true) ==
+                           IkeaEeg.Neuro.ShadowRejection.FeatureInvalid, "gate 1: FEATUREINVALID");
+                    Assert(Call(true, false, true, true, true, true, true) ==
+                           IkeaEeg.Neuro.ShadowRejection.RoiContaminated, "gate 2: ROICONTAMINATED");
+                    Assert(Call(true, true, false, true, true, true, true) ==
+                           IkeaEeg.Neuro.ShadowRejection.RoiValueMissing, "gate 3: ROIVALUEMISSING");
+                    Assert(Call(true, true, true, false, true, true, true) ==
+                           IkeaEeg.Neuro.ShadowRejection.MontageUnverified, "gate 4: MONTAGEUNVERIFIED");
+                    Assert(Call(true, true, true, true, false, true, true) ==
+                           IkeaEeg.Neuro.ShadowRejection.NoApprovedNormalization,
+                        "gate 5: NOAPPROVEDNORMALIZATION is wired, not dead code");
+                    Assert(Call(true, true, true, true, true, false, true) ==
+                           IkeaEeg.Neuro.ShadowRejection.BaselineUnavailable,
+                        "gate 6: BASELINEUNAVAILABLE");
+                    Assert(Call(true, true, true, true, true, true, false) ==
+                           IkeaEeg.Neuro.ShadowRejection.NoApprovedRule, "gate 7: NOAPPROVEDRULE");
+                    Assert(Call(true, true, true, true, true, true, true) ==
+                           IkeaEeg.Neuro.ShadowRejection.None,
+                        "the chain clears only when every prerequisite is met");
+                }
+
+                // The three prerequisites must all still be false in Phase 1.
+                foreach (var name in new[]
+                         { "MontageVerified", "NormalizationApproved", "DecisionRuleApproved" })
+                {
+                    var field = G.GetField(name, BindingFlags.Public | BindingFlags.Static);
+
+                    Assert(field != null && field.IsLiteral && !(bool)field.GetRawConstantValue(),
+                        $"{name} is a compile-time constant and is false in Phase 1");
+                }
+
+                // ---- 8. byte-identical output for identical input ------------------------
                 var a = new GameObject("__Shadow_A").AddComponent<IkeaEeg.Neuro.ShadowModeController>();
                 var b = new GameObject("__Shadow_B").AddComponent<IkeaEeg.Neuro.ShadowModeController>();
 
@@ -8568,16 +8628,22 @@ namespace IkeaEeg.EditorTools
                 }
 
                 Assert(rowsA.SequenceEqual(rowsB),
-                    "two controllers fed identical window sequences produce byte-identical output");
+                    "two controllers fed identical window sequences produce byte-identical rows");
 
                 Object.DestroyImmediate(a.gameObject);
                 Object.DestroyImmediate(b.gameObject);
 
-                // ---- the median baseline survives an artefact the mean would not ---------
-                var robust = new ShadowBaselineProbe();
-                Assert(robust.MedianSurvivesOutlier(),
-                    "the baseline uses a median, so one artefact window cannot move it by " +
-                    "orders of magnitude (the 8 September delayed-phase failure mode)");
+                // ---- 9. the frozen CSV schema, exactly -----------------------------------
+                const string frozen =
+                    "window_index,lsl_start,lsl_end,n_valid_channels,theta_fc,alpha_post," +
+                    "baseline_theta,baseline_alpha,normalized_index,level,montage_status," +
+                    "baseline_valid,quality_rule_version,controller_version,rejected_reason";
+
+                Assert(IkeaEeg.Neuro.ShadowDecision.CsvHeader == frozen,
+                    "the CSV header matches the frozen 15-column schema exactly");
+
+                Assert(valid.ToCsvRow().Split(',').Length == 15,
+                    $"every row has exactly 15 fields ({valid.ToCsvRow().Split(',').Length})");
             }
             finally
             {
@@ -8585,25 +8651,6 @@ namespace IkeaEeg.EditorTools
             }
         }
 
-        /// <summary>Small helper so the robustness claim above is actually exercised.</summary>
-        sealed class ShadowBaselineProbe
-        {
-            public bool MedianSurvivesOutlier()
-            {
-                var baseline = new IkeaEeg.Neuro.ShadowBaseline();
-
-                for (var i = 0; i < 12; i++)
-                    baseline.Accumulate(30d, 10d);
-
-                var clean = baseline.thetaBaseline;
-
-                baseline.Accumulate(1_000_000d, 10d);   // the artefact
-
-                var after = baseline.thetaBaseline;
-
-                return System.Math.Abs(after - clean) < 5d;
-            }
-        }
 
         /// <summary>A minimal, valid synthetic feature window.</summary>
         static LatestEegFeatures Window(double theta, double alpha)

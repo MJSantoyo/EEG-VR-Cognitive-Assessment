@@ -6,6 +6,10 @@ namespace IkeaEeg.Neuro
     /// Why a window did not produce a label. Recorded on EVERY window, including accepted
     /// ones (<see cref="None"/>), so the output is a complete census rather than a survivor
     /// list: a rejected window stays in the file with its reason attached.
+    ///
+    /// The order of the members is the order the gates are evaluated in — see
+    /// <see cref="ShadowModeController.FirstUnmetGate"/>. The first unmet gate is the reason
+    /// recorded, so the reason always names the earliest obstacle rather than an arbitrary one.
     /// </summary>
     public enum ShadowRejection
     {
@@ -20,22 +24,34 @@ namespace IkeaEeg.Neuro
         /// <summary>Frontocentral theta or posterior alpha was not computable.</summary>
         RoiValueMissing,
 
-        /// <summary>Not enough accepted windows yet to define a baseline.</summary>
-        BaselineInsufficient,
-
-        /// <summary>A baseline exists but is degenerate (zero or non-finite scale).</summary>
-        BaselineDegenerate,
+        /// <summary>
+        /// The physical channel-to-electrode correspondence has not been verified, so the ROI
+        /// values cannot be treated as electrode-level measurements. The values are still
+        /// logged; what is withheld is the interpretation, and therefore the label.
+        /// </summary>
+        MontageUnverified,
 
         /// <summary>
-        /// No approved numerical threshold rule is configured. This is the Phase 1 state and
-        /// it is NOT a failure: the thresholds are pending scientific review and must not be
-        /// invented, so every window is honestly reported as undecided.
+        /// No normalization method has been scientifically frozen. Phase 1 computes no
+        /// normalized index rather than choosing a formula on the code's own authority.
+        /// </summary>
+        NoApprovedNormalization,
+
+        /// <summary>
+        /// No approved baseline protocol has supplied a baseline. Distinct from "not enough
+        /// windows yet": there is no automatic accumulation to be insufficient.
+        /// </summary>
+        BaselineUnavailable,
+
+        /// <summary>
+        /// No approved numerical threshold rule is configured. Reaching this gate would mean
+        /// every earlier one had been cleared.
         /// </summary>
         NoApprovedRule,
     }
 
     /// <summary>
-    /// One immutable observation: what the pipeline produced for a window, what the rule made
+    /// One immutable observation: what the pipeline produced for a window, what the gates made
     /// of it, and everything needed to audit that later.
     ///
     /// This type carries no reference to the experiment. It is data, produced downstream of
@@ -46,70 +62,76 @@ namespace IkeaEeg.Neuro
         public readonly long windowIndex;
 
         /// <summary>Window bounds on the SAME analysis clock the raw EEG file records.</summary>
-        public readonly double windowStartLsl;
-        public readonly double windowEndLsl;
+        public readonly double lslStart;
+        public readonly double lslEnd;
 
-        public readonly int channelCount;
         public readonly int validChannelCount;
 
-        /// <summary>Raw ROI values as the pipeline computed them. NaN when unavailable.</summary>
-        public readonly double frontocentralTheta;
-        public readonly double posteriorAlpha;
+        /// <summary>
+        /// ROI band powers exactly as the existing pipeline computed them. Logged as pipeline
+        /// outputs; NOT confirmed electrode-level measurements while the montage is unverified.
+        /// </summary>
+        public readonly double thetaFc;
+        public readonly double alphaPost;
 
-        /// <summary>Baseline used, and the normalised index derived from it. NaN when absent.</summary>
+        /// <summary>Supplied baseline, or NaN while no approved provider has supplied one.</summary>
         public readonly double baselineTheta;
         public readonly double baselineAlpha;
-        public readonly double normalizedIndex;
 
-        public readonly bool baselineValid;
+        /// <summary>
+        /// NaN in Phase 1, always. No normalization method is frozen, so none is computed.
+        /// </summary>
+        public readonly double normalizedIndex;
 
         /// <summary>PROVISIONAL rule-based label. See <see cref="WorkloadLevel"/>.</summary>
         public readonly WorkloadLevel level;
 
-        public readonly ShadowRejection rejectedReason;
-
         /// <summary>
         /// Pinned to UNVERIFIED until a physical electrode-placement check is performed and
-        /// documented. It is deliberately NOT read from AuraMontageConfig, whose mappingSource
-        /// field defaults to HumanVerifiedAcquisitionUi without any physical evidence having
-        /// been collected.
+        /// documented. Deliberately NOT read from AuraMontageConfig, whose mappingSource
+        /// defaults to HumanVerifiedAcquisitionUi without any physical evidence behind it.
         /// </summary>
         public readonly string montageStatus;
 
+        public readonly bool baselineValid;
         public readonly string qualityRuleVersion;
         public readonly string controllerVersion;
+        public readonly ShadowRejection rejectedReason;
 
-        public ShadowDecision(long windowIndex, double windowStartLsl, double windowEndLsl,
-            int channelCount, int validChannelCount,
-            double frontocentralTheta, double posteriorAlpha,
+        public ShadowDecision(long windowIndex, double lslStart, double lslEnd,
+            int validChannelCount, double thetaFc, double alphaPost,
             double baselineTheta, double baselineAlpha, double normalizedIndex,
-            bool baselineValid, WorkloadLevel level, ShadowRejection rejectedReason,
-            string montageStatus, string qualityRuleVersion, string controllerVersion)
+            WorkloadLevel level, string montageStatus, bool baselineValid,
+            string qualityRuleVersion, string controllerVersion,
+            ShadowRejection rejectedReason)
         {
             this.windowIndex = windowIndex;
-            this.windowStartLsl = windowStartLsl;
-            this.windowEndLsl = windowEndLsl;
-            this.channelCount = channelCount;
+            this.lslStart = lslStart;
+            this.lslEnd = lslEnd;
             this.validChannelCount = validChannelCount;
-            this.frontocentralTheta = frontocentralTheta;
-            this.posteriorAlpha = posteriorAlpha;
+            this.thetaFc = thetaFc;
+            this.alphaPost = alphaPost;
             this.baselineTheta = baselineTheta;
             this.baselineAlpha = baselineAlpha;
             this.normalizedIndex = normalizedIndex;
-            this.baselineValid = baselineValid;
             this.level = level;
-            this.rejectedReason = rejectedReason;
             this.montageStatus = montageStatus;
+            this.baselineValid = baselineValid;
             this.qualityRuleVersion = qualityRuleVersion;
             this.controllerVersion = controllerVersion;
+            this.rejectedReason = rejectedReason;
         }
 
+        /// <summary>
+        /// FROZEN SCHEMA. Fifteen columns, this order. Anything consuming the output may rely
+        /// on it; changing it is a breaking change to every downstream analysis.
+        /// </summary>
         public const string CsvHeader =
-            "window_index,window_start_lsl,window_end_lsl,channel_count,valid_channel_count," +
-            "frontocentral_theta,posterior_alpha,baseline_theta,baseline_alpha," +
-            "normalized_index,baseline_valid,level,rejected_reason,montage_status," +
-            "quality_rule_version,controller_version";
+            "window_index,lsl_start,lsl_end,n_valid_channels,theta_fc,alpha_post," +
+            "baseline_theta,baseline_alpha,normalized_index,level,montage_status," +
+            "baseline_valid,quality_rule_version,controller_version,rejected_reason";
 
+        /// <summary>Empty, never a substituted zero: an absent value must read as absent.</summary>
         static string N(double v) =>
             double.IsNaN(v) || double.IsInfinity(v)
                 ? string.Empty
@@ -121,16 +143,16 @@ namespace IkeaEeg.Neuro
 
             return string.Join(",",
                 windowIndex.ToString(c),
-                N(windowStartLsl), N(windowEndLsl),
-                channelCount.ToString(c), validChannelCount.ToString(c),
-                N(frontocentralTheta), N(posteriorAlpha),
+                N(lslStart), N(lslEnd),
+                validChannelCount.ToString(c),
+                N(thetaFc), N(alphaPost),
                 N(baselineTheta), N(baselineAlpha), N(normalizedIndex),
-                baselineValid ? "TRUE" : "FALSE",
                 level.ToString().ToUpperInvariant(),
-                rejectedReason.ToString().ToUpperInvariant(),
                 montageStatus,
+                baselineValid ? "TRUE" : "FALSE",
                 qualityRuleVersion,
-                controllerVersion);
+                controllerVersion,
+                rejectedReason.ToString().ToUpperInvariant());
         }
     }
 }
