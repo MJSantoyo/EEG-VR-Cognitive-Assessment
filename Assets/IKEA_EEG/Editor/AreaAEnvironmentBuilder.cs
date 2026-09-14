@@ -53,6 +53,25 @@ namespace IkeaEeg.EditorTools
         const float k_MinFrontZ = 1.75f;      // RULE 1
         const float k_GroundMaxY = 0.05f;     // RULE 2
 
+        /// <summary>
+        /// Spawn_A's z. RULE 1 only bites BETWEEN the participant and the UI — geometry behind
+        /// the spawn mark cannot occlude a panel in front of it, however tall it is. Block 1
+        /// never needed this because everything it added was either in front or on the ground;
+        /// the kerb and the road are the first objects to sit behind the participant.
+        /// </summary>
+        const float k_SpawnZ = -0.70f;
+
+        /// <summary>
+        /// Objects excused from RULE 1 by name, with the reason they are safe.
+        ///
+        /// "Skyline" is a single combined mesh whose volumes stand at |x| >= 14 and 30-96 m
+        /// away, but the merge gives it one enormous axis-aligned bounding box that straddles
+        /// x = 0 — so a bounds test says it is in the corridor when no part of it is. Its real
+        /// placement is verified separately, and far more meaningfully, by the three Spawn_A
+        /// sightline ray tests further down.
+        /// </summary>
+        static readonly string[] k_ClearanceExemptByName = { "Skyline" };
+
         const float k_DoorHalfWidth = 1.30f;  // the existing opening: x in [-1.30, 1.30]
         const float k_DoorHeight = 2.60f;
 
@@ -84,8 +103,106 @@ namespace IkeaEeg.EditorTools
         const float k_GlazingTopY = 2.42f;    // silver header band sits above this
         const float k_CladTopY = 4.24f;       // just proud of the existing 4.20 m facade top
 
+        // ---- Extended storefront -------------------------------------------------------
+        // ~28 m of building, entrance centred. The WINGS ARE LOWER THAN THE ENTRANCE BAY, and
+        // that is a hard constraint rather than a style choice: the participant stands 2.55 m
+        // from this wall with a 1.60 m eye height, so the top of an 84 deg frame only reaches
+        // ~4.4 m at the facade plane. Wings at bay height or above erase the sky completely.
+        // The "large store" impression therefore comes from WIDTH, and the bay stays the
+        // tallest element so the entrance still reads as the focus.
+        const float k_FacadeHalfWidth = 14.0f;
+        const float k_BayHalfWidth = 2.30f;   // where the existing entrance cladding ends
+        const float k_WingTopY = 3.80f;
+        const float k_ParapetTopY = 4.00f;
+        const float k_SideReturnDepth = 3.40f;  // how far the outer ends come toward the viewer
+
+        // ---- Ground zones --------------------------------------------------------------
+        // store -> plaza -> kerb -> road -> distant city.
+        const float k_PlazaHalfWidth = 12.0f;
+        const float k_PlazaTopY = 0.015f;     // just under the existing slabs (0.020)
+        const float k_KerbZ = -6.00f;         // plaza ends / kerb face
+        const float k_KerbTopY = 0.135f;
+        const float k_RoadTopY = -0.005f;
+        const float k_RoadFarZ = -26.0f;
+
+        /// <summary>Skyline volumes, as min/max pairs. Combined into ONE renderer.</summary>
+        static readonly (Vector3 min, Vector3 max)[] k_Skyline =
+        {
+            // The two "Near" blocks are the ones that actually occlude the other experiment
+            // areas: Area 0 sits at x = -100 and Areas B and C at x = +100 / +200, all at
+            // z ~ 0, so the sightlines to them run almost straight along +/-X from Spawn_A.
+            (new Vector3(-62f, 0f, -18f), new Vector3(-42f, 17f, 14f)),
+            (new Vector3(42f, 0f, -18f), new Vector3(62f, 16f, 14f)),
+            (new Vector3(-96f, 0f, -30f), new Vector3(-66f, 22f, 6f)),
+            (new Vector3(66f, 0f, -30f), new Vector3(96f, 21f, 6f)),
+            (new Vector3(-40f, 0f, -58f), new Vector3(-14f, 13f, -34f)),
+            (new Vector3(14f, 0f, -58f), new Vector3(40f, 14f, -34f)),
+        };
+
+        const string k_SkylineMeshPath = k_MeshFolder + "/AreaA_Skyline.mesh";
+
         /// <summary>Local X the left leaf must reach to be fully open. Not used yet.</summary>
         public const float DoorLeafOpenOffset = k_LeafWidth;
+
+        // ---- Graybox walls -------------------------------------------------------------
+        // Their RENDERERS are switched off so Area A reads as open air. The GameObjects and
+        // their BoxColliders stay untouched: the colliders are what stop the far interactor
+        // selecting through the open sides, which is the documented reason the walls exist.
+        static readonly string[] k_GrayboxWalls = { "Wall_A_Left", "Wall_A_Right", "Wall_A_Back" };
+
+        // ---- Exterior props ------------------------------------------------------------
+        // Kept to |x| >= 2.0 so none of them can occlude the UI panel (|x| <= 0.71 at z 1.40)
+        // or the recognition buttons (|x| <= 0.71 at z ~1.18), and clear of the walking line
+        // between Spawn_A (0, 0, -0.7) and the doors.
+        const string k_PropFolder = "Assets/Urban_Props_Pack_Rozity/Prefabs/URP/";
+
+        struct PropPlacement
+        {
+            public string prefab;
+            public Vector3 position;
+            public float yaw;
+            public string name;
+        }
+
+        static readonly PropPlacement[] k_Props =
+        {
+            // Lamps stand on the ROAD side of the kerb, so they belong to the street rather
+            // than floating in the plaza. Modern_01 is the contemporary column; Modern_02 read
+            // as a traditional park lantern against a contemporary storefront.
+            new PropPlacement { prefab = "SM_StreetLight_Modern_01", name = "StreetLight_Left",
+                position = new Vector3(-6.00f, 0.005f, k_KerbZ - 0.55f), yaw = 0f },
+            new PropPlacement { prefab = "SM_StreetLight_Modern_01", name = "StreetLight_Right",
+                position = new Vector3(6.00f, 0.005f, k_KerbZ - 0.55f), yaw = 180f },
+
+            // Beside the entrance, clear of the doorway and well outside the UI corridor.
+            new PropPlacement { prefab = "SM_TrashCan_01", name = "TrashCan",
+                position = new Vector3(2.75f, 0.016f, 1.35f), yaw = 180f },
+
+            // Long axis along X, so it sits parallel to the facade rather than pointing at it.
+            new PropPlacement { prefab = "SM_Park_Bench_02", name = "Bench",
+                position = new Vector3(-3.70f, 0.016f, 1.25f), yaw = 180f },
+        };
+
+        /// <summary>Props are decoration only; anything above this is a bug, not a style choice.</summary>
+        const int k_MaxPropTextureSize = 512;
+
+        /// <summary>What the vendor shipped, restored to textures a prop revision stopped using.</summary>
+        const int k_PackDefaultTextureSize = 2048;
+
+        // The Metal_5 painted-panel trial and its two comparison samples lived here. The trial
+        // was reviewed and REJECTED, so the code is gone rather than left behind a disabled
+        // flag: a dormant switch that can silently recreate a deleted material asset is a trap,
+        // not documentation. The comparison renders are kept in
+        // Presentation_Evidence/AreaA_Concept/ as the record of the experiment.
+
+        /// <summary>
+        /// Objects at or beyond this |x| are exempt from the z >= 1.75 rule.
+        ///
+        /// That rule protects the UI panel and the response buttons from being occluded and
+        /// from having their rays intercepted. Both live within |x| <= 0.71, so geometry out
+        /// past 2.0 m is angularly nowhere near either — and carries no collider in any case.
+        /// </summary>
+        const float k_LateralExemptionX = 2.0f;
 
         // =================================================================================
         // Menu entry points
@@ -169,6 +286,10 @@ namespace IkeaEeg.EditorTools
         {
             var mats = BuildMaterials();
 
+            // Before anything is instantiated, so the props are built against 512 textures
+            // rather than being imported at 2K and downsized afterwards.
+            ApplyPropTextureBudget();
+
             // Idempotency: remove any previous payload, prefab instance or plain object alike.
             for (var i = areaARoot.childCount - 1; i >= 0; i--)
             {
@@ -189,6 +310,8 @@ namespace IkeaEeg.EditorTools
             BuildGlazing(root.transform, mats);
             BuildDoors(root.transform, mats);
             BuildGround(root.transform, mats);
+            BuildSkyline(root.transform, mats);
+            BuildExteriorProps(root.transform);
 
             EnsureFolder("Assets/IKEA_EEG", "Prefabs");
             var prefab = PrefabUtility.SaveAsPrefabAssetAndConnect(root, PrefabPath,
@@ -197,6 +320,46 @@ namespace IkeaEeg.EditorTools
             if (prefab == null)
                 Debug.LogWarning($"[IKEA_EEG] Could not save the Area A visual prefab to {PrefabPath}. " +
                                  "The scene objects were still created.");
+
+            // LAST, and deliberately OUTSIDE the prefab. The walls are siblings of
+            // AreaA_Visuals, not children, so this is a scene edit rather than prefab content —
+            // which is exactly why it has to be re-applied by this method: a scene rebuild
+            // recreates the walls with their renderers switched back on.
+            DisableGrayboxWallRenderers(areaARoot);
+        }
+
+        /// <summary>
+        /// Switches off the three graybox wall renderers and leaves everything else about them
+        /// alone: the GameObject stays active, the BoxCollider stays enabled, and neither the
+        /// transform nor the name is touched.
+        ///
+        /// SetActive(false) would be the wrong tool here — it would take the colliders down with
+        /// the renderer and let the far interactor escape sideways out of Area A.
+        /// </summary>
+        public static void DisableGrayboxWallRenderers(Transform areaARoot)
+        {
+            foreach (var wallName in k_GrayboxWalls)
+            {
+                var wall = areaARoot.Find(wallName);
+
+                if (wall == null)
+                {
+                    Debug.LogWarning($"[IKEA_EEG] '{wallName}' not found under Area_A_Entrance; " +
+                                     "its renderer could not be disabled.");
+                    continue;
+                }
+
+                var renderer = wall.GetComponent<MeshRenderer>();
+
+                if (renderer == null)
+                    continue;
+
+                if (renderer.enabled)
+                {
+                    renderer.enabled = false;
+                    EditorUtility.SetDirty(renderer);
+                }
+            }
         }
 
         // ---- Blue modular cladding ------------------------------------------------------
@@ -226,6 +389,79 @@ namespace IkeaEeg.EditorTools
 
             Box("Seam_V_L", g, V(-1.80f, -0.03f, k_SeamZMin), V(-1.80f + h, k_CladTopY, k_SeamZMax), m.charcoal);
             Box("Seam_V_R", g, V(1.80f - h, -0.03f, k_SeamZMin), V(1.80f, k_CladTopY, k_SeamZMax), m.charcoal);
+
+            BuildFacadeWings(g, m);
+        }
+
+        /// <summary>
+        /// Extends the storefront to ~28 m so it reads as one building rather than a 4.6 m card
+        /// standing on a plain.
+        /// </summary>
+        static void BuildFacadeWings(Transform parent, Mats m)
+        {
+            var g = Group("Facade_Wings", parent);
+
+            Box("Wing_Left", g, V(-k_FacadeHalfWidth, -0.03f, k_CladZMin),
+                V(-k_BayHalfWidth, k_WingTopY, k_CladZMax), m.blue);
+            Box("Wing_Right", g, V(k_BayHalfWidth, -0.03f, k_CladZMin),
+                V(k_FacadeHalfWidth, k_WingTopY, k_CladZMax), m.blue);
+
+            // Panel-tone variation: every other 4.8 m bay in a slightly different blue, a few
+            // mm proud. Stops a 28 m wall reading as one flat slab without costing a texture.
+            var flip = false;
+            for (var x = -k_FacadeHalfWidth; x < k_FacadeHalfWidth - 0.01f; x += 4.8f)
+            {
+                flip = !flip;
+
+                if (x + 4.8f > -k_BayHalfWidth && x < k_BayHalfWidth)
+                    continue;                       // never touch the entrance bay
+
+                if (!flip)
+                    continue;
+
+                Box($"Panel_{x:0}", g, V(x, -0.03f, 1.775f),
+                    V(Mathf.Min(x + 4.8f, k_FacadeHalfWidth), k_WingTopY, 1.795f), m.blueAlt);
+            }
+
+            const float seam = 0.04f;
+
+            foreach (var y in new[] { 1.25f, 2.50f })
+            {
+                Box($"WingSeam_H_L_{y:0.00}", g, V(-k_FacadeHalfWidth, y, 1.755f),
+                    V(-k_BayHalfWidth, y + seam, 1.795f), m.charcoal);
+                Box($"WingSeam_H_R_{y:0.00}", g, V(k_BayHalfWidth, y, 1.755f),
+                    V(k_FacadeHalfWidth, y + seam, 1.795f), m.charcoal);
+            }
+
+            for (var x = -k_FacadeHalfWidth + 4.8f; x < k_FacadeHalfWidth - 0.01f; x += 4.8f)
+            {
+                if (x > -k_BayHalfWidth - 0.01f && x < k_BayHalfWidth + 0.01f)
+                    continue;
+
+                Box($"WingSeam_V_{x:0}", g, V(x, -0.03f, 1.755f),
+                    V(x + seam, k_WingTopY, 1.795f), m.charcoal);
+            }
+
+            // Metal parapet capping the wings against the sky.
+            Box("Parapet_Left", g, V(-k_FacadeHalfWidth, k_WingTopY, 1.775f),
+                V(-k_BayHalfWidth, k_ParapetTopY, 1.915f), m.silver);
+            Box("Parapet_Right", g, V(k_BayHalfWidth, k_WingTopY, 1.775f),
+                V(k_FacadeHalfWidth, k_ParapetTopY, 1.915f), m.silver);
+
+            // Shallow side returns at the far ends. Without them the building is a flat card
+            // seen edge-on from any three-quarter view; with them it reads as a volume. Kept
+            // 14 m out, so they are nowhere near the participant and enclose nothing.
+            var returnFrontZ = k_CladZMin - k_SideReturnDepth;
+
+            Box("Return_Left", g, V(-k_FacadeHalfWidth, -0.03f, returnFrontZ),
+                V(-k_FacadeHalfWidth + 0.55f, k_WingTopY, k_CladZMin), m.blueAlt);
+            Box("Return_Right", g, V(k_FacadeHalfWidth - 0.55f, -0.03f, returnFrontZ),
+                V(k_FacadeHalfWidth, k_WingTopY, k_CladZMin), m.blueAlt);
+
+            Box("Return_Parapet_Left", g, V(-k_FacadeHalfWidth, k_WingTopY, returnFrontZ),
+                V(-k_FacadeHalfWidth + 0.60f, k_ParapetTopY, k_CladZMin), m.silver);
+            Box("Return_Parapet_Right", g, V(k_FacadeHalfWidth - 0.60f, k_WingTopY, returnFrontZ),
+                V(k_FacadeHalfWidth, k_ParapetTopY, k_CladZMin), m.silver);
         }
 
         // ---- Dark outer entrance portal -------------------------------------------------
@@ -342,6 +578,48 @@ namespace IkeaEeg.EditorTools
         {
             var g = Group("Ground", parent);
 
+            // ---- Three zones, not one plane ----------------------------------------------
+            // The single uniform apron read as an infinite beige void. Replaced with a legible
+            // sequence the eye can follow outward: plaza -> kerb -> road -> distant city.
+
+            // Far ground, so nothing ever ends in open sky at the horizon. Dark, and largely
+            // hidden behind the road and the skyline; it exists to close the world, not to be
+            // looked at. Its top sits BELOW the road so the road always wins where they meet.
+            Box("Ground_Base", g, V(-160f, -0.30f, -200f), V(160f, -0.020f, 20f), m.asphalt);
+
+            // ZONE A — entrance plaza. Light concrete, ~24 m wide.
+            //
+            // It runs PAST the facade line in +Z rather than stopping at it: that is what fully
+            // covers Floor_A (whose top face is at y = 0.000, below this at 0.015), so the
+            // graybox floor is occluded rather than re-materialed and Floor_A's renderer,
+            // material and collider stay completely untouched. The overlap with the storefront
+            // is buried inside solid geometry.
+            //
+            // The existing 16 pavement slabs (top y = 0.020) still sit 5 mm proud, so their
+            // joints continue to read — against plaza concrete instead of against grey.
+            Box("Plaza_Concrete", g, V(-k_PlazaHalfWidth, -0.10f, k_KerbZ),
+                V(k_PlazaHalfWidth, k_PlazaTopY, 2.60f), m.pavement);
+
+            // ZONE B — kerb. The transition is a HEIGHT step (120 mm) rather than a colour
+            // change, which is what a real kerb is; the directional light does the rest on the
+            // vertical face. The gutter strip below it gives the edge a hard line to read against.
+            Box("Kerb", g, V(-k_PlazaHalfWidth, -0.10f, k_KerbZ - 0.28f),
+                V(k_PlazaHalfWidth, k_KerbTopY, k_KerbZ), m.pavement);
+            Box("Gutter", g, V(-k_PlazaHalfWidth, -0.10f, k_KerbZ - 0.46f),
+                V(k_PlazaHalfWidth, k_RoadTopY + 0.004f, k_KerbZ - 0.28f), m.charcoal);
+
+            // ZONE C — road. Dark asphalt, about as wide as the storefront.
+            Box("Road_Asphalt", g, V(-k_FacadeHalfWidth, -0.12f, k_RoadFarZ),
+                V(k_FacadeHalfWidth, k_RoadTopY, k_KerbZ - 0.46f), m.asphalt);
+
+            // A few painted markings. Bay lines perpendicular to the store, plus one lane line.
+            for (var x = -10f; x <= 10.01f; x += 4f)
+                Box($"RoadMark_Bay_{x:0}", g, V(x, k_RoadTopY, -13.6f),
+                    V(x + 0.14f, k_RoadTopY + 0.004f, -8.2f), m.pavement);
+
+            Box("RoadMark_Lane", g, V(-k_FacadeHalfWidth + 1f, k_RoadTopY, -17.4f),
+                V(k_FacadeHalfWidth - 1f, k_RoadTopY + 0.004f, -17.26f), m.pavement);
+
             // A 4 x 4 grid of light slabs. The joints are GAPS, not extra strips: the darker
             // existing Floor_A shows through them, which costs no geometry and no material.
             const float x0 = -2.30f, x1 = 2.30f;
@@ -365,6 +643,193 @@ namespace IkeaEeg.EditorTools
 
             // Entrance mat, embedded in the pavement so no face is coplanar with it.
             Box("Entrance_Mat", g, V(-1.05f, 0.010f, 0.95f), V(1.05f, 0.032f, 1.80f), m.charcoal);
+        }
+
+        // =================================================================================
+        // Distant skyline
+        // =================================================================================
+
+        /// <summary>
+        /// A handful of far-off blocks, combined into ONE renderer.
+        ///
+        /// Its first job is functional rather than decorative: Area 0 (x = -100), Area B
+        /// (x = +100) and Area C (x = +200) all sit at z ~ 0 in this single scene, so once the
+        /// Area A graybox walls stopped being drawn they became visible as rectangles on the
+        /// horizon. The two "Near" blocks stand across those sightlines.
+        ///
+        /// Muted and neutral on purpose — it must give depth without competing with the
+        /// storefront — and it stays low enough on the eye line to leave the sky open.
+        /// </summary>
+        static void BuildSkyline(Transform parent, Mats m)
+        {
+            var mesh = CombineBoxes(k_Skyline, "AreaA_Skyline", k_SkylineMeshPath);
+
+            var go = new GameObject("Skyline");
+            go.transform.SetParent(parent, false);
+            go.AddComponent<MeshFilter>().sharedMesh = mesh;
+            go.AddComponent<MeshRenderer>().sharedMaterial = m.skyline;
+            MarkStatic(go);
+        }
+
+        /// <summary>Merges a set of boxes into a single saved mesh asset.</summary>
+        static Mesh CombineBoxes((Vector3 min, Vector3 max)[] boxes, string meshName, string path)
+        {
+            var cubeSource = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            var cube = cubeSource.GetComponent<MeshFilter>().sharedMesh;
+
+            var combine = new CombineInstance[boxes.Length];
+
+            for (var i = 0; i < boxes.Length; i++)
+            {
+                combine[i] = new CombineInstance
+                {
+                    mesh = cube,
+                    transform = Matrix4x4.TRS((boxes[i].min + boxes[i].max) * 0.5f,
+                        Quaternion.identity, boxes[i].max - boxes[i].min),
+                };
+            }
+
+            var mesh = new Mesh { name = meshName };
+            mesh.CombineMeshes(combine, true, true);
+            mesh.RecalculateBounds();
+
+            Object.DestroyImmediate(cubeSource);
+
+            EnsureFolder("Assets/IKEA_EEG", "Meshes");
+            AssetDatabase.DeleteAsset(path);
+            AssetDatabase.CreateAsset(mesh, path);
+
+            return mesh;
+        }
+
+        // =================================================================================
+        // Exterior props (third-party Urban Props Pack, used as decoration only)
+        // =================================================================================
+
+        /// <summary>
+        /// Places the four decorative props.
+        ///
+        /// Each instance is UNPACKED COMPLETELY straight after instantiation. That is
+        /// deliberate: the pack's prefabs each wrap their FBX and add a collider, and removing
+        /// a component from a nested prefab instance is stored as a fragile "removed component"
+        /// override that can reappear if the pack is ever reimported. Unpacking turns the
+        /// instance into plain GameObjects that still reference the pack's shared meshes and
+        /// materials, so nothing is duplicated and nothing in the package is modified — but the
+        /// collider is gone for good.
+        ///
+        /// COLLIDERS ARE STRIPPED, NOT DISABLED. The far interactor casts 10 m; decoration must
+        /// be incapable of intercepting a ray, not merely switched off.
+        /// </summary>
+        static void BuildExteriorProps(Transform parent)
+        {
+            var g = Group("Exterior_Props", parent);
+
+            foreach (var placement in k_Props)
+            {
+                var path = k_PropFolder + placement.prefab + ".prefab";
+                var source = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+
+                if (source == null)
+                {
+                    Debug.LogWarning($"[IKEA_EEG] Prop prefab not found: {path}. Area A will " +
+                                     "build without it.");
+                    continue;
+                }
+
+                var instance = (GameObject)PrefabUtility.InstantiatePrefab(source, g);
+
+                if (instance == null)
+                    continue;
+
+                PrefabUtility.UnpackPrefabInstance(instance, PrefabUnpackMode.Completely,
+                    InteractionMode.AutomatedAction);
+
+                instance.name = placement.name;
+                instance.transform.localPosition = placement.position;
+                instance.transform.localRotation = Quaternion.Euler(0f, placement.yaw, 0f);
+
+                foreach (var collider in instance.GetComponentsInChildren<Collider>(true))
+                    Object.DestroyImmediate(collider, true);
+
+                // The pack ships none, but a decorative mesh must never bring a realtime light
+                // into a scene whose lighting is one directional light and flat ambient.
+                foreach (var light in instance.GetComponentsInChildren<Light>(true))
+                    Object.DestroyImmediate(light, true);
+
+                foreach (var t in instance.GetComponentsInChildren<Transform>(true))
+                    MarkStatic(t.gameObject);
+            }
+        }
+
+        /// <summary>
+        /// Caps the textures of the three prop types in use at 512.
+        ///
+        /// Scoped by asset DEPENDENCY, not by a hand-written list: only textures actually
+        /// reachable from those three prefabs are touched, so the other ~59 maps in the pack
+        /// keep their import settings. Everything except Max Size is left exactly as the vendor
+        /// shipped it — mipmaps, compression, albedo sRGB and the Normal Map texture type are
+        /// all read but never written.
+        ///
+        /// 2048 is far past what these earn: the nearest prop is ~1.8 m away and the furthest
+        /// ~6 m, so a 2K map costs about sixteen times the memory of the detail it can show.
+        /// </summary>
+        static void ApplyPropTextureBudget()
+        {
+            var prefabPaths = k_Props
+                .Select(p => k_PropFolder + p.prefab + ".prefab")
+                .Distinct()
+                .Where(p => AssetDatabase.LoadAssetAtPath<GameObject>(p) != null)
+                .ToArray();
+
+            if (prefabPaths.Length == 0)
+                return;
+
+            var inUse = new HashSet<string>(
+                AssetDatabase.GetDependencies(prefabPaths, true)
+                    .Where(d => AssetDatabase.LoadAssetAtPath<Texture2D>(d) != null));
+
+            var capped = 0;
+
+            foreach (var dependency in inUse)
+            {
+                var importer = AssetImporter.GetAtPath(dependency) as TextureImporter;
+
+                if (importer == null || importer.maxTextureSize <= k_MaxPropTextureSize)
+                    continue;
+
+                importer.maxTextureSize = k_MaxPropTextureSize;
+                importer.SaveAndReimport();
+                capped++;
+            }
+
+            // Restore anything an EARLIER prop selection capped that the current one no longer
+            // uses, so the override tracks the props actually in the scene rather than
+            // accumulating across revisions. Scoped to this pack's Textures folder.
+            var restored = 0;
+
+            foreach (var guid in AssetDatabase.FindAssets("t:Texture2D",
+                         new[] { "Assets/Urban_Props_Pack_Rozity/Textures" }))
+            {
+                var path = AssetDatabase.GUIDToAssetPath(guid);
+
+                if (inUse.Contains(path))
+                    continue;
+
+                var importer = AssetImporter.GetAtPath(path) as TextureImporter;
+
+                if (importer == null || importer.maxTextureSize != k_MaxPropTextureSize)
+                    continue;
+
+                importer.maxTextureSize = k_PackDefaultTextureSize;
+                importer.SaveAndReimport();
+                restored++;
+            }
+
+            if (capped > 0 || restored > 0)
+                Debug.Log($"[IKEA_EEG] Prop texture budget: {capped} capped at " +
+                          $"{k_MaxPropTextureSize} px, {restored} restored to " +
+                          $"{k_PackDefaultTextureSize} px (no longer used). Mipmaps, compression, " +
+                          "sRGB and normal-map type were not altered.");
         }
 
         // =================================================================================
@@ -517,7 +982,8 @@ namespace IkeaEeg.EditorTools
 
         class Mats
         {
-            public Material blue, yellow, silver, charcoal, glass, pavement;
+            public Material blue, blueAlt, yellow, silver, charcoal, glass, pavement,
+                asphalt, skyline;
         }
 
         static Mats BuildMaterials()
@@ -542,6 +1008,15 @@ namespace IkeaEeg.EditorTools
                 // ambient light and renders black — which is exactly what the first pass did.
                 glass = Mat("M_AreaA_Glass_Dark", new Color(0.215f, 0.260f, 0.315f), 0f, 0.55f),
                 pavement = Mat("M_AreaA_Pavement_Light", new Color(0.800f, 0.805f, 0.810f), 0f, 0.12f),
+
+                // Three flat colours added for Block 2. No textures, so the cost is three
+                // material slots and nothing else.
+                blueAlt = Mat("M_AreaA_Facade_Blue_Alt", new Color(0.070f, 0.290f, 0.565f), 0f, 0.34f),
+                asphalt = Mat("M_AreaA_Asphalt", new Color(0.205f, 0.210f, 0.220f), 0f, 0.08f),
+
+                // Muted and slightly blued, so distance reads as atmosphere rather than as more
+                // building. It must recede behind the storefront, never compete with it.
+                skyline = Mat("M_AreaA_Skyline", new Color(0.585f, 0.620f, 0.670f), 0f, 0.06f),
             };
         }
 
@@ -722,28 +1197,62 @@ namespace IkeaEeg.EditorTools
             var minAboveGroundZ = float.MaxValue;
             var maxZ = float.MinValue;
 
+            var exempt = 0;
+
             foreach (var r in renderers)
             {
                 var b = r.bounds;                                // world space; Area A is at the origin
                 var isGround = b.max.y <= k_GroundMaxY + 1e-4f;  // RULE 2 objects
 
-                if (!isGround)
+                // RULE 1 EXEMPTION: geometry that lies entirely outside the UI corridor cannot
+                // occlude a panel spanning |x| <= 0.71, whatever its z. Applied by bounds, so an
+                // object that strays back into the corridor is caught rather than assumed safe.
+                var isLateral = b.min.x >= k_LateralExemptionX || b.max.x <= -k_LateralExemptionX;
+
+                if (isGround)
                 {
-                    minAboveGroundZ = Mathf.Min(minAboveGroundZ, b.min.z);
-                    if (b.min.z < k_MinFrontZ - 1e-4f)
-                    {
-                        sb.AppendLine($"  FAIL  '{r.name}' reaches z = {b.min.z:F3} — closer than the " +
-                                      $"{k_MinFrontZ:F2} m limit and could occlude the UI.");
-                        violations++;
-                    }
+                    // Ground is excluded from the door-blocker depth check below as well as
+                    // from the front-clearance one: the plaza deliberately runs underneath the
+                    // storefront, passing below the blocker rather than through it.
+                    continue;
+                }
+
+                if (k_ClearanceExemptByName.Contains(r.gameObject.name))
+                {
+                    exempt++;
+                    continue;
+                }
+
+                // Entirely behind the participant, so it cannot come between them and the UI.
+                if (b.max.z <= k_SpawnZ + 1e-4f)
+                {
+                    exempt++;
+                    continue;
+                }
+
+                if (isLateral)
+                {
+                    exempt++;
+                    maxZ = Mathf.Max(maxZ, b.max.z);
+                    continue;
+                }
+
+                minAboveGroundZ = Mathf.Min(minAboveGroundZ, b.min.z);
+
+                if (b.min.z < k_MinFrontZ - 1e-4f)
+                {
+                    sb.AppendLine($"  FAIL  '{r.name}' reaches z = {b.min.z:F3} — closer than the " +
+                                  $"{k_MinFrontZ:F2} m limit and could occlude the UI.");
+                    violations++;
                 }
 
                 maxZ = Mathf.Max(maxZ, b.max.z);
             }
 
             if (violations == 0)
-                sb.AppendLine($"  ok    every non-ground surface starts at or behind z = " +
-                              $"{minAboveGroundZ:F3} (limit {k_MinFrontZ:F2})");
+                sb.AppendLine($"  ok    every non-ground surface in the UI corridor starts at or " +
+                              $"behind z = {minAboveGroundZ:F3} (limit {k_MinFrontZ:F2}); " +
+                              $"{exempt} object(s) exempt by |x| >= {k_LateralExemptionX:F1}");
             problems += violations;
 
             if (maxZ <= k_BlockerFrontZ + 1e-4f)
@@ -791,6 +1300,262 @@ namespace IkeaEeg.EditorTools
 
                 problems += Report(sb, batched == 0,
                     "leaf renderers are NOT batching-static, so they can be animated later");
+            }
+
+            // ---- graybox walls: invisible but still solid -------------------------------
+            foreach (var wallName in k_GrayboxWalls)
+            {
+                var wall = areaA.Find(wallName);
+
+                if (wall == null)
+                {
+                    sb.AppendLine($"  FAIL  {wallName} is missing from Area_A_Entrance.");
+                    problems++;
+                    continue;
+                }
+
+                var wallRenderer = wall.GetComponent<MeshRenderer>();
+                var wallCollider = wall.GetComponent<BoxCollider>();
+
+                problems += Report(sb, wallRenderer != null && !wallRenderer.enabled,
+                    $"{wallName}: MeshRenderer is DISABLED");
+                problems += Report(sb, wallCollider != null && wallCollider.enabled,
+                    $"{wallName}: BoxCollider is still ENABLED");
+                problems += Report(sb, wall.gameObject.activeSelf,
+                    $"{wallName}: GameObject is still active");
+                problems += Report(sb, !wallCollider.isTrigger,
+                    $"{wallName}: collider is still solid (not a trigger)");
+            }
+
+            // ---- Floor_A is untouched, and no longer visible ----------------------------
+            var floor = areaA.Find("Floor_A");
+
+            if (floor == null)
+            {
+                sb.AppendLine("  FAIL  Floor_A is missing.");
+                problems++;
+            }
+            else
+            {
+                var floorRenderer = floor.GetComponent<MeshRenderer>();
+                var floorCollider = floor.GetComponent<BoxCollider>();
+
+                problems += Report(sb, floorRenderer != null && floorRenderer.enabled,
+                    "Floor_A renderer is untouched (still enabled) — it is occluded, not modified");
+                problems += Report(sb, floorCollider != null && floorCollider.enabled,
+                    "Floor_A collider is still enabled");
+
+                var plaza = root.Find("Ground/Plaza_Concrete");
+                var plazaRenderer = plaza == null ? null : plaza.GetComponent<MeshRenderer>();
+
+                if (plazaRenderer == null || floorRenderer == null)
+                {
+                    sb.AppendLine("  FAIL  the entrance plaza is missing, so Floor_A is exposed.");
+                    problems++;
+                }
+                else
+                {
+                    var fb = floorRenderer.bounds;
+                    var pb = plazaRenderer.bounds;
+
+                    var covers = pb.min.x <= fb.min.x && pb.max.x >= fb.max.x &&
+                                 pb.min.z <= fb.min.z && pb.max.z >= fb.max.z &&
+                                 pb.max.y > fb.max.y;
+
+                    problems += Report(sb, covers,
+                        $"the plaza fully covers Floor_A and sits above it " +
+                        $"(plaza top {pb.max.y:F3} > floor top {fb.max.y:F3}) — no graybox floor visible");
+                }
+            }
+
+            // ---- facade width -----------------------------------------------------------
+            var cladding = root.Find("Facade_Cladding");
+
+            if (cladding == null)
+            {
+                sb.AppendLine("  FAIL  Facade_Cladding is missing.");
+                problems++;
+            }
+            else
+            {
+                var facadeBounds = new Bounds?();
+
+                foreach (var r in cladding.GetComponentsInChildren<MeshRenderer>(true))
+                {
+                    if (facadeBounds == null) facadeBounds = r.bounds;
+                    else { var v = facadeBounds.Value; v.Encapsulate(r.bounds); facadeBounds = v; }
+                }
+
+                if (facadeBounds != null)
+                {
+                    var width = facadeBounds.Value.size.x;
+                    var top = facadeBounds.Value.max.y;
+
+                    problems += Report(sb, Mathf.Abs(width - 28f) <= 1.0f,
+                        $"the storefront is {width:F2} m wide (target ~28 m), entrance centred " +
+                        $"at x = {facadeBounds.Value.center.x:F2}");
+
+                    // The sky test. Anything taller than this at the facade plane fills the
+                    // frame from the spawn mark and Area A stops reading as open air.
+                    problems += Report(sb, top <= 4.40f,
+                        $"the facade tops out at {top:F2} m, below the ~4.4 m ceiling that keeps " +
+                        "sky visible from Spawn_A");
+                }
+
+                var returns = cladding.GetComponentsInChildren<Transform>(true)
+                    .Count(t => t.name.StartsWith("Return_"));
+                problems += Report(sb, returns >= 2,
+                    $"the outer ends have side returns ({returns} pieces), so the building is a " +
+                    "volume rather than a flat card");
+            }
+
+            // ---- three readable ground zones --------------------------------------------
+            var zones = new[] { "Plaza_Concrete", "Kerb", "Road_Asphalt" };
+            var zoneRenderers = new Dictionary<string, MeshRenderer>();
+
+            foreach (var zone in zones)
+            {
+                var t = root.Find("Ground/" + zone);
+                var r = t == null ? null : t.GetComponent<MeshRenderer>();
+                if (r != null) zoneRenderers[zone] = r;
+
+                problems += Report(sb, r != null, $"ground zone '{zone}' exists");
+            }
+
+            if (zoneRenderers.Count == 3)
+            {
+                var plazaTop = zoneRenderers["Plaza_Concrete"].bounds.max.y;
+                var kerbTop = zoneRenderers["Kerb"].bounds.max.y;
+                var roadTop = zoneRenderers["Road_Asphalt"].bounds.max.y;
+
+                problems += Report(sb, kerbTop > plazaTop && plazaTop > roadTop,
+                    $"the zones step correctly: road {roadTop:F3} < plaza {plazaTop:F3} < " +
+                    $"kerb {kerbTop:F3}");
+
+                problems += Report(sb,
+                    zoneRenderers["Road_Asphalt"].sharedMaterial !=
+                    zoneRenderers["Plaza_Concrete"].sharedMaterial,
+                    "the road and the plaza use different materials, so the surfaces read apart");
+
+                var roadWidth = zoneRenderers["Road_Asphalt"].bounds.size.x;
+                problems += Report(sb, roadWidth >= 24f,
+                    $"the road is {roadWidth:F1} m wide, comparable to the storefront");
+            }
+
+            // ---- skyline hides the other experiment areas -------------------------------
+            var skyline = root.Find("Skyline");
+
+            if (skyline == null)
+            {
+                sb.AppendLine("  FAIL  the distant skyline is missing.");
+                problems++;
+            }
+            else
+            {
+                problems += Expect(sb, "Skyline renderers", skyline.GetComponentsInChildren<MeshRenderer>(true).Length, 1);
+                problems += Expect(sb, "Collider under Skyline", skyline.GetComponentsInChildren<Collider>(true).Length, 0);
+                problems += Expect(sb, "Light under Skyline", skyline.GetComponentsInChildren<Light>(true).Length, 0);
+
+                // Ray-cast the actual sightlines rather than trusting the numbers.
+                //
+                // Tested against each skyline VOLUME separately. The combined mesh's bounds are
+                // one enormous AABB spanning the whole scene, so testing that would report a hit
+                // for every ray and prove nothing.
+                var eye = new Vector3(0f, 1.60f, -0.70f);
+
+                foreach (var (label, target) in new[]
+                         {
+                             ("Area 0", new Vector3(-100f, 1.5f, 0f)),
+                             ("Area B", new Vector3(100f, 1.8f, 0f)),
+                             ("Area C", new Vector3(200f, 2.1f, 0f)),
+                         })
+                {
+                    var direction = (target - eye).normalized;
+                    var distance = Vector3.Distance(eye, target);
+                    var ray = new Ray(eye, direction);
+                    var nearest = float.MaxValue;
+
+                    foreach (var (min, max) in k_Skyline)
+                    {
+                        var b = new Bounds((min + max) * 0.5f, max - min);
+
+                        if (b.IntersectRay(ray, out var hit) && hit < distance)
+                            nearest = Mathf.Min(nearest, hit);
+                    }
+
+                    problems += Report(sb, nearest < float.MaxValue,
+                        $"the sightline from Spawn_A to {label} is blocked by a skyline volume " +
+                        $"at {(nearest < float.MaxValue ? nearest.ToString("F0") : "no")} m " +
+                        $"of {distance:F0} m");
+                }
+            }
+
+            // ---- exterior props ---------------------------------------------------------
+            var props = root.Find("Exterior_Props");
+
+            if (props == null)
+            {
+                sb.AppendLine("  FAIL  Exterior_Props group is missing.");
+                problems++;
+            }
+            else
+            {
+                problems += Expect(sb, "exterior prop instances", props.childCount, k_Props.Length);
+                problems += Expect(sb, "Collider under Exterior_Props",
+                    props.GetComponentsInChildren<Collider>(true).Length, 0);
+                problems += Expect(sb, "Light under Exterior_Props",
+                    props.GetComponentsInChildren<Light>(true).Length, 0);
+
+                var badMaterials = 0;
+                var oversized = 0;
+
+                foreach (var r in props.GetComponentsInChildren<MeshRenderer>(true))
+                {
+                    foreach (var material in r.sharedMaterials)
+                    {
+                        // A null material or a null/error shader is what renders magenta.
+                        if (material == null || material.shader == null ||
+                            material.shader.name.Contains("InternalErrorShader"))
+                        {
+                            sb.AppendLine($"  FAIL  '{r.name}' has a missing material or shader " +
+                                          "— this is what renders as pink.");
+                            badMaterials++;
+                            continue;
+                        }
+
+                        foreach (var id in material.GetTexturePropertyNameIDs())
+                        {
+                            var tex = material.GetTexture(id);
+                            if (tex != null && Mathf.Max(tex.width, tex.height) > k_MaxPropTextureSize)
+                                oversized++;
+                        }
+                    }
+                }
+
+                problems += Report(sb, badMaterials == 0,
+                    "every prop material resolves to a real shader (no pink materials)");
+                problems += Report(sb, oversized == 0,
+                    $"every prop texture is at or below {k_MaxPropTextureSize} px " +
+                    $"({oversized} over budget)");
+
+                foreach (Transform prop in props)
+                {
+                    var b = prop.GetComponentsInChildren<MeshRenderer>(true)
+                        .Select(r => r.bounds)
+                        .Aggregate(new Bounds?(), (acc, cur) =>
+                        {
+                            if (acc == null) return cur;
+                            var v = acc.Value; v.Encapsulate(cur); return v;
+                        });
+
+                    if (b == null)
+                        continue;
+
+                    sb.AppendLine($"  info  {prop.name}: pos={prop.localPosition} " +
+                                  $"yaw={prop.localEulerAngles.y:F0} " +
+                                  $"size=({b.Value.size.x:F2}, {b.Value.size.y:F2}, {b.Value.size.z:F2}) " +
+                                  $"x-range=[{b.Value.min.x:F2}, {b.Value.max.x:F2}]");
+                }
             }
 
             // ---- inventory --------------------------------------------------------------

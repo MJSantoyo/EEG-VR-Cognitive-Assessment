@@ -96,3 +96,9 @@ crashlytics-build.properties
 /Assets/JeffamazedDev.meta
 /Assets/Urban_Props_Pack_Rozity/
 /Assets/Urban_Props_Pack_Rozity.meta
+
+# Locally imported third-party Unity Asset Store packages (second batch).
+/Assets/YughuesFreeArchitecturalMaterials/
+/Assets/YughuesFreeArchitecturalMaterials.meta
+/Assets/Realistic Metal Texture/
+/Assets/Realistic Metal Texture.meta

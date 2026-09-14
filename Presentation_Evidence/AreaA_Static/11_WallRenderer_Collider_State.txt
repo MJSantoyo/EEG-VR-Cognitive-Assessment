@@ -1,0 +1,21 @@
+SERIALIZED STATE OF THE THREE AREA A GRAYBOX WALLS
+Source: Assets/IKEA_EEG/Scenes/IKEA_EEG_Experiment.unity (saved scene)
+MeshRenderer m_Enabled must be 0; BoxCollider m_Enabled must be 1.
+
+GameObject 'Wall_A_Back'  (fileID 135314351)   m_IsActive: 1
+    Transform      fileID 135314352    (no m_Enabled)
+    MeshFilter     fileID 135314355    (no m_Enabled)
+    BoxCollider    fileID 135314354    m_Enabled: 1   m_IsTrigger: 0   m_Size: (1, 1, 1)
+    MeshRenderer   fileID 135314353    m_Enabled: 0
+
+GameObject 'Wall_A_Right'  (fileID 708601781)   m_IsActive: 1
+    Transform      fileID 708601782    (no m_Enabled)
+    MeshFilter     fileID 708601785    (no m_Enabled)
+    BoxCollider    fileID 708601784    m_Enabled: 1   m_IsTrigger: 0   m_Size: (1, 1, 1)
+    MeshRenderer   fileID 708601783    m_Enabled: 0
+
+GameObject 'Wall_A_Left'  (fileID 1828375848)   m_IsActive: 1
+    Transform      fileID 1828375849   (no m_Enabled)
+    MeshFilter     fileID 1828375852   (no m_Enabled)
+    BoxCollider    fileID 1828375851   m_Enabled: 1   m_IsTrigger: 0   m_Size: (1, 1, 1)
+    MeshRenderer   fileID 1828375850   m_Enabled: 0

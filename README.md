@@ -105,6 +105,26 @@ After a session, the offline analyzer replays the recording through the same fil
 
 Formal minimum PC specifications have not been benchmarked. Development has been done on a machine capable of running Quest Link, and everything so far has been tested on Windows.
 
+## Third-party Asset Store dependencies
+
+Some scenes reference assets from the Unity Asset Store. Their licences do not permit source
+redistribution, so **they are not included in this public repository** and are excluded through
+`.gitignore`. They must be imported locally from the Unity Asset Store into the exact folders
+below, so that the existing GUID references resolve:
+
+| Package | Expected folder |
+| --- | --- |
+| Urban Props Pack | `Assets/Urban_Props_Pack_Rozity/` |
+| 3D Low-Poly Modular Household Starter Pack | `Assets/JeffamazedDev/` |
+| Yughues Free Architectural Materials | `Assets/YughuesFreeArchitecturalMaterials/` |
+| Realistic Metal Texture | `Assets/Realistic Metal Texture/` |
+
+Until the required packages are imported, scenes and prefabs may show missing references for the
+objects that depend on them. The experiment's own logic, UI and EEG pipeline do not depend on any
+of these packages and run without them.
+
+No content, licence file or asset from these packages is copied into this repository.
+
 ## Installation and use
 
 Clone the repository:
