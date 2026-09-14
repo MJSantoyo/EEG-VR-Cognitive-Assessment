@@ -118,6 +118,9 @@ namespace IkeaEeg.EditorTools
             RunSection("RECALL RECORDING STOP REPORTING", CheckRecordingStopReporting);
             RunSection("AREA B FLOW + RESPONSE-TIME CONTRACT", CheckAreaBFlowContract);
             RunSection("AREA B READY CANCELS INSTRUCTION NARRATION", CheckAreaBReadyStopsNarration);
+            RunSection("SHADOW MODE — ISOLATION FROM THE EXPERIMENT", CheckShadowModeIsolation);
+            RunSection("SHADOW MODE — DECISIONS, BASELINE AND REPRODUCIBILITY",
+                CheckShadowModeDecisions);
             RunSection("PARTICIPANT-FACING BLOCK RESULT", CheckParticipantBlockResult);
             RunSection("AREA 0 — VR FAMILIARIZATION", CheckFamiliarization);
             RunSection("DUAL-TRIGGER SELECTION", CheckDualTriggerInput);
@@ -8352,6 +8355,280 @@ namespace IkeaEeg.EditorTools
                     "the Area B narration is bound to the AreaBInstructions state, which is " +
                     "what lets the epoch guard abandon it once READY has been pressed");
             }
+        }
+
+        /// <summary>
+        /// Shadow mode must be incapable of touching the experiment.
+        ///
+        /// Checked STRUCTURALLY, not by reading the comments: by reflection over every field
+        /// and by a scan of the source for writes to experiment types. A promise in a doc
+        /// comment is not a guarantee; an assertion that fails the build is.
+        /// </summary>
+        static void CheckShadowModeIsolation()
+        {
+            var controller = typeof(IkeaEeg.Neuro.ShadowModeController);
+            var sink = typeof(IkeaEeg.Neuro.ShadowDecisionSink);
+
+            Assert(typeof(MonoBehaviour).IsAssignableFrom(controller),
+                "ShadowModeController is a MonoBehaviour");
+
+            // Types shadow mode must never hold, because holding one is the only way it could
+            // change difficulty, timing, stimuli or UI.
+            var forbidden = new[]
+            {
+                typeof(ExperimentManager), typeof(ExperimentConfig),
+                typeof(ChairSelectionTask), typeof(ExperimentUIController),
+                typeof(IkeaEeg.XR.XRRigTeleporter), typeof(IkeaEeg.Memory.VoiceRecallManager),
+                typeof(IkeaEeg.Interaction.RecognitionResponsePanel),
+            };
+
+            foreach (var type in new[] { controller, sink })
+            {
+                var fields = type.GetFields(BindingFlags.Instance | BindingFlags.Static |
+                                            BindingFlags.Public | BindingFlags.NonPublic);
+
+                foreach (var field in fields)
+                {
+                    var bad = forbidden.FirstOrDefault(f => f.IsAssignableFrom(field.FieldType));
+
+                    Assert(bad == null,
+                        $"{type.Name}.{field.Name} does not reference {bad?.Name ?? "any experiment type"}");
+                }
+            }
+
+            // Source scan: no assignment or method call INTO an experiment type.
+            foreach (var file in new[]
+                     {
+                         "Assets/IKEA_EEG/Scripts/Neuro/ShadowModeController.cs",
+                         "Assets/IKEA_EEG/Scripts/Neuro/ShadowDecisionSink.cs",
+                         "Assets/IKEA_EEG/Scripts/Neuro/ShadowBaseline.cs",
+                         "Assets/IKEA_EEG/Scripts/Neuro/ShadowDecision.cs",
+                         "Assets/IKEA_EEG/Scripts/Neuro/WorkloadLevel.cs",
+                     })
+            {
+                Assert(File.Exists(file), $"{Path.GetFileName(file)} exists");
+
+                if (!File.Exists(file))
+                    continue;
+
+                var source = StripCommentsAndAttributes(File.ReadAllText(file));
+
+                foreach (var name in new[]
+                         {
+                             "ExperimentManager", "ExperimentConfig", "ChairSelectionTask",
+                             "ExperimentUIController", "XRRigTeleporter", "ChairTarget",
+                         })
+                {
+                    Assert(!source.Contains(name),
+                        $"{Path.GetFileName(file)} contains no reference to {name}");
+                }
+            }
+
+            // The pipeline event must be an event, so a subscriber cannot replace or raise it.
+            var evt = typeof(EegFeaturePipeline).GetEvent("featuresPublished");
+
+            Assert(evt != null, "EegFeaturePipeline exposes the featuresPublished event");
+            Assert(evt == null || typeof(EegFeaturePipeline)
+                    .GetField("featuresPublished", BindingFlags.Instance | BindingFlags.Public) == null,
+                "featuresPublished is an event, not a public delegate field a consumer could overwrite");
+
+            // Existing spectral configuration must be untouched by this work.
+            var pipelineSource = StripCommentsAndAttributes(
+                File.ReadAllText("Assets/IKEA_EEG/Scripts/Data/EegFeaturePipeline.cs"));
+
+            Assert(pipelineSource.Contains("PublishFeatures(features)"),
+                "the pipeline routes its publications through the single publication point");
+            Assert(pipelineSource.Contains("latest = saved"),
+                "the baseline-capture restore still bypasses publication, so a baseline capture " +
+                "does not emit a phantom window");
+
+            // ---- Scene wiring: exactly one, and never two ------------------------------
+            var inScene = Object.FindObjectsByType<IkeaEeg.Neuro.ShadowModeController>(
+                FindObjectsInactive.Include, FindObjectsSortMode.None).Length;
+
+            Assert(inScene <= 1,
+                $"at most one ShadowModeController exists in the scene ({inScene})");
+
+            if (k_ShadowControllerWiredIntoScene)
+            {
+                Assert(inScene == 1,
+                    $"exactly one ShadowModeController is wired into the scene ({inScene})");
+            }
+            else
+            {
+                Assert(inScene == 0,
+                    $"Phase 1: the controller is deliberately NOT wired into the scene yet " +
+                    $"({inScene} found). Flip k_ShadowControllerWiredIntoScene to true in " +
+                    "Phase 2, when the scene gains the component, and this becomes an " +
+                    "exactly-one requirement.");
+            }
+        }
+
+        /// <summary>
+        /// PHASE GATE, not a weakened assertion.
+        ///
+        /// Phase 1 ships the code without touching the scene, so the correct expectation is
+        /// zero. Phase 2 wires the component and flips this to true, at which point the check
+        /// above demands exactly one. Either way the suite asserts a precise number — it never
+        /// simply tolerates whatever it finds.
+        /// </summary>
+        const bool k_ShadowControllerWiredIntoScene = false;
+
+        /// <summary>
+        /// The decision path, driven directly with synthetic feature windows.
+        ///
+        /// No scene, no pipeline and no headset: the controller's Evaluate is pure given its
+        /// accumulated baseline, which is exactly what makes shadow mode auditable.
+        /// </summary>
+        static void CheckShadowModeDecisions()
+        {
+            var host = new GameObject("__IKEA_EEG_SelfTest_Shadow");
+
+            try
+            {
+                var controller = host.AddComponent<IkeaEeg.Neuro.ShadowModeController>();
+
+                // ---- null and invalid inputs -> Indeterminate ---------------------------
+                var nullDecision = controller.Evaluate(null);
+
+                Assert(nullDecision.level == IkeaEeg.Neuro.WorkloadLevel.Indeterminate &&
+                       nullDecision.rejectedReason == IkeaEeg.Neuro.ShadowRejection.FeatureInvalid,
+                    $"a null window yields Indeterminate/FeatureInvalid ({nullDecision.level}/" +
+                    $"{nullDecision.rejectedReason})");
+
+                var invalid = Window(theta: 40d, alpha: 12d);
+                invalid.featureValidity = false;
+
+                var invalidDecision = controller.Evaluate(invalid);
+
+                Assert(invalidDecision.level == IkeaEeg.Neuro.WorkloadLevel.Indeterminate,
+                    "a window the pipeline marked invalid yields Indeterminate");
+                Assert(!invalidDecision.baselineValid,
+                    "an invalid window does not create a baseline");
+
+                // ---- rejected windows are still recorded --------------------------------
+                Assert(invalidDecision.rejectedReason != IkeaEeg.Neuro.ShadowRejection.None &&
+                       !string.IsNullOrEmpty(invalidDecision.ToCsvRow()),
+                    "a rejected window still produces a full output row carrying its reason");
+
+                // ---- insufficient baseline -> Indeterminate -----------------------------
+                controller.ResetSession();
+
+                var early = controller.Evaluate(Window(40d, 12d));
+
+                Assert(early.level == IkeaEeg.Neuro.WorkloadLevel.Indeterminate &&
+                       early.rejectedReason == IkeaEeg.Neuro.ShadowRejection.BaselineInsufficient,
+                    $"the first valid window reports BaselineInsufficient ({early.rejectedReason})");
+
+                // ---- a full baseline still yields Indeterminate while no rule is approved -
+                controller.ResetSession();
+
+                IkeaEeg.Neuro.ShadowDecision last = default;
+                for (var i = 0; i < IkeaEeg.Neuro.ShadowBaseline.MinimumWindows + 2; i++)
+                    last = controller.Evaluate(Window(40d + i, 12d + i * 0.1d));
+
+                Assert(last.baselineValid,
+                    $"a baseline forms after {IkeaEeg.Neuro.ShadowBaseline.MinimumWindows} " +
+                    $"accepted windows ({controller.acceptedBaselineWindows} accepted)");
+                Assert(!double.IsNaN(last.normalizedIndex),
+                    "the normalised index is computed once the baseline is valid");
+                Assert(last.level == IkeaEeg.Neuro.WorkloadLevel.Indeterminate &&
+                       last.rejectedReason == IkeaEeg.Neuro.ShadowRejection.NoApprovedRule,
+                    $"with no approved rule the label stays Indeterminate/NoApprovedRule " +
+                    $"({last.level}/{last.rejectedReason}) — thresholds are not invented");
+
+                // ---- required output fields ---------------------------------------------
+                Assert(last.montageStatus == "UNVERIFIED",
+                    $"montage_status is pinned UNVERIFIED ({last.montageStatus})");
+                Assert(!string.IsNullOrEmpty(last.qualityRuleVersion) &&
+                       !string.IsNullOrEmpty(last.controllerVersion),
+                    "quality_rule_version and controller_version are stamped on every row");
+
+                foreach (var column in new[]
+                         {
+                             "montage_status", "baseline_valid", "quality_rule_version",
+                             "controller_version", "rejected_reason",
+                         })
+                {
+                    Assert(IkeaEeg.Neuro.ShadowDecision.CsvHeader.Contains(column),
+                        $"the output header declares {column}");
+                }
+
+                // ---- reproducibility -----------------------------------------------------
+                var a = new GameObject("__Shadow_A").AddComponent<IkeaEeg.Neuro.ShadowModeController>();
+                var b = new GameObject("__Shadow_B").AddComponent<IkeaEeg.Neuro.ShadowModeController>();
+
+                var rowsA = new List<string>();
+                var rowsB = new List<string>();
+
+                for (var i = 0; i < 12; i++)
+                {
+                    rowsA.Add(a.Evaluate(Window(30d + i * 1.5d, 9d + i * 0.25d)).ToCsvRow());
+                    rowsB.Add(b.Evaluate(Window(30d + i * 1.5d, 9d + i * 0.25d)).ToCsvRow());
+                }
+
+                Assert(rowsA.SequenceEqual(rowsB),
+                    "two controllers fed identical window sequences produce byte-identical output");
+
+                Object.DestroyImmediate(a.gameObject);
+                Object.DestroyImmediate(b.gameObject);
+
+                // ---- the median baseline survives an artefact the mean would not ---------
+                var robust = new ShadowBaselineProbe();
+                Assert(robust.MedianSurvivesOutlier(),
+                    "the baseline uses a median, so one artefact window cannot move it by " +
+                    "orders of magnitude (the 8 September delayed-phase failure mode)");
+            }
+            finally
+            {
+                Object.DestroyImmediate(host);
+            }
+        }
+
+        /// <summary>Small helper so the robustness claim above is actually exercised.</summary>
+        sealed class ShadowBaselineProbe
+        {
+            public bool MedianSurvivesOutlier()
+            {
+                var baseline = new IkeaEeg.Neuro.ShadowBaseline();
+
+                for (var i = 0; i < 12; i++)
+                    baseline.Accumulate(30d, 10d);
+
+                var clean = baseline.thetaBaseline;
+
+                baseline.Accumulate(1_000_000d, 10d);   // the artefact
+
+                var after = baseline.thetaBaseline;
+
+                return System.Math.Abs(after - clean) < 5d;
+            }
+        }
+
+        /// <summary>A minimal, valid synthetic feature window.</summary>
+        static LatestEegFeatures Window(double theta, double alpha)
+        {
+            return new LatestEegFeatures
+            {
+                analysisTimestamp = 1000d,
+                windowStart = 1000d,
+                windowEnd = 1004d,
+                windowSeconds = 4d,
+                sampleCount = 1000,
+                channelCount = 8,
+                sampleRateHz = 250d,
+                quality = EegQualityFlags.None,
+                filterReady = true,
+                featureValidity = true,
+                thetaPerChannel = new[] { theta, theta, theta, theta, theta, theta, theta, theta },
+                alphaPerChannel = new[] { alpha, alpha, alpha, alpha, alpha, alpha, alpha, alpha },
+                channelLabels = new[] { "Fp1", "F3", "Fz", "F4", "Cz", "P3", "Pz", "P4" },
+                frontalTheta = theta,
+                posteriorAlpha = alpha,
+                roiValid = true,
+                frontalThetaValid = true,
+                posteriorAlphaValid = true,
+            };
         }
 
         static void CheckAreaBFlowContract()

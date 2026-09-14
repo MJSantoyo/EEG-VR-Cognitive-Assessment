@@ -406,6 +406,42 @@ namespace IkeaEeg.Data
         /// <summary>The latest computed feature snapshot. The monitor reads this and nothing else.</summary>
         public LatestEegFeatures latest { get; private set; }
 
+        /// <summary>
+        /// Raised after every window this pipeline publishes, with the features exactly as
+        /// computed. READ-ONLY BY CONTRACT: subscribers observe and must not call back into
+        /// the pipeline, so nothing downstream can alter filtering, windowing, band limits or
+        /// any other spectral parameter.
+        ///
+        /// Added for shadow mode. Raising it is the only behavioural change: no value, no
+        /// threshold and no processing step above was modified.
+        /// </summary>
+        public event System.Action<LatestEegFeatures> featuresPublished;
+
+        /// <summary>
+        /// Single publication point: assigns <see cref="latest"/> and notifies subscribers.
+        ///
+        /// A throwing subscriber is contained here. Shadow mode is an observer and must never
+        /// be able to abort an acquisition window.
+        /// </summary>
+        void PublishFeatures(LatestEegFeatures features)
+        {
+            latest = features;
+
+            var handler = featuresPublished;
+            if (handler == null)
+                return;
+
+            try
+            {
+                handler(features);
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[IKEA_EEG] A featuresPublished subscriber threw and was " +
+                                 $"ignored: {e.Message}");
+            }
+        }
+
         /// <summary>The filtered history, for visualisation. Never the analysis of record.</summary>
         public RawEegRingBuffer filteredBuffer => m_Filtered;
 
@@ -638,7 +674,7 @@ namespace IkeaEeg.Data
             {
                 features.quality |= EegQualityFlags.InsufficientSamples;
                 features.featureValidity = false;
-                latest = features;
+                PublishFeatures(features);
                 return features;
             }
 
@@ -653,7 +689,7 @@ namespace IkeaEeg.Data
             {
                 features.quality |= EegQualityFlags.InsufficientSamples;
                 features.featureValidity = false;
-                latest = features;
+                PublishFeatures(features);
                 return features;
             }
 
@@ -673,7 +709,7 @@ namespace IkeaEeg.Data
             {
                 features.quality |= EegQualityFlags.InsufficientSamples;
                 features.featureValidity = false;
-                latest = features;
+                PublishFeatures(features);
                 return features;
             }
 
@@ -763,7 +799,7 @@ namespace IkeaEeg.Data
             features.featureValidity = features.quality == EegQualityFlags.None &&
                                        features.roiValid;
 
-            latest = features;
+            PublishFeatures(features);
             return features;
         }
 
