@@ -106,6 +106,8 @@ MonoBehaviour:
   recognitionDelayedNarrationClips:
   - id: EN
     clip: {fileID: 8300000, guid: 56f9dfb26610842449fe4db7ec8a6ece, type: 3}
+  preTaskRestNarrationClips: []
+  postTaskRestNarrationClips: []
   recordingActiveText: "Recording\u2026"
   restartDeletesDiscardedRunFiles: 0
   protocolMode: 1

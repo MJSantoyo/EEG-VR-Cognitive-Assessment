@@ -4298,6 +4298,49 @@ namespace IkeaEeg.Experiment
         // RESTING EEG ACQUISITION
         // ---------------------------------------------------------------------------------
 
+        /// <summary>
+        /// Speaks a resting-block instruction through the EXISTING narration path, and returns
+        /// the clip length so the caller can hold the screen until the voice has finished.
+        ///
+        /// Same architecture as every other spoken instruction in this project: a pre-generated
+        /// per-language clip looked up out of ExperimentConfig, played through ExperimentAudio
+        /// by RunNarrationSequence. No second TTS system, no runtime synthesis.
+        ///
+        /// DEGRADES TO TEXT. A missing clip warns and returns 0 — the instruction is still on
+        /// the panel and the block still runs. That matters here because the clips have to be
+        /// generated before they exist, and a session must not be blocked on an audio asset.
+        ///
+        /// It is called BEFORE the acquisition interval and never inside it: the 180 s recording
+        /// itself is silent, which is the whole point of the block.
+        /// </summary>
+        float SpeakRestInstructions(bool preTask, ExperimentState state)
+        {
+            if (m_Audio == null || m_Config == null)
+                return 0f;
+
+            var clip = preTask
+                ? m_Config.GetPreTaskRestNarration(ExperimentLocalization.language)
+                : m_Config.GetPostTaskRestNarration(ExperimentLocalization.language);
+
+            var label = preTask ? "PreTaskRestInstructions" : "PostTaskRestInstructions";
+
+            if (clip == null)
+            {
+                Debug.LogWarning($"[IKEA_EEG] No {label} narration for " +
+                                 $"{ExperimentLocalization.languageCode}. The instruction is " +
+                                 "readable on the panel but will not be spoken. Generate the " +
+                                 "clips with the narration generator to enable it.");
+                return 0f;
+            }
+
+            StopParticipantNarration($"{label.ToLowerInvariant()}");
+            m_NarrationFlow = StartCoroutine(RunNarrationSequence(
+                new List<(AudioClip, string)> { (clip, label) },
+                "resting instructions", state));
+
+            return clip.length;
+        }
+
         /// <summary>Set by the READY control that opens the post-task resting block.</summary>
         bool m_RestReadyPressed;
 
@@ -4391,12 +4434,23 @@ namespace IkeaEeg.Experiment
             if (m_RecognitionPanel != null)
                 m_RecognitionPanel.Show(false);
 
+            // THE TITLE COMES DOWN. "COGNITIVE ASSESSMENT" sits at +480 and the instruction
+            // rect ends at +430, and a TMP label does not clip to its rect — the three-paragraph
+            // resting instruction overflowed upward into the heading. The heading tells the
+            // participant nothing they need during a rest block, so it is what gives way. It is
+            // hidden, not moved or resized, and it is restored the moment the block ends.
+            if (m_UI != null)
+                m_UI.ShowAreaATitle(false);
+
             setText?.Invoke(ExperimentLocalization.Get(instructionKey), string.Empty);
 
             // ---- Instructions --------------------------------------------------------------
-            // READ, never spoken. Instruction narration is allowed elsewhere in this project,
-            // but a resting block that began moments after a voice stopped would carry the
-            // auditory response to that voice into the recording.
+            // SPOKEN here, through the project's existing narration path, and never again once
+            // the acquisition interval begins. Instruction narration is allowed in this project;
+            // a resting RECORDING may not contain speech, so the voice finishes before the
+            // fixation point goes up and nothing inside the 180 s plays audio at all.
+            var narrationSeconds = SpeakRestInstructions(!requireReadyPress, state);
+
             if (requireReadyPress)
             {
                 m_RestReadyPressed = false;
@@ -4411,10 +4465,21 @@ namespace IkeaEeg.Experiment
 
                 if (m_UI != null)
                     m_UI.ShowRestReadyButton(false);
+
+                // A participant who presses READY while the instruction is still being spoken
+                // would otherwise carry the rest of that sentence into the recording.
+                StopParticipantNarration("post-task rest acquisition starting");
             }
             else
             {
-                var deadline = Time.time + m_Config.restInstructionDurationSeconds;
+                // HOLD UNTIL THE VOICE HAS FINISHED, with the configured window as the floor —
+                // the same rule Area A already applies to its own spoken instructions. Starting
+                // a resting recording while the participant is still being told what to do would
+                // put the response to that instruction inside the recording.
+                var window = Mathf.Max(m_Config.restInstructionDurationSeconds,
+                    narrationSeconds + 0.5f);
+
+                var deadline = Time.time + window;
 
                 while (Time.time < deadline && m_State != ExperimentState.Aborted)
                     yield return null;
@@ -4488,6 +4553,9 @@ namespace IkeaEeg.Experiment
             {
                 m_UI.ShowFixationPoint(false);
                 m_UI.ShowRecenterButtons(true);
+
+                // The assessment UI resumes, so its heading comes back.
+                m_UI.ShowAreaATitle(true);
             }
 
             setText?.Invoke(string.Empty, string.Empty);

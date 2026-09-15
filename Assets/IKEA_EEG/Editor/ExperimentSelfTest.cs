@@ -116,6 +116,8 @@ namespace IkeaEeg.EditorTools
                 CheckBlock13SessionControlLock);
             RunSection("BLOCK 12 — RESTING EEG ACQUISITION BLOCKS",
                 CheckBlock12RestingAcquisition);
+            RunSection("BLOCK 13 — RESTING UX: TITLE, FIXATION, NARRATION, MOUSE",
+                CheckBlock13RestingRefinements);
             RunSection("LANGUAGE WORD SETS + PROVENANCE", CheckLanguageWordSets);
             RunSection("RECALL ADAPTIVE STOP (SILENCE DETECTION)", CheckRecallSilenceDetector);
             RunSection("RECALL RECORDING STOP REPORTING", CheckRecordingStopReporting);
@@ -7322,15 +7324,30 @@ namespace IkeaEeg.EditorTools
                 Assert(block.Contains("ShowFixationPoint(true)"),
                     "a stationary fixation point is raised for the acquisition interval");
 
-                // No narration, no audio, at all.
+                // NO AUDIO DURING THE ACQUISITION INTERVAL.
+                //
+                // NARROWED 2026-09-15. This used to forbid audio anywhere in the block, which was
+                // right when the block had none — but the instruction is now SPOKEN, by design,
+                // before the recording starts. The rule was never "the block is silent"; it was
+                // "the RECORDING is silent". Measuring from the start marker says exactly that,
+                // and would still fail if a cue were added inside the 180 s.
+                var acquisitionStart = block.IndexOf("Log(startEvent",
+                    System.StringComparison.Ordinal);
+
+                Assert(acquisitionStart >= 0, "the acquisition start marker is emitted");
+
+                var acquisitionOnly = acquisitionStart >= 0
+                    ? block.Substring(acquisitionStart)
+                    : block;
+
                 foreach (var forbidden in new[]
                          {
                              "Speak", "PlayCue", "AudioCue", "GetWordClip", "PlayNarration",
                          })
                 {
-                    Assert(!block.Contains(forbidden),
-                        $"the rest block contains no {forbidden} — a resting recording carries " +
-                        "no speech and no cue");
+                    Assert(!acquisitionOnly.Contains(forbidden),
+                        $"the 180 s acquisition interval contains no {forbidden} — the spoken " +
+                        "instruction finishes before the recording begins");
                 }
 
                 // No acquisition interference.
@@ -7552,6 +7569,388 @@ namespace IkeaEeg.EditorTools
                 Assert(!pipelineSource.Contains(token),
                     $"the feature pipeline knows nothing about {token} — the rest blocks record, " +
                     "they do not alter processing");
+            }
+        }
+
+
+        /// <summary>
+        /// Block 13: the resting-block usability refinements — title overlap, fixation size,
+        /// spoken instructions, and the desktop mouse layer.
+        ///
+        /// All four came from ONE headset run, and three of them are the kind of defect no
+        /// editor assertion had been looking for: a heading that collided with text because TMP
+        /// does not clip to its rect, a fixation target too small to hold a gaze on, and an
+        /// instruction that could be read but not heard. The assertions below are written to
+        /// measure the things that were actually wrong.
+        /// </summary>
+        static void CheckBlock13RestingRefinements()
+        {
+            var ui = Object.FindAnyObjectByType<ExperimentUIController>();
+            Assert(ui != null, "the UI controller is in the scene");
+
+            if (ui == null)
+                return;
+
+            var managerSource = StripCommentsAndAttributes(File.ReadAllText(
+                "Assets/IKEA_EEG/Scripts/Experiment/ExperimentManager.cs"));
+
+            // ---- A: the title comes down for the rest instruction ---------------------------
+            var title = UiLabel(ui, "m_AreaATitle");
+            var instruction = UiLabel(ui, "m_AreaAInstruction");
+
+            Assert(title != null && instruction != null,
+                "the Area A title and instruction labels are bound");
+
+            if (title != null && instruction != null)
+            {
+                // THE GEOMETRY THAT CAUSED IT. The two rects are adjacent, and a TMP label does
+                // not clip — so a tall instruction overflows upward into the heading. This
+                // asserts the collision is real, which is what makes hiding the title necessary
+                // rather than cosmetic.
+                var titleRect = (RectTransform)title.transform;
+                var instrRect = (RectTransform)instruction.transform;
+
+                var titleBottom = titleRect.anchoredPosition.y - titleRect.sizeDelta.y * 0.5f;
+                var instrTop = instrRect.anchoredPosition.y + instrRect.sizeDelta.y * 0.5f;
+
+                Info($"Area A bands — title bottom {titleBottom:F0}, instruction top {instrTop:F0}");
+
+                var previousLanguage = ExperimentLocalization.language;
+
+                try
+                {
+                    ExperimentLocalization.ResetForTesting();
+                    ExperimentLocalization.SetLanguage(ExperimentLanguage.English);
+
+                    var restText = ExperimentLocalization.Get(LocKeys.PreTaskRestInstructions);
+                    var previous = instruction.text;
+
+                    try
+                    {
+                        instruction.text = restText;
+                        instruction.ForceMeshUpdate();
+
+                        var needed = instruction.GetPreferredValues(
+                            restText, instrRect.sizeDelta.x, 0f).y;
+
+                        var overflowTop = instrRect.anchoredPosition.y +
+                                          Mathf.Max(needed, instrRect.sizeDelta.y) * 0.5f;
+
+                        Assert(overflowTop > titleBottom,
+                            $"the resting instruction genuinely overflows into the title band " +
+                            $"(text reaches {overflowTop:F0}, title starts at {titleBottom:F0}) " +
+                            "— this is the reported overlap, measured");
+                    }
+                    finally
+                    {
+                        instruction.text = previous;
+                    }
+                }
+                finally
+                {
+                    ExperimentLocalization.ResetForTesting();
+
+                    if (previousLanguage != ExperimentLanguage.None)
+                        ExperimentLocalization.SetLanguage(previousLanguage);
+                }
+
+                // THE FIX: hidden, and restored.
+                ui.ShowAreaATitle(false);
+                Assert(!ui.areaATitleVisible, "the title can be hidden");
+
+                ui.ShowAreaATitle(true);
+                Assert(ui.areaATitleVisible, "and restored");
+
+                Assert(Mathf.Abs(((RectTransform)title.transform).anchoredPosition.y -
+                                 titleRect.anchoredPosition.y) < 0.01f,
+                    "hiding the title does not MOVE or resize it — the rest of the experiment " +
+                    "sees exactly the layout it always did");
+            }
+
+            var blockStart = managerSource.IndexOf("IEnumerator RunRestBlock(",
+                System.StringComparison.Ordinal);
+
+            Assert(blockStart >= 0, "the shared rest block exists");
+
+            var block = string.Empty;
+
+            if (blockStart >= 0)
+            {
+                var blockEnd = managerSource.IndexOf("IEnumerator RunDelayedRecognitionAreaC",
+                    blockStart, System.StringComparison.Ordinal);
+
+                if (blockEnd < blockStart)
+                    blockEnd = managerSource.Length;
+
+                block = managerSource.Substring(blockStart, blockEnd - blockStart);
+
+                var hide = block.IndexOf("ShowAreaATitle(false)", System.StringComparison.Ordinal);
+                var show = block.IndexOf("ShowAreaATitle(true)", System.StringComparison.Ordinal);
+
+                Assert(hide >= 0 && show > hide,
+                    "the block hides the title before the instruction and restores it at the end");
+
+                // ONE shared block means the same treatment in both areas, which is what the
+                // brief asked for when it said to apply the principle to POST_TASK_REST too.
+                Assert(Regex.Matches(managerSource, @"IEnumerator RunRestBlock\(").Count == 1,
+                    "pre- and post-task rest still share one implementation, so the title " +
+                    "behaviour cannot differ between them");
+            }
+
+            Assert(StripCommentsAndAttributes(File.ReadAllText(
+                        "Assets/IKEA_EEG/Scripts/UI/ExperimentUIController.cs"))
+                    .Contains("ShowAreaATitle(true)"),
+                "ResetUI restores the title, so no reset path can leave it hidden");
+
+            // ---- B: the fixation cross is bigger, and identical in both areas ---------------
+            var fixA = UiLabel(ui, "m_AreaAFixation");
+            var fixC = UiLabel(ui, "m_AreaCFixation");
+
+            Assert(fixA != null && fixC != null, "both fixation labels are bound");
+
+            if (fixA != null && fixC != null)
+            {
+                Assert(fixA.fontSize > 200f,
+                    $"the fixation cross is substantially larger than the original 96 pt " +
+                    $"({fixA.fontSize:F0} pt)");
+
+                Assert(Mathf.Abs(fixA.fontSize - fixC.fontSize) < 0.5f,
+                    $"PRE and POST use the SAME fixation size ({fixA.fontSize:F0} vs " +
+                    $"{fixC.fontSize:F0} pt) — the two recordings must present the same target");
+
+                var rectA = (RectTransform)fixA.transform;
+                var rectC = (RectTransform)fixC.transform;
+
+                Assert(rectA.sizeDelta == rectC.sizeDelta,
+                    $"and the same rect ({rectA.sizeDelta} vs {rectC.sizeDelta})");
+
+                Assert(rectA.sizeDelta.x > fixA.fontSize,
+                    $"the rect ({rectA.sizeDelta.x:F0} px) is large enough for the glyph " +
+                    $"({fixA.fontSize:F0} pt) — a cross clipped by its own rect would be worse " +
+                    "than a small one");
+
+                Assert(fixA.color == fixC.color, "the same colour in both areas");
+
+                // Centred and motionless: no animation component, no colour driver.
+                Assert(Mathf.Abs(rectA.anchoredPosition.x) < 0.01f &&
+                       Mathf.Abs(rectC.anchoredPosition.x) < 0.01f,
+                    "both fixation points are horizontally centred");
+
+                Assert(fixA.GetComponent<Animator>() == null &&
+                       fixC.GetComponent<Animator>() == null,
+                    "neither fixation point carries an Animator — it is stationary by " +
+                    "construction, not by convention");
+
+                Info($"fixation: {fixA.fontSize:F0} pt in a {rectA.sizeDelta.x:F0} px rect");
+            }
+
+            // ---- C: the instructions are spoken, and the acquisition is silent --------------
+            var config = AssetDatabase.LoadAssetAtPath<ExperimentConfig>(
+                ExperimentAssetBuilder.ConfigPath);
+
+            Assert(typeof(ExperimentConfig).GetMethod("GetPreTaskRestNarration") != null &&
+                   typeof(ExperimentConfig).GetMethod("GetPostTaskRestNarration") != null,
+                "the config exposes a narration lookup for each resting block, through the SAME " +
+                "per-language clip mechanism every other spoken instruction uses");
+
+            Assert(managerSource.Contains("SpeakRestInstructions("),
+                "the manager asks for the resting narration");
+
+            var speakStart = managerSource.IndexOf("float SpeakRestInstructions(",
+                System.StringComparison.Ordinal);
+
+            Assert(speakStart >= 0, "the resting narration helper exists");
+
+            if (speakStart >= 0)
+            {
+                var speakEnd = managerSource.IndexOf("IEnumerator RunPostTaskRest",
+                    speakStart, System.StringComparison.Ordinal);
+                var speak = speakEnd > speakStart
+                    ? managerSource.Substring(speakStart, speakEnd - speakStart)
+                    : managerSource.Substring(speakStart);
+
+                Assert(speak.Contains("RunNarrationSequence"),
+                    "it plays through the EXISTING narration coroutine — no second audio system");
+
+                Assert(speak.Contains("GetPreTaskRestNarration") &&
+                       speak.Contains("GetPostTaskRestNarration"),
+                    "it resolves the clip from the config, per language");
+
+                Assert(speak.Contains("return 0f"),
+                    "a missing clip degrades to text-only rather than blocking the session — " +
+                    "the clips have to be generated before they exist");
+            }
+
+            if (!string.IsNullOrEmpty(block))
+            {
+                // THE ORDER THAT MATTERS. Narration is requested BEFORE the fixation point goes
+                // up, and nothing plays audio after that.
+                var speakIndex = block.IndexOf("SpeakRestInstructions(",
+                    System.StringComparison.Ordinal);
+                var fixIndex = block.IndexOf("ShowFixationPoint(true)",
+                    System.StringComparison.Ordinal);
+                var startIndex = block.IndexOf("Log(startEvent", System.StringComparison.Ordinal);
+
+                Assert(speakIndex >= 0 && fixIndex > speakIndex,
+                    "the instruction is spoken BEFORE the fixation point appears");
+
+                Assert(startIndex > speakIndex,
+                    "and before the acquisition start marker");
+
+                // Everything after the start marker must be silent.
+                var acquisition = block.Substring(startIndex);
+
+                foreach (var forbidden in new[]
+                         {
+                             "Speak", "PlayCue", "AudioCue", "RunNarrationSequence", "GetWordClip",
+                         })
+                {
+                    Assert(!acquisition.Contains(forbidden),
+                        $"the 180 s acquisition interval contains no {forbidden} — once the " +
+                        "block begins, audio stays silent until it ends");
+                }
+
+                Assert(block.Contains("StopParticipantNarration"),
+                    "a READY pressed while the instruction is still being spoken cuts the voice, " +
+                    "so the rest of that sentence cannot land inside the recording");
+            }
+
+            // The generator can actually produce the clips.
+            var generatorSource = File.ReadAllText(
+                "Assets/IKEA_EEG/Editor/NarrationClipGenerator.cs");
+
+            Assert(generatorSource.Contains("PreTaskRest_Instructions") &&
+                   generatorSource.Contains("PostTaskRest_Instructions"),
+                "the narration generator knows both resting clip ids, so the audio can be " +
+                "produced by the existing pipeline rather than by hand");
+
+            Assert(generatorSource.Contains("preTaskRestNarrationClips") &&
+                   generatorSource.Contains("postTaskRestNarrationClips"),
+                "and assigns them into the config after generation");
+
+            if (config != null)
+            {
+                var preCount = config.preTaskRestNarrationClips?.Count ?? 0;
+                var postCount = config.postTaskRestNarrationClips?.Count ?? 0;
+
+                Info($"resting narration clips currently in the config: pre {preCount}, " +
+                     $"post {postCount}. ZERO means the generator has not been run yet — the " +
+                     "instruction is shown but not spoken until it is.");
+            }
+
+            // ---- D: the desktop mouse layer -------------------------------------------------
+            var mouse = Object.FindObjectsByType<DesktopMouseInteraction>(
+                FindObjectsInactive.Include, FindObjectsSortMode.None);
+
+            Assert(mouse.Length == 1,
+                $"exactly ONE desktop mouse helper is in the scene ({mouse.Length})");
+
+            // XR input is untouched: the existing module, the existing raycasters.
+            var modules = Object.FindObjectsByType<UnityEngine.XR.Interaction.Toolkit.UI.XRUIInputModule>(
+                FindObjectsInactive.Include, FindObjectsSortMode.None);
+
+            Assert(modules.Length == 1,
+                $"the EventSystem still has exactly one UnityEngine.XR.Interaction.Toolkit.UI.XRUIInputModule ({modules.Length}) — " +
+                "no second input module was introduced");
+
+            if (modules.Length == 1)
+            {
+                Assert(modules[0].enableMouseInput,
+                    "UnityEngine.XR.Interaction.Toolkit.UI.XRUIInputModule.enableMouseInput is on, which is what already makes the " +
+                    "uGUI buttons clickable — no per-button mouse code was needed for those");
+
+                Assert(modules[0].enableXRInput,
+                    "and XR input remains enabled — the mouse layer COEXISTS with the " +
+                    "controller rather than replacing it");
+            }
+
+            var canvases = Object.FindObjectsByType<Canvas>(
+                FindObjectsInactive.Include, FindObjectsSortMode.None)
+                .Where(c => c.name.StartsWith("UI_", System.StringComparison.Ordinal))
+                .ToArray();
+
+            var missingGraphic = canvases.Count(c =>
+                c.GetComponent<UnityEngine.UI.GraphicRaycaster>() == null);
+
+            var missingTracked = canvases.Count(c =>
+                c.GetComponent<UnityEngine.XR.Interaction.Toolkit.UI.TrackedDeviceGraphicRaycaster>() == null);
+
+            Assert(missingGraphic == 0,
+                $"every UI canvas has a GraphicRaycaster for the mouse ({missingGraphic} without)");
+
+            Assert(missingTracked == 0,
+                $"and still has its UnityEngine.XR.Interaction.Toolkit.UI.TrackedDeviceGraphicRaycaster for the controller ray " +
+                $"({missingTracked} without) — the Quest path is unchanged");
+
+            var mouseSource = StripCommentsAndAttributes(File.ReadAllText(
+                "Assets/IKEA_EEG/Scripts/XR/DesktopMouseInteraction.cs"));
+
+            Assert(mouseSource.Contains("wasPressedThisFrame"),
+                "one click = one activation: the helper fires on the RISING EDGE only, so a " +
+                "held button cannot repeat");
+
+            Assert(mouseSource.Contains("IsPointerOverGameObject"),
+                "a click that the EventSystem already handled is ignored, so clicking a uGUI " +
+                "button cannot ALSO select a 3D object behind it");
+
+            Assert(mouseSource.Contains("selectEntered.Invoke"),
+                "it raises the interactable's OWN selectEntered event — the same path the " +
+                "controller uses, so every existing latch and guard still applies");
+
+            foreach (var forbidden in new[]
+                     {
+                         "m_PendingRecognitionResponse", "RecognitionResponse", "ChairSelectionTask",
+                         "responseSelected", "ExperimentManager", "Log(",
+                     })
+            {
+                Assert(!mouseSource.Contains(forbidden),
+                    $"the mouse helper contains no {forbidden} — it cannot record a response, " +
+                    "score anything or log anything; it only raises a selection");
+            }
+
+            Assert(!mouseSource.Contains("enableXRInput") &&
+                   !mouseSource.Contains("XRRayInteractor") &&
+                   !mouseSource.Contains(".enabled = false"),
+                "it never disables, reconfigures or wraps an XR component");
+
+            // ---- E: regression --------------------------------------------------------------
+            var defaults = ScriptableObject.CreateInstance<ExperimentConfig>();
+
+            try
+            {
+                Assert(System.Math.Abs(defaults.preTaskRestDurationSeconds - 180f) < 0.001f &&
+                       System.Math.Abs(defaults.postTaskRestDurationSeconds - 180f) < 0.001f,
+                    "both resting blocks are STILL 180 s — this pass changed presentation, not " +
+                    "the acquisition design");
+            }
+            finally
+            {
+                Object.DestroyImmediate(defaults);
+            }
+
+            Assert(EventTypes.PreTaskRestStart == "PRE_TASK_REST_START" &&
+                   EventTypes.PreTaskRestEnd == "PRE_TASK_REST_END" &&
+                   EventTypes.PostTaskRestStart == "POST_TASK_REST_START" &&
+                   EventTypes.PostTaskRestEnd == "POST_TASK_REST_END",
+                "the four resting markers are unchanged");
+
+            Assert(File.ReadAllText("Assets/IKEA_EEG/Scripts/Data/RawEegRecorder.cs")
+                    .Contains("lsl_timestamp_analysis"),
+                "the raw EEG schema is unchanged");
+
+            Assert(IkeaEeg.Neuro.ShadowModeController.MontageVerified &&
+                   !IkeaEeg.Neuro.ShadowModeController.NormalizationApproved &&
+                   !IkeaEeg.Neuro.ShadowModeController.DecisionRuleApproved,
+                "Shadow Mode is exactly as the previous pass left it — no decision logic moved");
+
+            var shadowSource = StripCommentsAndAttributes(File.ReadAllText(
+                "Assets/IKEA_EEG/Scripts/Neuro/ShadowModeController.cs"));
+
+            foreach (var forbidden in new[]
+                     { "WorkloadLevel.Low", "WorkloadLevel.Moderate", "WorkloadLevel.High" })
+            {
+                Assert(!shadowSource.Contains(forbidden),
+                    $"still no {forbidden} anywhere in the controller");
             }
         }
 

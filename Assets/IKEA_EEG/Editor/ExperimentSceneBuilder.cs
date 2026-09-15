@@ -153,6 +153,14 @@ namespace IkeaEeg.EditorTools
 
                 BuildEventSystem(systemsRoot.transform);
 
+            // DEVELOPMENT AID, not participant functionality. Lets the left mouse button reach
+            // the 3D XRSimpleInteractable targets (recognition buttons, chairs, practice
+            // objects) that the EventSystem cannot see, so the protocol can be walked through
+            // on the desktop. uGUI buttons already work with a mouse and are left alone.
+            var desktopMouse = new GameObject("DesktopMouseInteraction");
+            desktopMouse.transform.SetParent(systemsRoot.transform);
+            desktopMouse.AddComponent<DesktopMouseInteraction>();
+
                 EditorUtility.DisplayProgressBar("IKEA_EEG", "Instantiating XR Origin…", 0.45f);
                 var xrOrigin = InstantiateXROrigin();
 
@@ -1085,12 +1093,18 @@ namespace IkeaEeg.EditorTools
                 // object changes for the whole 180 s, because a recording of rest must not
                 // contain a visual event.
                 //
+                // SIZE. 300 pt in a 560 px rect, raised from 96 pt after the first headset run
+                // reported the cross as too small to hold a gaze on. At the Area A canvas
+                // scale of 0.00095 m/px that is roughly a 0.28 m glyph seen from 2.1 m —
+                // about 7.6 degrees of visual angle, which is a comfortable fixation target
+                // rather than a speck. Identical in both areas, and still motionless.
+                //
                 // AUTHORED EMPTY. The glyph is written by ExperimentUIController when the
                 // point is raised. A builder-authored literal here would be participant-facing
                 // text with no localization binding, which the localization audit correctly
                 // rejects — and the audit should not have to learn that "+" is not a word.
                 fixation = CreateText("Txt_Fixation_A", canvas.transform,
-                    new Vector2(0f, 60f), new Vector2(200f, 200f), string.Empty, 96f,
+                    new Vector2(0f, 60f), new Vector2(560f, 560f), string.Empty, 300f,
                     TextAlignmentOptions.Center, new Color(0.86f, 0.88f, 0.92f)),
                 status = CreateText("Txt_Status", canvas.transform, new Vector2(0f, -110f),
                     new Vector2(1360f, 140f), string.Empty, 42f,
@@ -1619,7 +1633,7 @@ namespace IkeaEeg.EditorTools
                 // Pre- and post-task rest are only comparable if the participant was looking at
                 // the same place, at the same height, at the same distance.
                 fixation = CreateText("Txt_Fixation_C", canvas.transform,
-                    new Vector2(0f, 165f), new Vector2(200f, 200f), string.Empty, 96f,
+                    new Vector2(0f, 165f), new Vector2(560f, 560f), string.Empty, 300f,
                     TextAlignmentOptions.Center, new Color(0.86f, 0.88f, 0.92f)),
 
                 // READY for the POST-TASK rest.

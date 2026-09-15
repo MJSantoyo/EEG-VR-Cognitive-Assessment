@@ -50,6 +50,11 @@ namespace IkeaEeg.EditorTools
         /// <summary>Recognition DELAYED-phase instructions. Never a stimulus word.</summary>
         const string k_RecognitionDelayedId = "Recognition_Delayed_Instructions";
 
+        // Resting-block instructions. Same pipeline as every other instruction clip: the id
+        // becomes <LANG>_<id>.wav and is looked up out of ExperimentConfig at run time.
+        const string k_PreTaskRestId = "PreTaskRest_Instructions";
+        const string k_PostTaskRestId = "PostTaskRest_Instructions";
+
         /// <summary>
         /// One language's narration script and the local voice it needs.
         ///
@@ -95,6 +100,12 @@ namespace IkeaEeg.EditorTools
 
             /// <summary>Recognition delayed-phase instructions. Null where not approved.</summary>
             public string recognitionDelayedInstructions;
+
+            /// <summary>Spoken PRE-TASK resting instructions. Same meaning as the on-screen text.</summary>
+            public string preTaskRestInstructions;
+
+            /// <summary>Spoken POST-TASK resting instructions.</summary>
+            public string postTaskRestInstructions;
         }
 
         static readonly LanguageScript[] k_Scripts =
@@ -144,6 +155,21 @@ namespace IkeaEeg.EditorTools
                 recognitionDelayedInstructions =
                     "You will now be shown words again. " +
                     "For each word, select whether you saw it earlier.",
+
+                // Resting blocks. The spoken text carries the SAME meaning as the panel, in the
+                // same order, so a participant who listens and one who reads are given the same
+                // instruction.
+                preTaskRestInstructions =
+                    "Before we begin the assessment, we will record a short resting reference. " +
+                    "Please remain still, keep your eyes open, and look at the point in front " +
+                    "of you. " +
+                    "Avoid unnecessary movements until the recording is complete.",
+
+                postTaskRestInstructions =
+                    "The assessment is complete. We will now record a short resting period. " +
+                    "Please remain still, keep your eyes open, and look at the point in front " +
+                    "of you. " +
+                    "Avoid unnecessary movements until the recording is complete.",
             },
             new LanguageScript
             {
@@ -213,6 +239,13 @@ namespace IkeaEeg.EditorTools
                 recognitionInstructions = null,
                 areaBInstructions = null,
                 recognitionDelayedInstructions = null,
+
+                // DELIBERATELY NULL, for the same reason as the lines above: the resting
+                // instructions are participant-facing methodological text whose ES/JA wording
+                // has not been approved, and a synthetic voice reading an invented translation
+                // is worse than the visible gap.
+                preTaskRestInstructions = null,
+                postTaskRestInstructions = null,
             },
         };
 
@@ -327,6 +360,18 @@ namespace IkeaEeg.EditorTools
                              .Append(script.recognitionDelayedInstructions).Append('\n');
                     }
 
+                    if (!string.IsNullOrEmpty(script.preTaskRestInstructions))
+                    {
+                        lines.Append(k_PreTaskRestId).Append('|')
+                             .Append(script.preTaskRestInstructions).Append('\n');
+                    }
+
+                    if (!string.IsNullOrEmpty(script.postTaskRestInstructions))
+                    {
+                        lines.Append(k_PostTaskRestId).Append('|')
+                             .Append(script.postTaskRestInstructions).Append('\n');
+                    }
+
                     File.WriteAllText(linesPath, lines.ToString(), new UTF8Encoding(false));
 
                     if (!RunScript(scriptPath, Path.GetFullPath(folder), linesPath, voice))
@@ -422,6 +467,20 @@ namespace IkeaEeg.EditorTools
                 {
                     config.recognitionDelayedNarrationClips.Add(new NarrationClipEntry
                         { id = code, clip = delayedClip });
+                }
+
+                var preRestClip = LoadClip(code, k_PreTaskRestId);
+                if (preRestClip != null)
+                {
+                    config.preTaskRestNarrationClips.Add(new NarrationClipEntry
+                        { id = code, clip = preRestClip });
+                }
+
+                var postRestClip = LoadClip(code, k_PostTaskRestId);
+                if (postRestClip != null)
+                {
+                    config.postTaskRestNarrationClips.Add(new NarrationClipEntry
+                        { id = code, clip = postRestClip });
                 }
             }
 

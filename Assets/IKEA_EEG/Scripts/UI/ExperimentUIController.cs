@@ -501,6 +501,25 @@ namespace IkeaEeg.UI
         // ---------------------------------------------------------------------------------
 
         public void SetAreaATitle(string text) => SetText(m_AreaATitle, text);
+
+        /// <summary>
+        /// Shows or hides the Area A title bar ("COGNITIVE ASSESSMENT").
+        ///
+        /// WHY THIS EXISTS. The title sits at +480 and the Area A instruction rect runs to +430,
+        /// so they are already adjacent — and a TMP label does not clip to its rect. The resting
+        /// instruction is three paragraphs, far taller than the instruction rect, so its overflow
+        /// grew upward and collided with the title. Shrinking the text was the wrong answer for a
+        /// screen an older participant has to read; taking down a heading that says nothing the
+        /// participant needs during a rest block is the right one.
+        ///
+        /// HIDDEN, NOT MOVED. The title is restored the moment the assessment UI resumes, so
+        /// nothing about the rest of the experiment changes.
+        /// </summary>
+        public void ShowAreaATitle(bool visible) => SetActive(m_AreaATitle, visible);
+
+        /// <summary>True while the Area A title is on screen. Used by the self test.</summary>
+        public bool areaATitleVisible =>
+            m_AreaATitle != null && m_AreaATitle.gameObject.activeSelf;
         public void SetAreaAInstruction(string text) => SetText(m_AreaAInstruction, text);
         public void SetAreaAStatus(string text) => SetText(m_AreaAStatus, text);
 
@@ -809,6 +828,9 @@ namespace IkeaEeg.UI
             // a blank panel.
             ShowFixationPoint(false);
             ShowRestReadyButton(false);
+
+            // The title belongs to the normal assessment UI, so a reset puts it back.
+            ShowAreaATitle(true);
 
             SetWarning(string.Empty);
             ShowRecenterButtons(true);
