@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 using IkeaEeg.Core;
@@ -34,6 +34,13 @@ namespace IkeaEeg.Neuro
         public string filePath => m_FilePath;
         public int pendingRowCount => m_Pending.Count;
 
+        /// <summary>
+        /// Rows handed to this sink. ZERO after a run with EEG connected means nothing upstream
+        /// ever produced a decision — the file will hold a header and nothing else, because the
+        /// header is written on Initialize and rows only here.
+        /// </summary>
+        public long rowsWritten { get; private set; }
+
         public void Initialize(SessionContext context)
         {
             if (context == null || string.IsNullOrEmpty(context.sessionDirectory))
@@ -62,6 +69,8 @@ namespace IkeaEeg.Neuro
 
         public void Write(ShadowDecision decision)
         {
+            rowsWritten++;
+
             if (string.IsNullOrEmpty(m_FilePath))
                 return;
 
@@ -96,7 +105,23 @@ namespace IkeaEeg.Neuro
             }
         }
 
-        public void Shutdown() => Flush();
+        public void Shutdown()
+        {
+            Flush();
+
+            // Stated plainly at session end, so an empty file is never a silent outcome.
+            if (rowsWritten == 0)
+            {
+                Debug.LogWarning("[IKEA_EEG] Shadow decisions: 0 rows written. " +
+                                 "shadow_decisions.csv holds only its header. Either no EEG " +
+                                 "arrived this session, or nothing upstream published a feature " +
+                                 "window — check the pipeline's windowsPublished count.");
+                return;
+            }
+
+            Debug.Log($"[IKEA_EEG] Shadow decisions: {rowsWritten} row(s) written to " +
+                      $"{m_FilePath}.");
+        }
 
         void OnDestroy() => Flush();
     }

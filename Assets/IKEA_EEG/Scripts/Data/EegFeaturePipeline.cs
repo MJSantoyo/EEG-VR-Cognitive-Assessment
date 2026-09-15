@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
@@ -340,6 +340,46 @@ namespace IkeaEeg.Data
                  "meaningful estimate.")]
         [SerializeField] double m_MinimumWindowSeconds = 2.0;
 
+        // ---- Runtime publication cadence -------------------------------------------------
+        //
+        // THE BUG THIS FIXES, found after the first real AURA run. This class filled its
+        // buffer on every sample and computed features ONLY when something called
+        // AnalyzeLatestWindow. The only callers were two Editor menu tools, so during an actual
+        // session nothing ever asked: 249,021 samples were filtered and buffered over 996 s,
+        // featuresPublished never fired once, and every downstream observer sat idle. The
+        // shadow CSV had a header and no rows because the header is written on Initialize and
+        // rows only on Write.
+        //
+        // The pipeline was built as an ON-DEMAND analyser for diagnostics and was never given a
+        // cadence of its own; the shadow integration then assumed a publisher that publishes.
+        // This is that cadence, and it is the whole fix — no filter, window, Welch, band or QC
+        // value changes, and AnalyzeLatestWindow is called exactly as the diagnostics call it.
+
+        [Tooltip("Analyse and publish a feature window on a timer during play. OFF leaves the " +
+                 "pipeline in its original on-demand mode, where only an explicit " +
+                 "AnalyzeLatestWindow call produces anything.")]
+        [SerializeField] bool m_PublishContinuously = true;
+
+        [Tooltip("Seconds between published windows. 0 means one window length, so consecutive " +
+                 "windows abut without overlapping.")]
+        [SerializeField] double m_PublishIntervalSeconds;
+
+        double m_NextPublishTime;
+        long m_WindowsPublished;
+
+        /// <summary>
+        /// Feature windows actually published this session. ZERO after a run with EEG connected
+        /// means this loop never ran — which is precisely the failure that hid here before.
+        /// </summary>
+        public long windowsPublished => m_WindowsPublished;
+
+        /// <summary>True when the pipeline is publishing on its own timer.</summary>
+        public bool publishesContinuously => m_PublishContinuously;
+
+        /// <summary>The cadence actually in use, in seconds.</summary>
+        public double publishIntervalSeconds =>
+            m_PublishIntervalSeconds > 0d ? m_PublishIntervalSeconds : m_WindowSeconds;
+
         [Tooltip("Welch sub-segment length, seconds. Sets the PHYSICAL frequency resolution.")]
         [SerializeField] double m_WelchSegmentSeconds = 2.0;
 
@@ -425,6 +465,8 @@ namespace IkeaEeg.Data
         /// </summary>
         void PublishFeatures(LatestEegFeatures features)
         {
+            m_WindowsPublished++;
+
             latest = features;
 
             var handler = featuresPublished;
@@ -515,6 +557,45 @@ namespace IkeaEeg.Data
 
             if (m_Montage == null)
                 m_Montage = AuraMontageConfig.CreateHumanVerifiedDefault();
+        }
+
+        /// <summary>
+        /// Publishes one feature window per interval while samples are arriving.
+        ///
+        /// WHAT IT DOES NOT DO: it does not analyse anything itself. It calls
+        /// AnalyzeLatestWindow with no arguments — the same entry, the same window length, the
+        /// same filters, the same Welch settings and the same quality rules the Editor
+        /// diagnostics already exercise. The only thing that changed is that something now asks.
+        ///
+        /// EVERY WINDOW IS PUBLISHED, including the ones that fail quality checks.
+        /// AnalyzeLatestWindow publishes on all of its early-return paths, so a window with
+        /// InsufficientSamples or an unsettled filter still reaches the observers and still
+        /// becomes a row. A QC-rejected window that vanished silently would be far worse than
+        /// one recorded as rejected.
+        ///
+        /// IT WAITS FOR THE STREAM. Before the first sample there is no acquisition at all, and
+        /// publishing then would assert a measurement that never happened. Once samples are
+        /// arriving, every interval publishes whatever the data supports.
+        /// </summary>
+        void Update()
+        {
+            if (!m_PublishContinuously || m_Receiver == null)
+                return;
+
+            // No stream yet: nothing to describe, valid or otherwise.
+            if (m_SamplesFiltered <= 0)
+                return;
+
+            var now = Time.realtimeSinceStartupAsDouble;
+
+            if (now < m_NextPublishTime)
+                return;
+
+            // Scheduled from NOW rather than by advancing the previous deadline: a frame hitch
+            // or an editor pause must not leave a backlog that fires several windows in a row.
+            m_NextPublishTime = now + publishIntervalSeconds;
+
+            AnalyzeLatestWindow();
         }
 
         void OnEnable()

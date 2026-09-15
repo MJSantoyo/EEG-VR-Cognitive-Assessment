@@ -92,6 +92,20 @@ namespace IkeaEeg.Neuro
         long m_WindowIndex;
         bool m_Subscribed;
 
+        // ---- Runtime counters ------------------------------------------------------------
+        // Added after a real AURA run produced a header-only shadow CSV. Each counter isolates
+        // one link, so the next run says WHICH one is dead instead of leaving it to be inferred
+        // from an empty file. They are diagnostics only and feed nothing.
+
+        /// <summary>featuresPublished callbacks actually received.</summary>
+        public long windowsObserved { get; private set; }
+
+        /// <summary>Decisions produced. Equals windowsObserved unless something threw.</summary>
+        public long decisionsGenerated { get; private set; }
+
+        /// <summary>True once the controller has confirmed its subscription to a pipeline.</summary>
+        public bool isSubscribed => m_Subscribed;
+
         public ShadowDecision lastDecision { get; private set; }
         public ShadowBaseline baseline => m_Baseline;
 
@@ -100,20 +114,47 @@ namespace IkeaEeg.Neuro
             if (m_Pipeline == null)
                 m_Pipeline = FindAnyObjectByType<EegFeaturePipeline>();
 
+            Subscribe();
+        }
+
+        /// <summary>
+        /// Starts observing <see cref="m_Pipeline"/>, if it is not already.
+        ///
+        /// Idempotent, and the ONLY place the subscription is made — so "am I observing?" has a
+        /// single answer rather than one per call site.
+        /// </summary>
+        void Subscribe()
+        {
             if (m_Pipeline == null || m_Subscribed)
                 return;
 
             m_Pipeline.featuresPublished += OnFeaturesPublished;
             m_Subscribed = true;
+
+            Debug.Log($"[IKEA_EEG] Shadow mode observing '{m_Pipeline.gameObject.name}' " +
+                      $"(publishes continuously: {m_Pipeline.publishesContinuously}, " +
+                      $"every {m_Pipeline.publishIntervalSeconds:F1} s). " +
+                      $"Sink: {(m_Sink != null ? "wired" : "MISSING — rows cannot be written")}.");
         }
 
-        void OnDisable()
+        void Unsubscribe()
         {
             if (m_Pipeline == null || !m_Subscribed)
                 return;
 
             m_Pipeline.featuresPublished -= OnFeaturesPublished;
             m_Subscribed = false;
+        }
+
+        void OnDisable()
+        {
+            if (!m_Subscribed)
+                return;
+
+            Unsubscribe();
+
+            Debug.Log($"[IKEA_EEG] Shadow mode stopped observing. Windows observed: " +
+                      $"{windowsObserved}; decisions generated: {decisionsGenerated}.");
         }
 
         /// <summary>Clears the window counter and any supplied baseline. This component only.</summary>
@@ -127,8 +168,19 @@ namespace IkeaEeg.Neuro
         /// </summary>
         public void Configure(EegFeaturePipeline pipeline, ShadowDecisionSink sink)
         {
+            // RE-POINT, not just assign. OnEnable runs the moment the component is added, and
+            // it falls back to FindAnyObjectByType when no pipeline is wired yet — so a
+            // Configure arriving afterwards used to leave the controller still observing
+            // whatever that search happened to return. Now it detaches from the old publisher
+            // and attaches to the one it was actually given.
+            if (!ReferenceEquals(m_Pipeline, pipeline))
+                Unsubscribe();
+
             m_Pipeline = pipeline;
             m_Sink = sink;
+
+            if (isActiveAndEnabled)
+                Subscribe();
         }
 
         public void ResetSession()
@@ -139,7 +191,10 @@ namespace IkeaEeg.Neuro
 
         void OnFeaturesPublished(LatestEegFeatures features)
         {
+            windowsObserved++;
+
             var decision = Evaluate(features);
+            decisionsGenerated++;
             lastDecision = decision;
 
             if (m_Sink != null)

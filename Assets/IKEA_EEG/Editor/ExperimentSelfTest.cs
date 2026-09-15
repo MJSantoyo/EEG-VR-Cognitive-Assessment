@@ -120,6 +120,8 @@ namespace IkeaEeg.EditorTools
                 CheckBlock13RestingRefinements);
             RunSection("BLOCK 14 — FIXATION CENTRING, DURATION FORMAT, SHADOW LIVE WIRING",
                 CheckBlock14ShadowIntegration);
+            RunSection("BLOCK 15 — PIPELINE PUBLICATION + SHADOW CHAIN",
+                CheckBlock15PipelinePublication);
             RunSection("LANGUAGE WORD SETS + PROVENANCE", CheckLanguageWordSets);
             RunSection("RECALL ADAPTIVE STOP (SILENCE DETECTION)", CheckRecallSilenceDetector);
             RunSection("RECALL RECORDING STOP REPORTING", CheckRecordingStopReporting);
@@ -8435,6 +8437,253 @@ namespace IkeaEeg.EditorTools
                    !pipelineSource.Contains("ShadowDecision"),
                 "the feature pipeline knows nothing about its observer — the dependency points " +
                 "one way only, which is what keeps shadow mode removable");
+        }
+
+
+        /// <summary>
+        /// Block 15: the pipeline actually PUBLISHES, and a published window reaches the shadow
+        /// CSV.
+        ///
+        /// WHY THIS SECTION EXISTS. A real AURA run recorded 249,021 samples over 996 s and
+        /// produced a shadow_decisions.csv with a correct header and ZERO rows. Every structural
+        /// assertion already in the suite passed: one pipeline, one controller, one sink, wired
+        /// to each other, correct schema. They were all true and the chain was still dead.
+        ///
+        /// The dead link was that nothing ever ASKED the pipeline for a window.
+        /// EegFeaturePipeline filled its buffer on every sample and computed features only when
+        /// AnalyzeLatestWindow was called — and the only callers were two Editor menu tools. It
+        /// had been written as an on-demand analyser and never given a cadence; the shadow
+        /// integration then assumed a publisher that publishes.
+        ///
+        /// So these assertions are about BEHAVIOUR UNDER A CALL, not about references being
+        /// non-null. The end-to-end one below drives a real pipeline, a real controller and a
+        /// real sink and checks that a row comes out the far end — the exact chain that was
+        /// silently broken, exercised without hardware.
+        /// </summary>
+        static void CheckBlock15PipelinePublication()
+        {
+            // ---- A: the pipeline has a runtime cadence at all -------------------------------
+            var updateMethod = typeof(EegFeaturePipeline).GetMethod("Update",
+                BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+
+            Assert(updateMethod != null,
+                "EegFeaturePipeline has an Update loop. Without one it only ever analysed when " +
+                "an Editor menu asked it to, which is why a 996 s run with EEG connected " +
+                "published nothing");
+
+            var probe = new GameObject("__PipelineProbe");
+
+            try
+            {
+                var pipeline = probe.AddComponent<EegFeaturePipeline>();
+
+                Assert(pipeline.publishesContinuously,
+                    "continuous publication is ON by default — a session must not depend on " +
+                    "somebody remembering to enable it");
+
+                Assert(pipeline.publishIntervalSeconds > 0d,
+                    $"the cadence is a positive interval ({pipeline.publishIntervalSeconds:F1} s)");
+
+                Assert(pipeline.windowsPublished == 0,
+                    "a fresh pipeline has published nothing yet");
+
+                // ---- B: EVERY window publishes, including the QC-invalid ones ---------------
+                // The Phase 1 rule is that a rejected window is still traceable. A pipeline with
+                // no samples at all is the most invalid case there is, and it must STILL
+                // publish — silently dropping it is how a dead chain looks identical to a quiet
+                // one.
+                var received = 0;
+                LatestEegFeatures captured = null;
+
+                pipeline.featuresPublished += f =>
+                {
+                    received++;
+                    captured = f;
+                };
+
+                var returned = pipeline.AnalyzeLatestWindow();
+
+                Assert(received == 1,
+                    $"analysing with NO data still publishes exactly one window ({received}) — " +
+                    "a QC-rejected window is reported, never discarded");
+
+                Assert(pipeline.windowsPublished == 1,
+                    $"and the counter records it ({pipeline.windowsPublished})");
+
+                Assert(captured != null && !captured.featureValidity,
+                    "the published window is marked INVALID, which is the honest description of " +
+                    "a window with no samples behind it");
+
+                Assert(returned != null &&
+                       (returned.quality & EegQualityFlags.InsufficientSamples) != 0,
+                    "and carries InsufficientSamples, so the reason travels with the row");
+
+                // ---- C: THE FULL CHAIN, end to end ------------------------------------------
+                // pipeline.featuresPublished -> controller -> sink. This is the path that was
+                // dead during the AURA run, driven here without any hardware.
+                var chain = new GameObject("__ShadowChainProbe");
+
+                try
+                {
+                    var controller = chain.AddComponent<IkeaEeg.Neuro.ShadowModeController>();
+                    var sink = chain.AddComponent<IkeaEeg.Neuro.ShadowDecisionSink>();
+
+                    // OnEnable already ran when the component was added and fell back to
+                    // FindAnyObjectByType — which in a loaded scene finds the REAL pipeline.
+                    // Configure must therefore re-point the subscription, not merely assign the
+                    // field. That is what this drives.
+                    controller.Configure(pipeline, sink);
+
+                    Assert(controller.isSubscribed,
+                        "the controller subscribes to the pipeline it was configured with");
+
+                    var beforeRows = sink.rowsWritten;
+                    var beforeWindows = controller.windowsObserved;
+
+                    pipeline.AnalyzeLatestWindow();
+
+                    Assert(controller.windowsObserved == beforeWindows + 1,
+                        $"a published window reaches the controller " +
+                        $"({controller.windowsObserved - beforeWindows})");
+
+                    Assert(controller.decisionsGenerated >= 1,
+                        $"the controller produces a decision for it " +
+                        $"({controller.decisionsGenerated})");
+
+                    Assert(sink.rowsWritten == beforeRows + 1,
+                        $"and the decision reaches the sink ({sink.rowsWritten - beforeRows} " +
+                        "row). THIS is the assertion that fails on the old code, where the " +
+                        "pipeline never published and all three counters stayed at zero");
+
+                    // The row it would write is an honest Phase 1 row.
+                    var decision = controller.lastDecision;
+
+                    Assert(decision.level == IkeaEeg.Neuro.WorkloadLevel.Indeterminate,
+                        $"the row is INDETERMINATE ({decision.level})");
+
+                    Assert(decision.rejectedReason != IkeaEeg.Neuro.ShadowRejection.None,
+                        $"with a truthful gate reason ({decision.rejectedReason})");
+
+                    // An invalid feature window must be rejected as INVALID, not as something
+                    // further down the chain — the reason has to name what was actually wrong.
+                    Assert(decision.rejectedReason ==
+                           IkeaEeg.Neuro.ShadowRejection.FeatureInvalid,
+                        $"a window with no samples is rejected as FeatureInvalid, the FIRST " +
+                        $"unmet gate, rather than a later one ({decision.rejectedReason})");
+
+                    var row = decision.ToCsvRow();
+
+                    Assert(row.Split(',').Length == 15,
+                        $"the row it produces has the frozen 15 columns " +
+                        $"({row.Split(',').Length})");
+
+                    Info($"chain probe: windows {controller.windowsObserved}, decisions " +
+                         $"{controller.decisionsGenerated}, rows {sink.rowsWritten}, " +
+                         $"gate {decision.rejectedReason}");
+                }
+                finally
+                {
+                    Object.DestroyImmediate(chain);
+                }
+            }
+            finally
+            {
+                Object.DestroyImmediate(probe);
+            }
+
+            // ---- D: the counters exist so the next run can name the dead link ---------------
+            foreach (var (type, member) in new[]
+                     {
+                         (typeof(EegFeaturePipeline), "windowsPublished"),
+                         (typeof(IkeaEeg.Neuro.ShadowModeController), "windowsObserved"),
+                         (typeof(IkeaEeg.Neuro.ShadowModeController), "decisionsGenerated"),
+                         (typeof(IkeaEeg.Neuro.ShadowDecisionSink), "rowsWritten"),
+                     })
+            {
+                Assert(type.GetProperty(member) != null,
+                    $"{type.Name}.{member} is exposed, so an empty CSV can be traced to the " +
+                    "exact link that stopped rather than inferred");
+            }
+
+            Assert(typeof(AuraLslReceiver).GetProperty("samplesReceived") != null,
+                "AuraLslReceiver.samplesReceived already existed — the acquisition end of the " +
+                "chain was never in doubt");
+
+            // The sink says so out loud at session end rather than leaving a quiet empty file.
+            var sinkSource = StripCommentsAndAttributes(File.ReadAllText(
+                "Assets/IKEA_EEG/Scripts/Neuro/ShadowDecisionSink.cs"));
+
+            Assert(sinkSource.Contains("rowsWritten == 0") &&
+                   sinkSource.Contains("LogWarning"),
+                "a session that wrote zero rows WARNS at shutdown — the previous run's empty " +
+                "file was silent, which is what let it look like expected behaviour");
+
+            // ---- E: nothing scientific moved -------------------------------------------------
+            var pipelineSource = StripCommentsAndAttributes(File.ReadAllText(
+                "Assets/IKEA_EEG/Scripts/Data/EegFeaturePipeline.cs"));
+
+            var updateStart = pipelineSource.IndexOf("void Update()",
+                System.StringComparison.Ordinal);
+
+            Assert(updateStart >= 0, "the Update loop is present in source");
+
+            if (updateStart >= 0)
+            {
+                var updateEnd = pipelineSource.IndexOf("void OnEnable()", updateStart,
+                    System.StringComparison.Ordinal);
+
+                var body = updateEnd > updateStart
+                    ? pipelineSource.Substring(updateStart, updateEnd - updateStart)
+                    : pipelineSource.Substring(updateStart);
+
+                // It asks for a window. It does not compute one.
+                Assert(body.Contains("AnalyzeLatestWindow()"),
+                    "Update calls the EXISTING analysis entry with no arguments — the same " +
+                    "window length, filters, Welch settings and quality rules as before");
+
+                foreach (var forbidden in new[]
+                         {
+                             "Welch", "BandPower", "m_HighPass", "m_LowPass", "m_Notch",
+                             "EegBand.", "m_WelchSegmentSeconds", "quality |=", "featureValidity",
+                             // NOT a bare "Filter": m_SamplesFiltered legitimately contains it,
+                             // and the gate that waits for the stream reads exactly that field.
+                             "m_Filter.", "Threshold",
+                         })
+                {
+                    Assert(!body.Contains(forbidden),
+                        $"the cadence contains no {forbidden} — it schedules analysis, it does " +
+                        "not perform or alter any of it");
+                }
+
+                Assert(body.Contains("m_SamplesFiltered <= 0"),
+                    "it waits for the stream: before the first sample there is no acquisition " +
+                    "to describe, and a row then would assert a measurement that never happened");
+            }
+
+            // The published-window path itself is untouched: every early return still publishes.
+            Assert(Regex.Matches(pipelineSource, @"PublishFeatures\(features\);").Count >= 4,
+                "AnalyzeLatestWindow still publishes on every path, including its QC-invalid " +
+                "early returns");
+
+            var config = AssetDatabase.LoadAssetAtPath<ExperimentConfig>(
+                ExperimentAssetBuilder.ConfigPath);
+
+            if (config != null)
+            {
+                Assert(System.Math.Abs(config.preTaskRestDurationSeconds - 180f) < 0.001f &&
+                       System.Math.Abs(config.postTaskRestDurationSeconds - 180f) < 0.001f,
+                    "PRE and POST rest remain 180 s");
+            }
+
+            Assert(File.ReadAllText("Assets/IKEA_EEG/Scripts/Data/RawEegRecorder.cs")
+                    .Contains("lsl_timestamp_analysis"),
+                "raw_eeg.csv schema is unchanged");
+
+            Assert(IkeaEeg.Neuro.ShadowModeController.MontageVerified &&
+                   !IkeaEeg.Neuro.ShadowModeController.NormalizationApproved &&
+                   !IkeaEeg.Neuro.ShadowModeController.DecisionRuleApproved,
+                "the shadow gates are exactly as they were — this pass fixed a cadence, not a " +
+                "scientific decision");
         }
 
         /// <summary>
