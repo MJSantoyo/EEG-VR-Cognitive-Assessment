@@ -122,6 +122,8 @@ namespace IkeaEeg.EditorTools
                 CheckBlock14ShadowIntegration);
             RunSection("BLOCK 15 — PIPELINE PUBLICATION + SHADOW CHAIN",
                 CheckBlock15PipelinePublication);
+            RunSection("BLOCK 16 — FEATURE VALIDITY DECOMPOSITION",
+                CheckBlock16FeatureValidity);
             RunSection("LANGUAGE WORD SETS + PROVENANCE", CheckLanguageWordSets);
             RunSection("RECALL ADAPTIVE STOP (SILENCE DETECTION)", CheckRecallSilenceDetector);
             RunSection("RECALL RECORDING STOP REPORTING", CheckRecordingStopReporting);
@@ -8684,6 +8686,260 @@ namespace IkeaEeg.EditorTools
                    !IkeaEeg.Neuro.ShadowModeController.DecisionRuleApproved,
                 "the shadow gates are exactly as they were — this pass fixed a cadence, not a " +
                 "scientific decision");
+        }
+
+
+        /// <summary>
+        /// Block 16: feature validity is decomposable, and a clean window is not rejected.
+        ///
+        /// THE REPORT THIS ANSWERS. A real AURA run produced 17 shadow rows, all
+        /// FEATUREINVALID, every one with n_valid_channels = 8 and finite theta_fc and
+        /// alpha_post. That combination looks contradictory until you read the definition:
+        ///
+        ///     featureValidity = quality == EegQualityFlags.None && roiValid
+        ///
+        /// "quality == None" folds ELEVEN independent flags into one bit, and several of those
+        /// flags are WINDOW-level — AssessChannel, AssessTransients, AssessChannelPowerOutliers,
+        /// AssessNearIdenticalChannels all set them directly without marking a channel degraded.
+        /// n_valid_channels counts only what the health tracker has marked degraded, under its
+        /// own slower persistence rule. So eight valid channels and a flagged window are not a
+        /// contradiction at all; they are two different questions.
+        ///
+        /// Nothing here changes a threshold, a filter, a band or a validity rule. These
+        /// assertions pin the DEFINITION so it cannot drift, and prove the decomposition names
+        /// the right cause for each case.
+        /// </summary>
+        static void CheckBlock16FeatureValidity()
+        {
+            // ---- A: the definition, pinned ---------------------------------------------------
+            var pipelineSource = StripCommentsAndAttributes(File.ReadAllText(
+                "Assets/IKEA_EEG/Scripts/Data/EegFeaturePipeline.cs"));
+
+            Assert(pipelineSource.Contains(
+                    "features.featureValidity = features.quality == EegQualityFlags.None &&"),
+                "featureValidity is still exactly 'no quality flags AND roiValid' — this pass " +
+                "reported on that definition, it did not relax it");
+
+            Assert(pipelineSource.Contains("features.roiValid;"),
+                "and roiValid is still the second half");
+
+            // ---- B: THE REGRESSION. A clean window must NOT be rejected ---------------------
+            // The case the report describes: eight channels, finite theta and alpha, ROI
+            // resolved, no flags. It must come out valid. If any future change makes a clean
+            // window invalid, this fails.
+            var clean = new LatestEegFeatures
+            {
+                quality = EegQualityFlags.None,
+                roiValid = true,
+                frontalThetaValid = true,
+                posteriorAlphaValid = true,
+                frontalTheta = 12.5d,
+                posteriorAlpha = 30.25d,
+                thetaPerChannel = new double[8],
+                alphaPerChannel = new double[8],
+                degradedChannels = System.Array.Empty<int>(),
+                sampleCount = 1000,
+                channelCount = 8,
+            };
+
+            for (var c = 0; c < 8; c++)
+            {
+                clean.thetaPerChannel[c] = 10d + c;
+                clean.alphaPerChannel[c] = 20d + c;
+            }
+
+            clean.featureValidity = clean.quality == EegQualityFlags.None && clean.roiValid;
+
+            Assert(clean.featureValidity,
+                "a window with 8 channels, finite theta and alpha, a resolved ROI and NO flags " +
+                "is VALID — it is not rejected for any unstated reason");
+
+            Assert(clean.filterSettled && clean.windowComplete && clean.spectralValid &&
+                   clean.channelChecksPassed && clean.qualityValid,
+                "and every sub-condition reports passing");
+
+            // Drive it through the REAL controller: a clean window must clear the feature gate.
+            var probe = new GameObject("__ValidityProbe");
+
+            try
+            {
+                var controller = probe.AddComponent<IkeaEeg.Neuro.ShadowModeController>();
+                controller.ResetSession();
+
+                var decision = controller.Evaluate(clean);
+
+                Assert(decision.rejectedReason != IkeaEeg.Neuro.ShadowRejection.FeatureInvalid,
+                    $"the shadow controller does NOT reject a clean window as FeatureInvalid " +
+                    $"({decision.rejectedReason}) — it falls through to the next unmet " +
+                    "scientific gate, which is the correct behaviour");
+
+                Assert(decision.rejectedReason ==
+                       IkeaEeg.Neuro.ShadowRejection.NoApprovedNormalization,
+                    $"and stops at normalization, the first genuinely unmet prerequisite " +
+                    $"({decision.rejectedReason})");
+
+                // ---- C: each flag is attributed to ITS OWN sub-condition --------------------
+                // One flag at a time, so a mislabelled decomposition cannot hide behind another.
+                var cases = new[]
+                {
+                    (flag: EegQualityFlags.FilterNotSettled, name: "filter_settled"),
+                    (flag: EegQualityFlags.InsufficientSamples, name: "window_complete"),
+                    (flag: EegQualityFlags.NaNPresent, name: "spectral_valid"),
+                    (flag: EegQualityFlags.Flatline, name: "channel_checks"),
+                };
+
+                foreach (var (flag, name) in cases)
+                {
+                    var flagged = new LatestEegFeatures
+                    {
+                        quality = flag,
+                        roiValid = true,
+                        frontalThetaValid = true,
+                        posteriorAlphaValid = true,
+                        frontalTheta = 12.5d,
+                        posteriorAlpha = 30.25d,
+                        thetaPerChannel = new double[8],
+                        alphaPerChannel = new double[8],
+                        degradedChannels = System.Array.Empty<int>(),
+                        sampleCount = 1000,
+                        channelCount = 8,
+                    };
+
+                    flagged.featureValidity =
+                        flagged.quality == EegQualityFlags.None && flagged.roiValid;
+
+                    Assert(!flagged.featureValidity,
+                        $"{flag} alone makes the window invalid");
+
+                    Assert(!flagged.qualityValid,
+                        $"{flag} is reported through quality_valid");
+
+                    var breakdown = flagged.ValidityBreakdown();
+
+                    Assert(breakdown.Contains(flag.ToString()),
+                        $"the breakdown names {flag} rather than collapsing it " +
+                        $"(\"{breakdown}\")");
+
+                    Assert(breakdown.Contains($"{name}=False"),
+                        $"and attributes it to {name}, not to some other condition");
+
+                    // THE CASE FROM THE REPORT: flagged, yet still eight valid channels and
+                    // finite theta/alpha. Exactly what the CSV showed.
+                    var row = controller.Evaluate(flagged);
+
+                    Assert(row.rejectedReason == IkeaEeg.Neuro.ShadowRejection.FeatureInvalid,
+                        $"{flag} reaches the shadow row as FeatureInvalid");
+
+                    Assert(row.validChannelCount == 8,
+                        $"while n_valid_channels is still 8 ({row.validChannelCount}) — a " +
+                        "window-level flag does not reduce it, which is why the real run " +
+                        "looked contradictory");
+
+                    Assert(!double.IsNaN(row.thetaFc) && !double.IsNaN(row.alphaPost),
+                        "and theta/alpha are still finite, exactly as the real rows were");
+                }
+
+                // ROI failure is attributed to roi_valid, and is the OTHER half of the
+                // definition rather than a quality flag.
+                var roiBroken = new LatestEegFeatures
+                {
+                    quality = EegQualityFlags.None,
+                    roiValid = false,
+                    thetaPerChannel = new double[8],
+                    alphaPerChannel = new double[8],
+                    degradedChannels = System.Array.Empty<int>(),
+                    sampleCount = 1000,
+                    channelCount = 8,
+                };
+
+                roiBroken.featureValidity =
+                    roiBroken.quality == EegQualityFlags.None && roiBroken.roiValid;
+
+                Assert(!roiBroken.featureValidity && roiBroken.qualityValid,
+                    "an ROI failure invalidates the window even with NO quality flag set — the " +
+                    "two halves of the definition are independent");
+
+                Assert(roiBroken.ValidityBreakdown().Contains("roi_valid=False"),
+                    "and the breakdown says so");
+
+                // ---- D: the tally records reasons -------------------------------------------
+                // THE TALLY IS FED BY THE EVENT PATH, NOT BY Evaluate. That is deliberate:
+                // Evaluate is asserted elsewhere to be pure and deterministic, so it must not
+                // accumulate state. These calls went straight to Evaluate, so the tally is
+                // correctly still empty — and it says so rather than printing a misleading zero.
+                Assert(controller.rejectionTally.Count == 0,
+                    "Evaluate does not accumulate — the tally stays empty when windows are " +
+                    "evaluated directly, so the pure function remains pure");
+
+                Assert(controller.DescribeRejections().Contains("no windows observed"),
+                    $"and the description states the empty case honestly " +
+                    $"(\"{controller.DescribeRejections().Trim()}\")");
+            }
+            finally
+            {
+                Object.DestroyImmediate(probe);
+            }
+
+            // ---- E: n_valid_channels and the window flags are genuinely different questions --
+            Assert(pipelineSource.Contains("features.quality |= AssessChannel(series, c);") &&
+                   pipelineSource.Contains("features.quality |= UpdateChannelHealth("),
+                "per-window channel checks and the persistent health tracker BOTH feed quality, " +
+                "but only the health tracker feeds degradedChannels — which is what " +
+                "n_valid_channels counts");
+
+            var shadowSource = StripCommentsAndAttributes(File.ReadAllText(
+                "Assets/IKEA_EEG/Scripts/Neuro/ShadowModeController.cs"));
+
+            Assert(shadowSource.Contains("degradedChannels"),
+                "CountValidChannels reads degradedChannels, confirming the two are different " +
+                "measures and that eight valid channels never implied a clean window");
+
+            // ---- F: nothing scientific was touched -------------------------------------------
+            foreach (var breakdownMember in new[]
+                     {
+                         "filterSettled", "windowComplete", "spectralValid",
+                         "channelChecksPassed", "qualityValid",
+                     })
+            {
+                Assert(typeof(LatestEegFeatures).GetProperty(breakdownMember) != null,
+                    $"{breakdownMember} is exposed for reporting");
+            }
+
+            // Every one of them must be a pure read of an existing flag — no new arithmetic.
+            var breakdownStart = pipelineSource.IndexOf("public bool filterSettled",
+                System.StringComparison.Ordinal);
+
+            Assert(breakdownStart >= 0, "the breakdown block exists");
+
+            if (breakdownStart >= 0)
+            {
+                var breakdownEnd = pipelineSource.IndexOf("public string QualityText()",
+                    breakdownStart, System.StringComparison.Ordinal);
+
+                var body = breakdownEnd > breakdownStart
+                    ? pipelineSource.Substring(breakdownStart, breakdownEnd - breakdownStart)
+                    : pipelineSource.Substring(breakdownStart);
+
+                foreach (var forbidden in new[]
+                         {
+                             "Welch", "BandPower", "EegBand.", "Threshold", "m_HighPass",
+                             "m_LowPass", "Math.",
+                             // NOT "<" or ">": every member here is expression-bodied, so the
+                             // "=>" arrow makes those unavoidable and meaningless as a signal.
+                             // These are what a NEW criterion would actually look like.
+                             "if (", "0.9", "* 0.", "Count <", "Length <",
+                         })
+                {
+                    Assert(!body.Contains(forbidden),
+                        $"the breakdown contains no {forbidden} — every member is a bitmask " +
+                        "read of a flag that was already decided, never a new criterion");
+                }
+            }
+
+            Assert(IkeaEeg.Neuro.ShadowModeController.MontageVerified &&
+                   !IkeaEeg.Neuro.ShadowModeController.NormalizationApproved &&
+                   !IkeaEeg.Neuro.ShadowModeController.DecisionRuleApproved,
+                "the shadow gates are untouched");
         }
 
         /// <summary>

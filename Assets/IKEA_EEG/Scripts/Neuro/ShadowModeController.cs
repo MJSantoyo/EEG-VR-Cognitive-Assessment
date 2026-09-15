@@ -1,4 +1,6 @@
-﻿using UnityEngine;
+﻿using System.Collections.Generic;
+using System.Linq;
+using UnityEngine;
 using IkeaEeg.Data;
 
 namespace IkeaEeg.Neuro
@@ -146,6 +148,55 @@ namespace IkeaEeg.Neuro
             m_Subscribed = false;
         }
 
+        /// <summary>
+        /// Tallies why this window was rejected, and logs the reason when it CHANGES.
+        ///
+        /// Logged on change rather than every window: at one window per four seconds a 17-minute
+        /// run is 250 lines, and 250 identical lines hide the one transition that matters. The
+        /// full tally is printed once at the end regardless.
+        /// </summary>
+        void RecordRejection(LatestEegFeatures features, ShadowDecision decision)
+        {
+            if (features == null)
+                return;
+
+            var reason = decision.rejectedReason == ShadowRejection.FeatureInvalid
+                ? "FeatureInvalid :: " + features.ValidityBreakdown()
+                : decision.rejectedReason.ToString();
+
+            m_RejectionTally.TryGetValue(reason, out var count);
+            m_RejectionTally[reason] = count + 1;
+
+            if (reason == m_LastBreakdown)
+                return;
+
+            m_LastBreakdown = reason;
+
+            Debug.Log($"[IKEA_EEG] Shadow window {windowsObserved}: {reason}");
+
+            // The named channels, when the pipeline has them. A flag name says a window was
+            // flagged; this says which electrode to go and look at.
+            var detail = features.Explain();
+
+            if (!string.IsNullOrEmpty(detail))
+                Debug.Log("[IKEA_EEG] Shadow window detail:" + System.Environment.NewLine + detail);
+        }
+
+        /// <summary>The rejection tally, one line per distinct reason, most frequent first.</summary>
+        public string DescribeRejections()
+        {
+            if (m_RejectionTally.Count == 0)
+                return "no windows observed";
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"windows observed: {windowsObserved}");
+
+            foreach (var pair in m_RejectionTally.OrderByDescending(p => p.Value))
+                sb.AppendLine($"  {pair.Value,6} x  {pair.Key}");
+
+            return sb.ToString();
+        }
+
         void OnDisable()
         {
             if (!m_Subscribed)
@@ -153,8 +204,11 @@ namespace IkeaEeg.Neuro
 
             Unsubscribe();
 
+            var nl = System.Environment.NewLine;
+
             Debug.Log($"[IKEA_EEG] Shadow mode stopped observing. Windows observed: " +
-                      $"{windowsObserved}; decisions generated: {decisionsGenerated}.");
+                      $"{windowsObserved}; decisions generated: {decisionsGenerated}." + nl +
+                      "Rejection breakdown:" + nl + DescribeRejections());
         }
 
         /// <summary>Clears the window counter and any supplied baseline. This component only.</summary>
@@ -189,12 +243,27 @@ namespace IkeaEeg.Neuro
             m_WindowIndex = 0;
         }
 
+        // ---- Rejection diagnostics -------------------------------------------------------
+        // A real run produced 17 rows, all FEATUREINVALID, with eight valid channels and finite
+        // theta and alpha — and no way to tell WHY, because featureValidity collapses eleven
+        // quality flags and the ROI check into one bit before it reaches the CSV. The pipeline
+        // had already computed the reason; it was simply being discarded here. These read it
+        // back out. Nothing is recomputed and no criterion is second-guessed.
+
+        readonly Dictionary<string, long> m_RejectionTally = new Dictionary<string, long>();
+        string m_LastBreakdown = string.Empty;
+
+        /// <summary>How many windows each distinct rejection reason accounted for.</summary>
+        public IReadOnlyDictionary<string, long> rejectionTally => m_RejectionTally;
+
         void OnFeaturesPublished(LatestEegFeatures features)
         {
             windowsObserved++;
 
             var decision = Evaluate(features);
             decisionsGenerated++;
+
+            RecordRejection(features, decision);
             lastDecision = decision;
 
             if (m_Sink != null)

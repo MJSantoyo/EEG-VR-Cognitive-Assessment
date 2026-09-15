@@ -227,6 +227,65 @@ namespace IkeaEeg.Data
         public string powerUnits = "AURA-native-units²";
         public string psdUnits = "AURA-native-units²/Hz";
 
+        // ---- Validity breakdown ----------------------------------------------------------
+        //
+        // WHY THESE EXIST. featureValidity is a single boolean over two conditions:
+        //
+        //     featureValidity = quality == EegQualityFlags.None && roiValid
+        //
+        // and "quality == None" folds ELEVEN independent flags into one bit. By the time a
+        // window reached the shadow CSV, every one of those distinctions had been collapsed into
+        // the word FEATUREINVALID — which is why a real run could produce 17 rows with eight
+        // valid channels and finite theta and alpha, all rejected, with no way to tell whether
+        // the cause was an unsettled filter, a short window or one flat electrode.
+        //
+        // These are pure READS of flags that were already computed. No new criterion, no new
+        // threshold, no change to how any of them is decided — they only give the existing bits
+        // names so a rejection can state its own reason.
+
+        /// <summary>The IIR filter had run long enough for its output to be signal.</summary>
+        public bool filterSettled => (quality & EegQualityFlags.FilterNotSettled) == 0;
+
+        /// <summary>The window held the samples the requested length implies.</summary>
+        public bool windowComplete => (quality & EegQualityFlags.InsufficientSamples) == 0;
+
+        /// <summary>No non-finite value reached the spectra.</summary>
+        public bool spectralValid =>
+            (quality & (EegQualityFlags.NaNPresent | EegQualityFlags.InfinityPresent)) == 0;
+
+        /// <summary>
+        /// Every per-channel and between-channel check passed.
+        ///
+        /// NOTE, because this is exactly what was confusing: these flags are WINDOW-level and do
+        /// NOT reduce degradedChannels. A flatline, a transient or a power outlier sets one of
+        /// them immediately, while the channel health tracker — which is what n_valid_channels
+        /// counts — applies its own slower persistence rule. A window can therefore report eight
+        /// valid channels and still be flagged here, and that is not a contradiction.
+        /// </summary>
+        public bool channelChecksPassed =>
+            (quality & (EegQualityFlags.Flatline | EegQualityFlags.SaturationLike |
+                        EegQualityFlags.AbruptDiscontinuity |
+                        EegQualityFlags.ExtremeDynamicRange)) == 0;
+
+        /// <summary>No quality flag of any kind is set — the first half of featureValidity.</summary>
+        public bool qualityValid => quality == EegQualityFlags.None;
+
+        /// <summary>
+        /// One line naming each sub-condition, for a log or a diagnostic column.
+        ///
+        /// Deliberately reports every condition rather than only the failing one: "which checks
+        /// passed" is as useful as "which failed" when deciding whether a run is salvageable.
+        /// </summary>
+        public string ValidityBreakdown()
+        {
+            return string.Format(CultureInfo.InvariantCulture,
+                "filter_settled={0}; window_complete={1} ({2} samples); spectral_valid={3}; " +
+                "channel_checks={4}; roi_valid={5}; quality_valid={6}; feature_valid={7}; " +
+                "flags={8}",
+                filterSettled, windowComplete, sampleCount, spectralValid,
+                channelChecksPassed, roiValid, qualityValid, featureValidity, QualityText());
+        }
+
         public string QualityText()
         {
             if (quality == EegQualityFlags.None)
