@@ -26,6 +26,7 @@ using IkeaEeg.Interaction;
 using IkeaEeg.Localization;
 using IkeaEeg.Memory;
 using IkeaEeg.UI;
+using IkeaEeg.Neuro;
 using IkeaEeg.XR;
 
 namespace IkeaEeg.EditorTools
@@ -1083,9 +1084,18 @@ namespace IkeaEeg.EditorTools
 
                 // FIXATION POINT for the PRE-TASK resting acquisition.
                 //
-                // Placed at the stimulus word's own height (+60) so the participant's gaze rests
-                // where the encoding words will appear moments later — the resting reference is
-                // taken with the eyes in the same position the task will use.
+                // CENTRED ON THE PANEL'S OWN REFERENCE SQUARE, at anchored (0, 0).
+                //
+                // The reference is the canvas's "Background" Image — the dark blue square every
+                // world panel carries. CreateWorldCanvas builds it as a FULL STRETCH
+                // (anchorMin 0,0 / anchorMax 1,1 / zero offsets), so its centre is exactly the
+                // canvas centre, which in this canvas's local space is (0, 0). The value is
+                // therefore DERIVED from that object's geometry, not eyeballed.
+                //
+                // WAS +60, matching the stimulus word's height. That put the cross visibly above
+                // the middle of the square the participant is looking at, which is what the
+                // headset run reported — and a 560 px glyph makes a 60 px offset obvious in a
+                // way a 200 px one did not.
                 //
                 // A "+" rather than a dot: it gives the eye two axes to hold on to, which is the
                 // standard fixation target in visual work, and it is a glyph the existing TMP
@@ -1104,7 +1114,7 @@ namespace IkeaEeg.EditorTools
                 // text with no localization binding, which the localization audit correctly
                 // rejects — and the audit should not have to learn that "+" is not a word.
                 fixation = CreateText("Txt_Fixation_A", canvas.transform,
-                    new Vector2(0f, 60f), new Vector2(560f, 560f), string.Empty, 300f,
+                    new Vector2(0f, 0f), new Vector2(560f, 560f), string.Empty, 300f,
                     TextAlignmentOptions.Center, new Color(0.86f, 0.88f, 0.92f)),
                 status = CreateText("Txt_Status", canvas.transform, new Vector2(0f, -110f),
                     new Vector2(1360f, 140f), string.Empty, 42f,
@@ -1612,6 +1622,16 @@ namespace IkeaEeg.EditorTools
                 //                            -> Area C (1.8115 - 1.55) / 0.00095 = +275
                 //   cheatsheet Area A -120 -> world 1.65 - 120*0.00095 = 1.5360 m
                 //                            -> Area C (1.5360 - 1.55) / 0.00095 = -15
+                //   fixation   Area A   +0 -> world 1.65 + 0*0.00095    = 1.6500 m
+                //                            -> Area C (1.6500 - 1.55) / 0.00095 = +105
+                //
+                // NOTE ON THE FIXATION SPECIFICALLY. Area A's cross is centred on that canvas's
+                // Background square; Area C's is placed at the SAME WORLD HEIGHT rather than at
+                // its own panel's centre, because the two canvases sit at different heights
+                // (1.65 m and 1.55 m). Matching world height keeps the participant's gaze
+                // elevation identical between the pre- and post-task recordings, which is the
+                // property the two recordings have to share. Centring Area C on its own square
+                // instead would drop the cross 10 cm between the two blocks.
                 //
                 // The counter keeps the same +110 px offset above the stimulus word that it has
                 // in Area A (275 - 165 = 170 - 60), so the two phases look identical.
@@ -1633,7 +1653,7 @@ namespace IkeaEeg.EditorTools
                 // Pre- and post-task rest are only comparable if the participant was looking at
                 // the same place, at the same height, at the same distance.
                 fixation = CreateText("Txt_Fixation_C", canvas.transform,
-                    new Vector2(0f, 165f), new Vector2(560f, 560f), string.Empty, 300f,
+                    new Vector2(0f, 105f), new Vector2(560f, 560f), string.Empty, 300f,
                     TextAlignmentOptions.Center, new Color(0.86f, 0.88f, 0.92f)),
 
                 // READY for the POST-TASK rest.
@@ -1726,6 +1746,17 @@ namespace IkeaEeg.EditorTools
             var lslSink = loggerGo.AddComponent<LslMarkerSink>();
             lslSink.Configure(true, "IKEA_EEG_Markers", "Markers", "IKEA_EEG_Unity_Markers");
 
+            // SHADOW DECISION SINK — on the EventLogger deliberately.
+            //
+            // EventLogger.Awake registers every IEventSink on its OWN GameObject, and the bus
+            // then calls Initialize(context) at session start and Shutdown() at session end.
+            // Putting the sink here means shadow_decisions.csv lands in the same session folder,
+            // under the same session id, opened and closed by the same lifecycle as events.csv —
+            // with no change to ExperimentManager and no second session.
+            //
+            // Its OnEvent is intentionally empty: shadow mode observes EEG, never behaviour.
+            var shadowSink = loggerGo.AddComponent<ShadowDecisionSink>();
+
             // ---- Audio --------------------------------------------------------------------
             var audioGo = new GameObject("ExperimentAudio");
             audioGo.transform.SetParent(expRoot.transform);
@@ -1755,6 +1786,18 @@ namespace IkeaEeg.EditorTools
             var eegPipeline = eegGo.AddComponent<EegFeaturePipeline>();
             eegPipeline.Configure(montage: null, highPassHz: 1.0, lowPassHz: 40.0,
                 windowSeconds: 4.0);
+
+            // SHADOW MODE CONTROLLER — an OBSERVER on the EXISTING pipeline.
+            //
+            // It subscribes to eegPipeline.featuresPublished and writes one row per window. It
+            // creates no receiver, no pipeline and no session of its own, and it holds no
+            // reference to the ExperimentManager, the UI or any task component — it cannot reach
+            // the experiment even if it wanted to.
+            //
+            // Placed on the EegAcquisition node, beside the pipeline it observes, so the
+            // relationship is visible in the hierarchy.
+            var shadowController = eegGo.AddComponent<ShadowModeController>();
+            shadowController.Configure(eegPipeline, shadowSink);
 
             // ---- Voice --------------------------------------------------------------------
             var voiceGo = new GameObject("VoiceRecallManager");

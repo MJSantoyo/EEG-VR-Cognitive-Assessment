@@ -118,6 +118,8 @@ namespace IkeaEeg.EditorTools
                 CheckBlock12RestingAcquisition);
             RunSection("BLOCK 13 — RESTING UX: TITLE, FIXATION, NARRATION, MOUSE",
                 CheckBlock13RestingRefinements);
+            RunSection("BLOCK 14 — FIXATION CENTRING, DURATION FORMAT, SHADOW LIVE WIRING",
+                CheckBlock14ShadowIntegration);
             RunSection("LANGUAGE WORD SETS + PROVENANCE", CheckLanguageWordSets);
             RunSection("RECALL ADAPTIVE STOP (SILENCE DETECTION)", CheckRecallSilenceDetector);
             RunSection("RECALL RECORDING STOP REPORTING", CheckRecordingStopReporting);
@@ -7954,6 +7956,437 @@ namespace IkeaEeg.EditorTools
             }
         }
 
+
+        /// <summary>
+        /// Block 14: fixation centring, the Results duration format, and Shadow Mode wired into
+        /// the live scene as an OBSERVER.
+        ///
+        /// The Shadow assertions are the important half. Phase 1 was safe partly because it was
+        /// not connected to anything; connecting it removes that accident of isolation and
+        /// replaces it with structure that has to be checked. So this section asserts what the
+        /// controller CANNOT reach, not only what it does.
+        /// </summary>
+        static void CheckBlock14ShadowIntegration()
+        {
+            var ui = Object.FindAnyObjectByType<ExperimentUIController>();
+
+            // ---- A: the fixation cross is centred on its canvas reference square ------------
+            var fixA = ui != null ? UiLabel(ui, "m_AreaAFixation") : null;
+            var fixC = ui != null ? UiLabel(ui, "m_AreaCFixation") : null;
+
+            Assert(fixA != null && fixC != null, "both fixation labels are bound");
+
+            if (fixA != null && fixC != null)
+            {
+                var canvasA = FindInSceneIncludingInactive("UI_A_Canvas");
+
+                Assert(canvasA != null, "the Area A canvas exists");
+
+                if (canvasA != null)
+                {
+                    // THE REFERENCE. The dark blue "Background" Image every world panel carries,
+                    // built as a full stretch, so its centre IS the canvas centre. The assertion
+                    // reads that object's real geometry rather than trusting a literal.
+                    var background = canvasA.transform.Find("Background");
+
+                    Assert(background != null,
+                        "the Area A canvas carries its Background reference square");
+
+                    if (background != null)
+                    {
+                        var bgRect = (RectTransform)background;
+
+                        Assert(bgRect.anchorMin == Vector2.zero &&
+                               bgRect.anchorMax == Vector2.one &&
+                               bgRect.offsetMin == Vector2.zero &&
+                               bgRect.offsetMax == Vector2.zero,
+                            "the Background is a FULL STRETCH, so its centre is the canvas " +
+                            "centre — which is what makes (0,0) a derived value, not a guess");
+
+                        var fixRect = (RectTransform)fixA.transform;
+
+                        Assert(fixRect.anchoredPosition == Vector2.zero,
+                            $"the Area A fixation cross sits at the Background's centre " +
+                            $"({fixRect.anchoredPosition}) — it was at (0, 60), the stimulus " +
+                            "word's height, which read as visibly high once the glyph grew");
+
+                        // World-space confirmation: the two centres coincide.
+                        var delta = Vector3.Distance(fixA.transform.position,
+                            background.position);
+
+                        Assert(delta < 0.01f,
+                            $"and coincides with it in world space ({delta * 1000f:F1} mm apart)");
+
+                        Info($"Area A fixation centred on Background at world " +
+                             $"{fixA.transform.position.y:F4} m");
+                    }
+                }
+
+                // Area C is placed at the SAME WORLD HEIGHT rather than on its own panel centre:
+                // the two canvases sit 10 cm apart, and gaze elevation is the property the pre-
+                // and post-task recordings have to share.
+                var heightDelta = Mathf.Abs(fixA.transform.position.y -
+                                            fixC.transform.position.y);
+
+                Assert(heightDelta < 0.02f,
+                    $"PRE and POST fixation remain at the same world height " +
+                    $"({heightDelta * 1000f:F0} mm apart) — the participant looks at the same " +
+                    "place in both recordings");
+
+                Assert(Mathf.Abs(fixA.fontSize - fixC.fontSize) < 0.5f && fixA.fontSize > 200f,
+                    $"and the enlarged size is preserved and identical ({fixA.fontSize:F0} pt)");
+
+                Assert(Mathf.Abs(((RectTransform)fixC.transform).anchoredPosition.x) < 0.01f,
+                    "Area C's cross stays horizontally centred");
+            }
+
+            // ---- B: the Results duration reads in minutes ----------------------------------
+            Assert(TimeFormat.MinutesAndSeconds(444.512d) == "7 min 24 s",
+                $"a 444.5 s session reads '7 min 24 s' " +
+                $"(\"{TimeFormat.MinutesAndSeconds(444.512d)}\")");
+
+            Assert(TimeFormat.MinutesAndSeconds(45d) == "45 s",
+                $"under a minute drops the '0 min' (\"{TimeFormat.MinutesAndSeconds(45d)}\")");
+
+            Assert(TimeFormat.MinutesAndSeconds(600d) == "10 min 0 s",
+                $"an exact ten minutes reads '10 min 0 s' " +
+                $"(\"{TimeFormat.MinutesAndSeconds(600d)}\")");
+
+            // THE MILLISECOND FORM IS UNTOUCHED. Reaction times are measured in ms and still
+            // report in ms — only the whole-session duration changed.
+            Assert(TimeFormat.FromMilliseconds(2500d).Contains("ms") &&
+                   TimeFormat.FromSeconds(2.5d).Contains("ms"),
+                "the existing millisecond formatters are unchanged — this pass reformatted ONE " +
+                "row, not the project's unit conventions");
+
+            var previousLanguage = ExperimentLocalization.language;
+
+            try
+            {
+                ExperimentLocalization.ResetForTesting();
+                ExperimentLocalization.SetLanguage(ExperimentLanguage.English);
+
+                var sample = BuildRecognitionSampleResults();
+                var text = sample.BuildParticipantRunSummary("x", 1, 0);
+
+                var expected = TimeFormat.MinutesAndSeconds(
+                    sample.totalExperimentDurationSeconds);
+
+                Assert(text.Contains(expected),
+                    $"the Results screen shows the total duration as '{expected}'");
+
+                // The reaction-time rows must still be in the old form.
+                Assert(text.Contains(TimeFormat.FromSeconds(sample.meanResponseTimeSeconds)),
+                    "the mean response time row is unchanged and still reports milliseconds");
+
+                var durationLine = text.Split('\n')
+                    .FirstOrDefault(l => l.Contains(
+                        ExperimentLocalization.Get(LocKeys.StatTotalDuration)));
+
+                Assert(durationLine != null && !durationLine.Contains("ms"),
+                    $"and the duration row itself no longer carries a millisecond figure " +
+                    $"(\"{StripRichText(durationLine ?? string.Empty).Trim()}\")");
+            }
+            finally
+            {
+                ExperimentLocalization.ResetForTesting();
+
+                if (previousLanguage != ExperimentLanguage.None)
+                    ExperimentLocalization.SetLanguage(previousLanguage);
+            }
+
+            // ---- C: Shadow Mode is in the live scene, exactly once -------------------------
+            var controllers = Object.FindObjectsByType<IkeaEeg.Neuro.ShadowModeController>(
+                FindObjectsInactive.Include, FindObjectsSortMode.None);
+
+            Assert(controllers.Length == 1,
+                $"exactly ONE ShadowModeController is in the scene ({controllers.Length}) — it " +
+                "is now intentionally wired, where Phase 1 left it absent");
+
+            var sinks = Object.FindObjectsByType<IkeaEeg.Neuro.ShadowDecisionSink>(
+                FindObjectsInactive.Include, FindObjectsSortMode.None);
+
+            Assert(sinks.Length == 1,
+                $"exactly ONE ShadowDecisionSink ({sinks.Length})");
+
+            // NO DUPLICATED ACQUISITION. The whole integration rests on reusing what exists.
+            var receivers = Object.FindObjectsByType<AuraLslReceiver>(
+                FindObjectsInactive.Include, FindObjectsSortMode.None);
+
+            Assert(receivers.Length == 1,
+                $"still exactly ONE AuraLslReceiver ({receivers.Length}) — shadow mode added no " +
+                "second EEG inlet");
+
+            var pipelines = Object.FindObjectsByType<EegFeaturePipeline>(
+                FindObjectsInactive.Include, FindObjectsSortMode.None);
+
+            Assert(pipelines.Length == 1,
+                $"still exactly ONE EegFeaturePipeline ({pipelines.Length}) — no duplicated " +
+                "EEG processing");
+
+            var recorders = Object.FindObjectsByType<EegRunRecorder>(
+                FindObjectsInactive.Include, FindObjectsSortMode.None);
+
+            Assert(recorders.Length == 1,
+                $"still exactly ONE EegRunRecorder ({recorders.Length})");
+
+            // ---- D: it observes the EXISTING pipeline ---------------------------------------
+            if (controllers.Length == 1 && pipelines.Length == 1)
+            {
+                var controller = controllers[0];
+
+                var pipelineField = typeof(IkeaEeg.Neuro.ShadowModeController)
+                    .GetField("m_Pipeline", BindingFlags.Instance | BindingFlags.NonPublic)
+                    ?.GetValue(controller) as EegFeaturePipeline;
+
+                Assert(ReferenceEquals(pipelineField, pipelines[0]),
+                    "the controller is wired to THE pipeline in the scene, not to one of its own");
+
+                var sinkField = typeof(IkeaEeg.Neuro.ShadowModeController)
+                    .GetField("m_Sink", BindingFlags.Instance | BindingFlags.NonPublic)
+                    ?.GetValue(controller) as IkeaEeg.Neuro.ShadowDecisionSink;
+
+                Assert(sinks.Length == 1 && ReferenceEquals(sinkField, sinks[0]),
+                    "and to THE sink in the scene");
+
+                var shadowSource = StripCommentsAndAttributes(File.ReadAllText(
+                    "Assets/IKEA_EEG/Scripts/Neuro/ShadowModeController.cs"));
+
+                Assert(shadowSource.Contains("m_Pipeline.featuresPublished += OnFeaturesPublished"),
+                    "it subscribes to the pipeline's existing featuresPublished event");
+
+                Assert(shadowSource.Contains("m_Pipeline.featuresPublished -= OnFeaturesPublished"),
+                    "and unsubscribes, so a disabled controller stops observing");
+            }
+
+            // ---- E: the sink shares the session's own lifecycle -----------------------------
+            if (sinks.Length == 1)
+            {
+                var sink = sinks[0];
+                var logger = Object.FindAnyObjectByType<EventLogger>();
+
+                Assert(logger != null && sink.gameObject == logger.gameObject,
+                    "the sink sits on the EventLogger GameObject, which is what makes the " +
+                    "EventBus register it, initialise it with THIS session's directory and shut " +
+                    "it down at session end — same session id, same folder, no second session");
+
+                Assert(sink is IEventSink,
+                    "it is an IEventSink, so that registration is automatic rather than wired " +
+                    "by hand in the manager");
+
+                Assert(IkeaEeg.Neuro.ShadowDecisionSink.FileName == "shadow_decisions.csv",
+                    $"it writes shadow_decisions.csv " +
+                    $"({IkeaEeg.Neuro.ShadowDecisionSink.FileName})");
+
+                var sinkSource = StripCommentsAndAttributes(File.ReadAllText(
+                    "Assets/IKEA_EEG/Scripts/Neuro/ShadowDecisionSink.cs"));
+
+                Assert(sinkSource.Contains("context.sessionDirectory"),
+                    "the file is placed in the session directory it is handed, never a path of " +
+                    "its own choosing");
+
+                // Its OnEvent must stay empty: shadow mode observes EEG, not behaviour.
+                var onEventIndex = sinkSource.IndexOf("public void OnEvent(",
+                    System.StringComparison.Ordinal);
+
+                Assert(onEventIndex >= 0, "the sink implements OnEvent");
+
+                if (onEventIndex >= 0)
+                {
+                    var tail = sinkSource.Substring(onEventIndex,
+                        Mathf.Min(120, sinkSource.Length - onEventIndex));
+
+                    Assert(tail.Contains("{ }") || tail.Contains("{}"),
+                        "and it is EMPTY — reading experiment events here would create exactly " +
+                        "the coupling shadow mode exists to avoid");
+                }
+            }
+
+            // ---- F: the frozen 15-column schema ---------------------------------------------
+            var expectedColumns = new[]
+            {
+                "window_index", "lsl_start", "lsl_end", "n_valid_channels", "theta_fc",
+                "alpha_post", "baseline_theta", "baseline_alpha", "normalized_index", "level",
+                "montage_status", "baseline_valid", "quality_rule_version", "controller_version",
+                "rejected_reason",
+            };
+
+            var headerField = typeof(IkeaEeg.Neuro.ShadowDecision).GetField("CsvHeader",
+                BindingFlags.Public | BindingFlags.Static);
+
+            var header = headerField != null
+                ? headerField.GetValue(null) as string
+                : null;
+
+            if (header == null)
+            {
+                var decisionSource = File.ReadAllText(
+                    "Assets/IKEA_EEG/Scripts/Neuro/ShadowDecision.cs");
+
+                Assert(decisionSource.Contains("window_index,lsl_start,lsl_end"),
+                    "the decision row declares the frozen header");
+
+                foreach (var column in expectedColumns)
+                {
+                    Assert(decisionSource.Contains(column),
+                        $"the shadow schema still carries {column}");
+                }
+            }
+            else
+            {
+                var columns = header.Split(',');
+
+                Assert(columns.Length == 15,
+                    $"shadow_decisions.csv has exactly 15 columns ({columns.Length})");
+
+                for (var i = 0; i < expectedColumns.Length && i < columns.Length; i++)
+                {
+                    Assert(columns[i].Trim() == expectedColumns[i],
+                        $"column {i + 1} is {expectedColumns[i]} (\"{columns[i].Trim()}\")");
+                }
+            }
+
+            // ---- G: the gate status this run will actually produce --------------------------
+            Assert(IkeaEeg.Neuro.ShadowModeController.MontageStatus.Contains("VERIFIED"),
+                $"montage_status reports VERIFIED " +
+                $"(\"{IkeaEeg.Neuro.ShadowModeController.MontageStatus}\")");
+
+            Assert(IkeaEeg.Neuro.ShadowModeController.MontageVerified,
+                "the montage gate is satisfied");
+
+            Assert(!IkeaEeg.Neuro.ShadowModeController.NormalizationApproved &&
+                   !IkeaEeg.Neuro.ShadowModeController.DecisionRuleApproved,
+                "normalization and the decision rule remain UNAPPROVED");
+
+            // Drive the REAL controller with clean features and read what a live row would say.
+            if (controllers.Length == 1)
+            {
+                var probe = new GameObject("__Shadow_Probe")
+                    .AddComponent<IkeaEeg.Neuro.ShadowModeController>();
+
+                try
+                {
+                    probe.ResetSession();
+
+                    IkeaEeg.Neuro.ShadowDecision row = default;
+
+                    for (var i = 0; i < 20; i++)
+                        row = probe.Evaluate(Window(40d + i, 12d + i * 0.1d));
+
+                    Assert(row.level == IkeaEeg.Neuro.WorkloadLevel.Indeterminate,
+                        $"a live row is INDETERMINATE ({row.level})");
+
+                    Assert(row.rejectedReason ==
+                           IkeaEeg.Neuro.ShadowRejection.NoApprovedNormalization,
+                        $"with a truthful gate reason — normalization is the first unmet " +
+                        $"prerequisite now that the montage is confirmed ({row.rejectedReason})");
+
+                    Assert(!row.baselineValid,
+                        "baseline_valid is FALSE");
+
+                    Assert(double.IsNaN(row.baselineTheta) && double.IsNaN(row.baselineAlpha),
+                        "baseline_theta / baseline_alpha are unavailable");
+
+                    Assert(double.IsNaN(row.normalizedIndex),
+                        "normalized_index is unavailable");
+
+                    Assert(row.montageStatus.Contains("VERIFIED"),
+                        $"and the row carries the verified montage status ({row.montageStatus})");
+
+                    Info($"live shadow row: level={row.level}, gate={row.rejectedReason}, " +
+                         $"montage={row.montageStatus}, baseline_valid={row.baselineValid}");
+                }
+                finally
+                {
+                    Object.DestroyImmediate(probe.gameObject);
+                }
+            }
+
+            // ---- H: PRE_TASK_REST is NOT turned into a baseline -----------------------------
+            var managerSource = StripCommentsAndAttributes(File.ReadAllText(
+                "Assets/IKEA_EEG/Scripts/Experiment/ExperimentManager.cs"));
+
+            Assert(!managerSource.Contains("SupplyApprovedBaseline"),
+                "nothing calls SupplyApprovedBaseline — the 180 s resting recording stays a " +
+                "recording, identifiable by its markers, until valid-window selection, artifact " +
+                "rejection and aggregation have been defined");
+
+            Assert(!managerSource.Contains("ShadowBaseline") &&
+                   !managerSource.Contains("ShadowModeController"),
+                "the manager holds no reference to shadow mode at all — the integration went " +
+                "through the scene, not through the experiment code");
+
+            var controllerSource = StripCommentsAndAttributes(File.ReadAllText(
+                "Assets/IKEA_EEG/Scripts/Neuro/ShadowModeController.cs"));
+
+            Assert(!controllerSource.Contains("PreTaskRest") &&
+                   !controllerSource.Contains("PRE_TASK_REST"),
+                "and the controller knows nothing about the resting blocks — it cannot pick " +
+                "them up automatically");
+
+            Assert(controllerSource.Contains("NO ACCUMULATION") ||
+                   !controllerSource.Contains("m_Baseline.Accumulate"),
+                "no window is folded into a baseline as it arrives");
+
+            // ---- I: ISOLATION. What shadow mode cannot reach --------------------------------
+            foreach (var (source, name) in new[]
+                     {
+                         (controllerSource, "ShadowModeController"),
+                         (StripCommentsAndAttributes(File.ReadAllText(
+                             "Assets/IKEA_EEG/Scripts/Neuro/ShadowDecisionSink.cs")),
+                          "ShadowDecisionSink"),
+                     })
+            {
+                foreach (var forbidden in new[]
+                         {
+                             "ExperimentManager", "ExperimentUIController", "ExperimentState",
+                             "ChairSelectionTask", "ChairTarget", "RecognitionItem",
+                             "XRRigTeleporter", "DifficultyLevel", "ExperimentConfig",
+                             "RecognitionResponsePanel", "SetState", "Teleport",
+                         })
+                {
+                    Assert(!source.Contains(forbidden),
+                        $"{name} contains no reference to {forbidden} — it cannot read or " +
+                        "change task state, difficulty, the participant UI, navigation or task " +
+                        "order, because it has no way to name them");
+                }
+            }
+
+            // ---- J: regression ---------------------------------------------------------------
+            var defaults = ScriptableObject.CreateInstance<ExperimentConfig>();
+
+            try
+            {
+                Assert(System.Math.Abs(defaults.preTaskRestDurationSeconds - 180f) < 0.001f &&
+                       System.Math.Abs(defaults.postTaskRestDurationSeconds - 180f) < 0.001f,
+                    "PRE and POST rest remain 180 s");
+
+                Assert(System.Math.Abs(defaults.recognitionWordDisplaySeconds - 2f) < 0.001f &&
+                       System.Math.Abs(defaults.recognitionResponseTimeoutSeconds - 15f) < 0.001f,
+                    "Recognition parameters are unchanged");
+            }
+            finally
+            {
+                Object.DestroyImmediate(defaults);
+            }
+
+            var recorderSource = File.ReadAllText(
+                "Assets/IKEA_EEG/Scripts/Data/RawEegRecorder.cs");
+
+            Assert(recorderSource.Contains("lsl_timestamp_analysis") &&
+                   recorderSource.Contains("lsl_timestamp_local_raw") &&
+                   recorderSource.Contains("lsl_timestamp_remote_raw"),
+                "raw_eeg.csv schema is unchanged");
+
+            var pipelineSource = File.ReadAllText(
+                "Assets/IKEA_EEG/Scripts/Data/EegFeaturePipeline.cs");
+
+            Assert(!pipelineSource.Contains("ShadowMode") &&
+                   !pipelineSource.Contains("ShadowDecision"),
+                "the feature pipeline knows nothing about its observer — the dependency points " +
+                "one way only, which is what keeps shadow mode removable");
+        }
+
         /// <summary>
         /// Finds a GameObject by name anywhere in the loaded scene, INCLUDING inactive ones.
         ///
@@ -9346,7 +9779,11 @@ namespace IkeaEeg.EditorTools
         /// above demands exactly one. Either way the suite asserts a precise number — it never
         /// simply tolerates whatever it finds.
         /// </summary>
-        const bool k_ShadowControllerWiredIntoScene = false;
+        // FLIPPED 2026-09-15. Phase 2: the controller and its sink are now built into the
+        // scene by ExperimentSceneBuilder, so "exactly one" is the requirement rather than
+        // "deliberately absent". The flag is kept rather than deleted because it is what makes
+        // the transition explicit in the history.
+        const bool k_ShadowControllerWiredIntoScene = true;
 
         /// <summary>
         /// The decision path, driven directly with synthetic feature windows.
@@ -12280,8 +12717,18 @@ namespace IkeaEeg.EditorTools
 
                 var participant = results.BuildParticipantRunSummary("Executive task complete", 1, 0);
 
-                Assert(participant.Contains(expected),
-                    $"the PARTICIPANT summary shows the authoritative duration ('{expected}')");
+                // UPDATED 2026-09-15. The participant-facing TOTAL duration now reads in
+                // minutes; the underlying value and every other consumer are unchanged, which is
+                // what the researcher/notes/file assertions below still check against `expected`.
+                var participantDuration = TimeFormat.MinutesAndSeconds(
+                    results.totalExperimentDurationSeconds);
+
+                Assert(participant.Contains(participantDuration),
+                    $"the PARTICIPANT summary shows the duration in minutes " +
+                    $"('{participantDuration}')");
+
+                Assert(!participant.Contains(expected),
+                    $"and no longer shows the millisecond form ('{expected}') on that row");
 
                 Assert(!participant.Contains("0.000 s"),
                     "the participant summary no longer shows 0.000 s");
@@ -12312,7 +12759,7 @@ namespace IkeaEeg.EditorTools
                 });
 
                 Assert(empty.BuildParticipantRunSummary("Executive task complete", 1, 0)
-                        .Contains(TimeFormat.FromSeconds(0d)),
+                        .Contains(TimeFormat.MinutesAndSeconds(0d)),
                     "a genuinely zero duration is still shown as zero — the fix is the " +
                     "lifecycle, not a display substitution");
             }
@@ -13230,8 +13677,9 @@ namespace IkeaEeg.EditorTools
                     Assert(summary.Contains("2.000 s (2000 ms)"),
                         $"{code}: mean response time is shown as X.XXX s (XXXX ms)");
 
-                    Assert(summary.Contains("184.500 s (184500 ms)"),
-                        $"{code}: total duration is shown as X.XXX s (XXXX ms)");
+                    Assert(summary.Contains(TimeFormat.MinutesAndSeconds(184.5d)),
+                        $"{code}: total duration is shown in minutes " +
+                        $"('{TimeFormat.MinutesAndSeconds(184.5d)}')");
 
                     Assert(summary.Contains(ExperimentLocalization.Get(LocKeys.RecordingSaved)),
                         $"{code}: the saved immediate recall reads as 'Recording saved'");

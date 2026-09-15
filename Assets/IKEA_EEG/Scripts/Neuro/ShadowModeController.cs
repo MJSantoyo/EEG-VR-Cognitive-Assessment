@@ -117,6 +117,20 @@ namespace IkeaEeg.Neuro
         }
 
         /// <summary>Clears the window counter and any supplied baseline. This component only.</summary>
+        /// <summary>
+        /// Scene-builder wiring. Serialized references only — it changes no behaviour, approves
+        /// nothing and cannot open a gate.
+        ///
+        /// The controller finds the pipeline itself in OnEnable when this is not called, so this
+        /// exists to make the wiring EXPLICIT in the generated scene rather than implicit in a
+        /// FindAnyObjectByType at run time.
+        /// </summary>
+        public void Configure(EegFeaturePipeline pipeline, ShadowDecisionSink sink)
+        {
+            m_Pipeline = pipeline;
+            m_Sink = sink;
+        }
+
         public void ResetSession()
         {
             m_Baseline.Reset();

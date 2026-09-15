@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
@@ -514,8 +514,13 @@ namespace IkeaEeg.Experiment
             AppendStat(sb, Localization.LocKeys.StatMedianResponseTime,
                 FormatParticipantDuration(medianResponseTimeSeconds));
 
+            // MINUTES, not milliseconds. This is the one duration on this screen measured in
+            // minutes rather than in reaction time, and "444.512 s (444512 ms)" made a reader
+            // do arithmetic to learn the session took about seven and a half minutes. The mean
+            // and median response times above are deliberately NOT changed — milliseconds are
+            // the unit those are measured in.
             AppendStat(sb, Localization.LocKeys.StatTotalDuration,
-                FormatParticipantDuration(totalExperimentDurationSeconds));
+                FormatParticipantTotalDuration(totalExperimentDurationSeconds));
 
             // THE PROTOCOL BRANCH THIS PASS EXISTS FOR.
             //
@@ -647,6 +652,20 @@ namespace IkeaEeg.Experiment
         {
             sb.Append(Localization.ExperimentLocalization.Get(labelKey))
               .Append(":  <b>").Append(value).Append("</b>\n");
+        }
+
+        /// <summary>
+        /// The whole-session duration as a person reads it: "7 min 24 s".
+        ///
+        /// PRESENTATION ONLY, and used for exactly one row. totalExperimentDurationSeconds is
+        /// unchanged, every file still records it in seconds to millisecond precision, and no
+        /// reaction time goes through here.
+        /// </summary>
+        static string FormatParticipantTotalDuration(double seconds)
+        {
+            return double.IsNaN(seconds)
+                ? Localization.ExperimentLocalization.Get(Localization.LocKeys.NotAvailable)
+                : TimeFormat.MinutesAndSeconds(seconds);
         }
 
         /// <summary>"X.XXX s (XXXX ms)", or the localized "Not available".</summary>
