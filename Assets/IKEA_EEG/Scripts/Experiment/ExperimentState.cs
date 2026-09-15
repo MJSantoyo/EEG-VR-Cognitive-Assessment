@@ -1,4 +1,4 @@
-namespace IkeaEeg.Experiment
+﻿namespace IkeaEeg.Experiment
 {
     /// <summary>
     /// The explicit states of the trial.
@@ -115,5 +115,29 @@ namespace IkeaEeg.Experiment
         /// yet established, so nothing here fixes a count.
         /// </summary>
         DelayedRecognition,
+
+        /// <summary>
+        /// Area A: the eyes-open resting EEG acquisition that precedes all cognitive content.
+        ///
+        /// APPENDED so every existing state keeps its number — the enum is serialized in the
+        /// scene and written to the CSV's experiment_state column, so inserting this where it
+        /// belongs chronologically would silently renumber everything after it.
+        ///
+        /// No task runs here and nothing is scored. The participant fixates and stays still
+        /// while the EEG that is already being recorded continues uninterrupted.
+        /// </summary>
+        PreTaskRest,
+
+        /// <summary>
+        /// Area C: the eyes-open resting EEG acquisition that follows all cognitive content.
+        ///
+        /// The same procedure as <see cref="PreTaskRest"/>, deliberately kept as a SEPARATE
+        /// state so a recording taken after twenty minutes of cognitive work can never be
+        /// mistaken in the data for the resting reference taken before it.
+        ///
+        /// The run is still open here: TRIAL_END has not been logged and the session is live,
+        /// which is what keeps the whole recording continuous.
+        /// </summary>
+        PostTaskRest,
     }
 }

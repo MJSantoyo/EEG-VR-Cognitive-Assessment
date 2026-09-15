@@ -112,6 +112,24 @@
         /// English-only this iteration, like every other Recognition string.
         /// </summary>
         public const string RecognitionItemProgress = "RECOGNITION_ITEM_PROGRESS";
+
+        // ---- Resting EEG acquisition blocks -------------------------------------------------
+        // ENGLISH-ONLY THIS ITERATION, following the same policy as every Recognition string:
+        // the ES and JA slots deliberately hold the English text. These are participant-facing
+        // instructions for an acquisition block whose wording has not been approved in those
+        // languages, and a machine translation would look finished while quietly changing what
+        // the participant was told to do. ES/JA are PENDING human approval.
+
+        /// <summary>Pre-task resting instructions. Shown before the fixation point appears.</summary>
+        public const string PreTaskRestInstructions = "PRE_TASK_REST_INSTRUCTIONS";
+
+        /// <summary>Post-task resting instructions. Same condition, different recording.</summary>
+        public const string PostTaskRestInstructions = "POST_TASK_REST_INSTRUCTIONS";
+
+        // NOTE: the post-task rest READY control deliberately reuses LocKeys.Ready, which is
+        // already translated in all three languages. A second English-only "READY" key would
+        // have shown Spanish and Japanese participants an untranslated button for no reason —
+        // this is one word the project has already approved.
         public const string ReadyForAreaB = "READY_FOR_AREA_B";
         public const string Start = "START";
         public const string EnterShowroom = "ENTER_SHOWROOM";

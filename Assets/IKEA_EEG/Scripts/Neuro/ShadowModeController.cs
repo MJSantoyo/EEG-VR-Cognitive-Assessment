@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 using IkeaEeg.Data;
 
 namespace IkeaEeg.Neuro
@@ -39,14 +39,35 @@ namespace IkeaEeg.Neuro
         /// HumanVerifiedAcquisitionUi without any physical check having been performed. It
         /// becomes VERIFIED only when a documented electrode-placement verification exists.
         /// </summary>
-        public const string MontageStatus = "UNVERIFIED";
+        /// <summary>
+        /// Written verbatim into every shadow row, so a row carries its own provenance and an
+        /// analysis never has to ask a separate file what the montage status was that day.
+        ///
+        /// Traceable on purpose: it names WHAT was verified and WHEN, rather than asserting a
+        /// bare "VERIFIED" that nobody could later audit.
+        /// </summary>
+        public const string MontageStatus = "PHYSICALLY_VERIFIED_2026-09-15";
 
         // ---- Scientific prerequisites, all absent in Phase 1 ---------------------------
         // Compile-time constants rather than inspector toggles: none of these may be switched
         // on from the editor by anyone who has not done the underlying scientific work.
 
-        /// <summary>Requires a documented physical electrode-placement verification.</summary>
-        public const bool MontageVerified = false;
+        /// <summary>
+        /// Requires a documented physical electrode-placement verification.
+        ///
+        /// TRUE since 2026-09-15: the researcher traced each electrode to its acquisition
+        /// channel on the hardware and confirmed CH1=Fp1, CH2=F3, CH3=Fz, CH4=F4, CH5=Cz,
+        /// CH6=P3, CH7=Pz, CH8=P4. See AuraMontageConfig.verificationNote, which is the record.
+        ///
+        /// WHAT THIS DOES NOT UNLOCK. Nothing that produces a label. The gate chain continues to
+        /// NormalizationApproved, which is still false, so the reported rejection simply moves
+        /// from MontageUnverified to NoApprovedNormalization. Beyond that, Row() hard-codes
+        /// WorkloadLevel.Indeterminate unconditionally — there is no branch anywhere in this
+        /// class that can emit LOW, MODERATE or HIGH, whatever the gates say. Knowing which
+        /// electrode is which was never the thing standing between this project and a workload
+        /// label; an approved normalization method and reviewed cut-offs are, and neither exists.
+        /// </summary>
+        public const bool MontageVerified = true;
 
         /// <summary>Requires a frozen, reviewed normalization method.</summary>
         public const bool NormalizationApproved = false;

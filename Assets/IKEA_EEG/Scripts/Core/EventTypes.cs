@@ -98,6 +98,35 @@ namespace IkeaEeg.Core
         /// <summary>A developer jumped areas. Marks the run DEVELOPER_INTERRUPTED.</summary>
         public const string DeveloperAreaJump = "DEVELOPER_AREA_JUMP";
 
+        // ---- Resting EEG acquisition blocks ------------------------------------------------
+        // Two dedicated eyes-open resting recordings that bracket the cognitive protocol. They
+        // are ACQUISITION blocks and nothing more: no task, no stimulus, no response, no score.
+        //
+        // THEY ARE DELIBERATELY NOT INTERCHANGEABLE. The pre-task block is the resting reference
+        // CANDIDATE; the post-task block is a recovery recording taken after the participant has
+        // done ~20 minutes of cognitive work. Averaging them, or silently using the post-task one
+        // as a baseline, would fold task after-effects into the reference. Nothing in this
+        // project combines them, and the distinct event names are the first line of that defence.
+        //
+        // Both live inside the SAME run as the cognitive task, on the same session and trial
+        // clocks, so raw_eeg.csv is one continuous recording from pre-rest through task to
+        // post-rest with no discontinuity to reconcile later.
+
+        /// <summary>Pre-task eyes-open rest begins. The resting reference CANDIDATE.</summary>
+        public const string PreTaskRestStart = "PRE_TASK_REST_START";
+
+        /// <summary>Pre-task rest ends. Carries the achieved duration in its notes.</summary>
+        public const string PreTaskRestEnd = "PRE_TASK_REST_END";
+
+        /// <summary>
+        /// Post-task eyes-open rest begins. A RECOVERY recording — never a baseline, and never
+        /// pooled with the pre-task block.
+        /// </summary>
+        public const string PostTaskRestStart = "POST_TASK_REST_START";
+
+        /// <summary>Post-task rest ends. The run may only be finalised after this.</summary>
+        public const string PostTaskRestEnd = "POST_TASK_REST_END";
+
         // ---- Area A: encoding + immediate recall ---------------------------------------
         public const string AreaAEnter = "AREA_A_ENTER";
         public const string WordEncodingStart = "WORD_ENCODING_START";

@@ -269,6 +269,60 @@ namespace IkeaEeg.Localization
                 LocKeys.RecognitionItemProgress,
                 new Entry("Item {N} / {TOTAL}", "Item {N} / {TOTAL}", "Item {N} / {TOTAL}")
             },
+
+            // ---- Resting EEG acquisition --------------------------------------------------
+            // ENGLISH-ONLY THIS ITERATION. The ES and JA slots hold the English text on purpose,
+            // exactly as every Recognition string in this table does. These are participant-facing
+            // acquisition instructions; a machine translation would read as finished while
+            // quietly altering what the participant was asked to do. ES/JA PENDING human approval.
+            //
+            // The two texts differ only in their opening clause. The CONDITION they describe is
+            // deliberately identical — eyes open, still, fixating — because the pre- and post-task
+            // recordings are only comparable if the participant was asked for the same thing.
+            {
+                LocKeys.PreTaskRestInstructions,
+                new Entry(
+                    "Before we begin the assessment, we will record a short resting reference." +
+                    "\n\n" +
+                    "Please remain still, keep your eyes open, and look at the point in front " +
+                    "of you." +
+                    "\n\n" +
+                    "Avoid unnecessary movements until the recording is complete.",
+                    "Before we begin the assessment, we will record a short resting reference." +
+                    "\n\n" +
+                    "Please remain still, keep your eyes open, and look at the point in front " +
+                    "of you." +
+                    "\n\n" +
+                    "Avoid unnecessary movements until the recording is complete.",
+                    "Before we begin the assessment, we will record a short resting reference." +
+                    "\n\n" +
+                    "Please remain still, keep your eyes open, and look at the point in front " +
+                    "of you." +
+                    "\n\n" +
+                    "Avoid unnecessary movements until the recording is complete.")
+            },
+            {
+                LocKeys.PostTaskRestInstructions,
+                new Entry(
+                    "The assessment is complete. We will now record a short resting period." +
+                    "\n\n" +
+                    "Please remain still, keep your eyes open, and look at the point in front " +
+                    "of you." +
+                    "\n\n" +
+                    "Avoid unnecessary movements until the recording is complete.",
+                    "The assessment is complete. We will now record a short resting period." +
+                    "\n\n" +
+                    "Please remain still, keep your eyes open, and look at the point in front " +
+                    "of you." +
+                    "\n\n" +
+                    "Avoid unnecessary movements until the recording is complete.",
+                    "The assessment is complete. We will now record a short resting period." +
+                    "\n\n" +
+                    "Please remain still, keep your eyes open, and look at the point in front " +
+                    "of you." +
+                    "\n\n" +
+                    "Avoid unnecessary movements until the recording is complete.")
+            },
             {
                 LocKeys.ReadyForAreaB,
                 new Entry("Well done.\n\nPress ENTER SHOWROOM to continue.",

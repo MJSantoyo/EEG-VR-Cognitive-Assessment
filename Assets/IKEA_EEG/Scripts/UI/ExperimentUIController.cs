@@ -70,6 +70,11 @@ namespace IkeaEeg.UI
                  "default; never part of participant-facing behaviour.")]
         [SerializeField] TMP_Text m_AreaADeveloperCheatsheet;
 
+        [Tooltip("Stationary fixation point for the PRE-TASK resting block. A dedicated object " +
+                 "per area, for the same reason the stimulus label is: only one area's canvas " +
+                 "is ever active.")]
+        [SerializeField] TMP_Text m_AreaAFixation;
+
         [SerializeField] TMP_Text m_AreaAStatus;
         [SerializeField] Button m_StartButton;
         [SerializeField] Button m_EnterAreaBButton;
@@ -113,6 +118,13 @@ namespace IkeaEeg.UI
 
         [Tooltip("The Area C twin of the developer QA overlay. Same gate, same rules.")]
         [SerializeField] TMP_Text m_AreaCDeveloperCheatsheet;
+
+        [Tooltip("Stationary fixation point for the POST-TASK resting block.")]
+        [SerializeField] TMP_Text m_AreaCFixation;
+
+        [Tooltip("READY control that begins the post-task rest. Area C has no other press, so " +
+                 "this is what lets the participant settle before fixation starts.")]
+        [SerializeField] Button m_RestReadyButton;
 
         [SerializeField] TMP_Text m_AreaCStatus;
         [SerializeField] TMP_Text m_AreaCResults;
@@ -184,6 +196,9 @@ namespace IkeaEeg.UI
         /// <summary>The participant confirmed they understood the Area B task instructions.</summary>
         public event Action readyPressed;
 
+        /// <summary>The participant is ready to begin the POST-TASK resting acquisition.</summary>
+        public event Action restReadyPressed;
+
         public event Action exitToAreaCPressed;
         public event Action restartPressed;
         /// <summary>NEW TRIAL: keep this run and start another one at Area A.</summary>
@@ -221,6 +236,7 @@ namespace IkeaEeg.UI
             AddListener(m_StartButton, RaiseStart);
             AddListener(m_EnterAreaBButton, RaiseEnterAreaB);
             AddListener(m_ReadyButton, RaiseReady);
+            AddListener(m_RestReadyButton, RaiseRestReady);
             AddListener(m_ExitToAreaCButton, RaiseExitToAreaC);
             AddListener(m_RestartButton, RaiseRestart);
             AddListener(m_NewTrialButton, RaiseNewTrial);
@@ -250,6 +266,7 @@ namespace IkeaEeg.UI
             RemoveListener(m_StartButton, RaiseStart);
             RemoveListener(m_EnterAreaBButton, RaiseEnterAreaB);
             RemoveListener(m_ReadyButton, RaiseReady);
+            RemoveListener(m_RestReadyButton, RaiseRestReady);
             RemoveListener(m_ExitToAreaCButton, RaiseExitToAreaC);
             RemoveListener(m_RestartButton, RaiseRestart);
             RemoveListener(m_NewTrialButton, RaiseNewTrial);
@@ -276,6 +293,7 @@ namespace IkeaEeg.UI
         void RaiseStart() => startPressed?.Invoke();
         void RaiseEnterAreaB() => enterAreaBPressed?.Invoke();
         void RaiseReady() => readyPressed?.Invoke();
+        void RaiseRestReady() => restReadyPressed?.Invoke();
         void RaiseExitToAreaC() => exitToAreaCPressed?.Invoke();
         void RaiseRestart() => restartPressed?.Invoke();
         void RaiseNewTrial() => newTrialPressed?.Invoke();
@@ -571,6 +589,53 @@ namespace IkeaEeg.UI
             SetActive(m_AreaCRecognitionCounter, visible);
         }
 
+        // ---------------------------------------------------------------------------------
+        // Resting acquisition: fixation + READY
+        // ---------------------------------------------------------------------------------
+
+        /// <summary>
+        /// Shows or hides the stationary fixation point in BOTH resting areas.
+        ///
+        /// Two labels, one per area, written together — the same idiom the stimulus word and the
+        /// progress counter use. Only one area's canvas is active at a time, so this puts exactly
+        /// one fixation point in front of the participant.
+        ///
+        /// The glyph is set by the scene builder and never changes at run time: a fixation point
+        /// that moved, blinked or resized would be a visual event in the middle of a recording
+        /// whose entire purpose is the absence of visual events.
+        /// </summary>
+        public void ShowFixationPoint(bool visible)
+        {
+            // Written here rather than baked in by the builder: a builder-authored glyph would
+            // be participant-facing text carrying no localization binding, and the localization
+            // audit rejects exactly that. Set once, when the point is raised, and never touched
+            // again while it is up.
+            SetText(m_AreaAFixation, visible ? k_FixationGlyph : string.Empty);
+            SetText(m_AreaCFixation, visible ? k_FixationGlyph : string.Empty);
+
+            SetActive(m_AreaAFixation, visible);
+            SetActive(m_AreaCFixation, visible);
+        }
+
+        /// <summary>
+        /// The fixation target. A symbol, not a word — it is identical in every language, which
+        /// is why it is a constant here and not a localization key.
+        /// </summary>
+        const string k_FixationGlyph = "+";
+
+        /// <summary>True while a fixation point is on screen. Used by the self test.</summary>
+        public bool fixationVisible =>
+            (m_AreaAFixation != null && m_AreaAFixation.gameObject.activeSelf) ||
+            (m_AreaCFixation != null && m_AreaCFixation.gameObject.activeSelf);
+
+        public TMP_Text areaAFixation => m_AreaAFixation;
+        public TMP_Text areaCFixation => m_AreaCFixation;
+
+        /// <summary>The READY control that begins the post-task resting acquisition.</summary>
+        public void ShowRestReadyButton(bool visible) => SetActive(m_RestReadyButton, visible);
+
+        public Button restReadyButton => m_RestReadyButton;
+
         public TMP_Text areaARecognitionCounter => m_AreaARecognitionCounter;
         public TMP_Text areaCRecognitionCounter => m_AreaCRecognitionCounter;
 
@@ -739,6 +804,12 @@ namespace IkeaEeg.UI
             ShowRecognitionCounter(false);
             ShowDeveloperCheatsheet(false);
 
+            // The resting overlays go down on any reset too. A fixation point left standing, or
+            // a READY that could start a rest block nobody scheduled, would both be worse than
+            // a blank panel.
+            ShowFixationPoint(false);
+            ShowRestReadyButton(false);
+
             SetWarning(string.Empty);
             ShowRecenterButtons(true);
             ShowRecheckAudioButton(false);
@@ -798,8 +869,10 @@ namespace IkeaEeg.UI
 
         public void BindAreaA(GameObject panel, TMP_Text title, TMP_Text instruction,
             TMP_Text word, TMP_Text status, Button startButton, Button enterButton,
-            TMP_Text recognitionCounter = null, TMP_Text developerCheatsheet = null)
+            TMP_Text recognitionCounter = null, TMP_Text developerCheatsheet = null,
+            TMP_Text fixation = null)
         {
+            m_AreaAFixation = fixation;
             m_AreaAPanel = panel;
             m_AreaATitle = title;
             m_AreaAInstruction = instruction;
@@ -879,8 +952,11 @@ namespace IkeaEeg.UI
         public void BindAreaC(GameObject panel, TMP_Text instruction, TMP_Text status,
             TMP_Text results, Button restartButton, Button endButton, Button newTrialButton = null,
             TMP_Text word = null, TMP_Text recognitionCounter = null,
-            TMP_Text developerCheatsheet = null)
+            TMP_Text developerCheatsheet = null, TMP_Text fixation = null,
+            Button restReadyButton = null)
         {
+            m_AreaCFixation = fixation;
+            m_RestReadyButton = restReadyButton;
             m_AreaCPanel = panel;
             m_AreaCInstruction = instruction;
             m_AreaCStatus = status;

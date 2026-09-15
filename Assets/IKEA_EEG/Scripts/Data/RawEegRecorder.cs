@@ -120,9 +120,19 @@ namespace IkeaEeg.Data
                 // remains self-describing.
                 m_Writer.WriteLine("# IKEA_EEG raw EEG — values exactly as received from LSL.");
                 m_Writer.WriteLine("# NO filtering, scaling, unit conversion or re-referencing has been applied.");
-                m_Writer.WriteLine("# Channels are numbered in STREAM ORDER. No electrode mapping is claimed:");
-                m_Writer.WriteLine("#   the source stream publishes no verified montage, so ch1..chN are positions,");
-                m_Writer.WriteLine("#   not scalp locations.");
+                // MONTAGE. Two separate facts, kept separate on purpose:
+                //   * the STREAM still publishes nothing — its <desc/> is empty, so this file is
+                //     not self-describing and never will be while that is true;
+                //   * the PROJECT now holds a physically traced mapping for this setup.
+                // Stating only the first would understate what is known; stating only the second
+                // would imply the file can be trusted on its own. Both go in.
+                m_Writer.WriteLine("# Channels are in STREAM ORDER (ch1..chN = acquisition order).");
+                m_Writer.WriteLine("# The LSL stream itself publishes NO montage, so this file is not self-describing.");
+                m_Writer.WriteLine("# Electrode mapping physically confirmed 2026-09-15 for this acquisition setup:");
+                m_Writer.WriteLine("#   ch1=Fp1 ch2=F3 ch3=Fz ch4=F4 ch5=Cz ch6=P3 ch7=Pz ch8=P4");
+                m_Writer.WriteLine("#   Source of truth: AuraMontageConfig (mappingSource=PhysicallyVerifiedPlacement).");
+                m_Writer.WriteLine("#   This identifies the electrodes ONLY. It asserts nothing about signal quality,");
+                m_Writer.WriteLine("#   baseline validity or any derived measure.");
                 m_Writer.WriteLine($"# experiment_session_id={experimentSessionId}");
                 m_Writer.WriteLine($"# run_session_id={runSessionId}");
                 m_Writer.WriteLine($"# run_index={runIndex.ToString(CultureInfo.InvariantCulture)}");

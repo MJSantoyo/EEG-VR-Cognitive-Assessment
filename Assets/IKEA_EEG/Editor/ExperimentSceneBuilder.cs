@@ -1072,6 +1072,26 @@ namespace IkeaEeg.EditorTools
                 developerCheatsheet = CreateText("Txt_DevCheatsheet_A", canvas.transform,
                     new Vector2(0f, -120f), new Vector2(900f, 160f), string.Empty, 34f,
                     TextAlignmentOptions.Center, new Color(1f, 0.35f, 0.85f)),
+
+                // FIXATION POINT for the PRE-TASK resting acquisition.
+                //
+                // Placed at the stimulus word's own height (+60) so the participant's gaze rests
+                // where the encoding words will appear moments later — the resting reference is
+                // taken with the eyes in the same position the task will use.
+                //
+                // A "+" rather than a dot: it gives the eye two axes to hold on to, which is the
+                // standard fixation target in visual work, and it is a glyph the existing TMP
+                // pipeline already renders. Dim grey-white and MOTIONLESS — nothing about this
+                // object changes for the whole 180 s, because a recording of rest must not
+                // contain a visual event.
+                //
+                // AUTHORED EMPTY. The glyph is written by ExperimentUIController when the
+                // point is raised. A builder-authored literal here would be participant-facing
+                // text with no localization binding, which the localization audit correctly
+                // rejects — and the audit should not have to learn that "+" is not a word.
+                fixation = CreateText("Txt_Fixation_A", canvas.transform,
+                    new Vector2(0f, 60f), new Vector2(200f, 200f), string.Empty, 96f,
+                    TextAlignmentOptions.Center, new Color(0.86f, 0.88f, 0.92f)),
                 status = CreateText("Txt_Status", canvas.transform, new Vector2(0f, -110f),
                     new Vector2(1360f, 140f), string.Empty, 42f,
                     TextAlignmentOptions.Center, new Color(0.75f, 0.85f, 0.75f)),
@@ -1106,6 +1126,9 @@ namespace IkeaEeg.EditorTools
             // which the manager never runs still shows the participant neither of them.
             ui.recognitionCounter.gameObject.SetActive(false);
             ui.developerCheatsheet.gameObject.SetActive(false);
+
+            // The fixation point is raised only for the resting block.
+            ui.fixation.gameObject.SetActive(false);
 
             return spawn;
         }
@@ -1589,6 +1612,28 @@ namespace IkeaEeg.EditorTools
                     new Vector2(0f, -15f), new Vector2(900f, 160f), string.Empty, 34f,
                     TextAlignmentOptions.Center, new Color(1f, 0.35f, 0.85f)),
 
+                // The Area C twin. Its y is DERIVED from the Area A one so both fixation points
+                // sit at the SAME WORLD HEIGHT, exactly as the stimulus word does:
+                //   Area A +60 -> world 1.65 + 60*0.00095  = 1.7070 m
+                //             -> Area C (1.7070 - 1.55) / 0.00095 = +165
+                // Pre- and post-task rest are only comparable if the participant was looking at
+                // the same place, at the same height, at the same distance.
+                fixation = CreateText("Txt_Fixation_C", canvas.transform,
+                    new Vector2(0f, 165f), new Vector2(200f, 200f), string.Empty, 96f,
+                    TextAlignmentOptions.Center, new Color(0.86f, 0.88f, 0.92f)),
+
+                // READY for the POST-TASK rest.
+                //
+                // At y -50 it sits in the band the results block occupies — which is empty at
+                // this point in the flow — and clears the top of NEW TRIAL (-285) by 170 px.
+                // It was originally placed on the run-action row at -350; the Area C layout test
+                // caught that as an overlap with NEW TRIAL, correctly: those rects coexist in
+                // space even though they never coexist in time, and a layout that depends on
+                // timing to avoid a collision is one refactor away from showing both at once.
+                restReadyButton = CreateButton("Btn_RestReady_C", canvas.transform,
+                    new Vector2(0f, -50f), new Vector2(560f, 130f), string.Empty,
+                    new Color(0.13f, 0.50f, 0.30f)),
+
                 results = CreateText("Txt_Results", canvas.transform, new Vector2(0f, 280f),
                     new Vector2(1520f, 980f), string.Empty, 52f,
                     TextAlignmentOptions.Center, new Color(0.95f, 0.95f, 0.95f), autoSizeMin: 34f),
@@ -1634,6 +1679,8 @@ namespace IkeaEeg.EditorTools
             // Same rule as Area A: inactive until the manager decides otherwise.
             ui.recognitionCounter.gameObject.SetActive(false);
             ui.developerCheatsheet.gameObject.SetActive(false);
+            ui.fixation.gameObject.SetActive(false);
+            ui.restReadyButton.gameObject.SetActive(false);
 
             return spawn;
         }
@@ -1747,13 +1794,14 @@ namespace IkeaEeg.EditorTools
             ui.BindShapeLegend(uiB.shapeLegend);
             ui.BindAreaA(uiA.panel, uiA.title, uiA.instruction, uiA.word, uiA.status,
                 uiA.startButton, uiA.enterButton, uiA.recognitionCounter,
-                uiA.developerCheatsheet);
+                uiA.developerCheatsheet, uiA.fixation);
             ui.BindAreaB(uiB.instructionPanel, uiB.instruction, uiB.statusPanel, uiB.status,
                 uiB.feedback, uiB.exitButton, uiB.readyButton, uiB.instructionOverlay,
                 uiB.overlayText);
             ui.BindAreaC(uiC.panel, uiC.instruction, uiC.status, uiC.results,
                 uiC.restartButton, uiC.endButton, uiC.newTrialButton, uiC.word,
-                uiC.recognitionCounter, uiC.developerCheatsheet);
+                uiC.recognitionCounter, uiC.developerCheatsheet, uiC.fixation,
+                uiC.restReadyButton);
             ui.BindShared(uiA.recenterButton, uiB.recenterButton, uiC.recenterButton,
                 uiA.warning, uiB.warning, uiC.warning, uiA.recheckAudioButton,
                 ui0.recenterButton, ui0.warning);
@@ -1783,6 +1831,7 @@ namespace IkeaEeg.EditorTools
             LocalizeButton(uiC.restartButton, LocKeys.Restart, LocKeys.RestartSubtitle);
             LocalizeButton(uiC.endButton, LocKeys.End, LocKeys.EndSubtitle);
             LocalizeButton(uiC.recenterButton, LocKeys.Recenter);
+            LocalizeButton(uiC.restReadyButton, LocKeys.Ready);
 
             // ---- Developer navigation (NOT participant functionality) ----------------------
             var devNavGo = new GameObject("DeveloperNavigation");
@@ -3208,6 +3257,9 @@ namespace IkeaEeg.EditorTools
 
             /// <summary>DEVELOPER QA ONLY. Gated by config; hidden by default.</summary>
             public TextMeshProUGUI developerCheatsheet;
+
+            /// <summary>Stationary fixation point for the pre-task resting block.</summary>
+            public TextMeshProUGUI fixation;
             public TextMeshProUGUI status;
             public TextMeshProUGUI warning;
             public Button startButton;
@@ -3246,6 +3298,12 @@ namespace IkeaEeg.EditorTools
 
             /// <summary>Area C twin of the developer QA overlay.</summary>
             public TextMeshProUGUI developerCheatsheet;
+
+            /// <summary>Stationary fixation point for the post-task resting block.</summary>
+            public TextMeshProUGUI fixation;
+
+            /// <summary>READY control that begins the post-task resting block.</summary>
+            public Button restReadyButton;
 
             public TextMeshProUGUI results;
             public TextMeshProUGUI warning;

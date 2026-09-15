@@ -369,6 +369,7 @@ namespace IkeaEeg.Experiment
                 m_UI.startPressed += OnStartPressed;
                 m_UI.enterAreaBPressed += OnEnterAreaBPressed;
                 m_UI.readyPressed += OnReadyPressed;
+                m_UI.restReadyPressed += OnRestReadyPressed;
                 m_UI.exitToAreaCPressed += OnExitToAreaCPressed;
                 m_UI.restartPressed += OnRestartPressed;
                 m_UI.newTrialPressed += OnNewTrialPressed;
@@ -540,6 +541,7 @@ namespace IkeaEeg.Experiment
                 m_UI.startPressed -= OnStartPressed;
                 m_UI.enterAreaBPressed -= OnEnterAreaBPressed;
                 m_UI.readyPressed -= OnReadyPressed;
+                m_UI.restReadyPressed -= OnRestReadyPressed;
                 m_UI.exitToAreaCPressed -= OnExitToAreaCPressed;
                 m_UI.restartPressed -= OnRestartPressed;
                 m_UI.newTrialPressed -= OnNewTrialPressed;
@@ -2254,7 +2256,43 @@ namespace IkeaEeg.Experiment
             });
 
             StopFlow();
-            m_Flow = StartCoroutine(RunAreaA());
+
+            // THE RESTING REFERENCE COMES FIRST. RunAreaA is entered only after the pre-task
+            // block has finished, so no cognitive content can begin during the recording.
+            // RunAreaA itself is untouched — the rest is prepended around it, not woven into it.
+            m_Flow = StartCoroutine(RunPreTaskRestThenAreaA());
+        }
+
+        /// <summary>
+        /// The pre-task resting acquisition, then the existing Area A flow.
+        ///
+        /// A wrapper rather than an edit to RunAreaA: the Recognition path is validated and the
+        /// safest way to put something in front of it is to leave it completely alone.
+        ///
+        /// This runs AFTER BeginTrial(), so the resting block sits inside the run's own clock and
+        /// carries this run's trial_id. PRE_TASK_REST, the cognitive task and POST_TASK_REST are
+        /// then one continuous recording on one clock, which is what makes the raw EEG usable as
+        /// a single file.
+        /// </summary>
+        IEnumerator RunPreTaskRestThenAreaA()
+        {
+            yield return RunRestBlock(
+                ExperimentState.PreTaskRest,
+                LocKeys.PreTaskRestInstructions,
+                EventTypes.PreTaskRestStart,
+                EventTypes.PreTaskRestEnd,
+                m_Config.preTaskRestDurationSeconds,
+                "PRE_TASK",
+                requireReadyPress: false,
+                SetAreaAInstructionAndStatus);
+
+            if (m_State == ExperimentState.Aborted)
+            {
+                m_Flow = null;
+                yield break;
+            }
+
+            yield return RunAreaA();
         }
 
         void OnEnterAreaBPressed()
@@ -4223,7 +4261,30 @@ namespace IkeaEeg.Experiment
             // written only while publishing, which happens at the end of this method — so the
             // panel read the field while it still held its post-Reset zero and printed
             // "0.000 s". Moving the capture earlier is the whole fix.
+            // Captured BEFORE the post-task rest, so it keeps meaning what it has always
+            // meant: the length of the COGNITIVE run. Three minutes of deliberate stillness
+            // afterwards is not task time and must not inflate a reported duration.
             CaptureRunDuration("cognitive run complete");
+
+            // ---- POST-TASK RESTING ACQUISITION ---------------------------------------------
+            //
+            // HERE, and not after FinishAreaC, for one decisive reason: FinishAreaC calls
+            // EndTrial() and raises RESTART / NEW TRIAL / END. Running the rest afterwards would
+            // put a 180 s recording outside the trial clock AND leave the participant sitting in
+            // front of an END button for the whole of it — session termination would be one
+            // press away from a block that must not be interrupted.
+            //
+            // Placed here, the run is still open, TRIAL_END has not been logged, the session is
+            // live, raw EEG is still being written, and there is no control on screen that could
+            // end anything. Termination before POST_TASK_REST_END is not merely discouraged, it
+            // is unreachable.
+            yield return RunPostTaskRest();
+
+            if (m_State == ExperimentState.Aborted)
+            {
+                m_Flow = null;
+                yield break;
+            }
 
             // Captured HERE for the same reason the duration is: FinishAreaC builds the
             // participant panel from m_SessionResults, so anything the panel reads has to hold
@@ -4231,6 +4292,205 @@ namespace IkeaEeg.Experiment
             CaptureRecognitionResults();
 
             FinishAreaC();
+        }
+
+        // ---------------------------------------------------------------------------------
+        // RESTING EEG ACQUISITION
+        // ---------------------------------------------------------------------------------
+
+        /// <summary>Set by the READY control that opens the post-task resting block.</summary>
+        bool m_RestReadyPressed;
+
+        void OnRestReadyPressed()
+        {
+            // Only meaningful while the post-task block is waiting for it. Every other press is
+            // discarded, so an early or stray activation cannot arm a block that is not running.
+            if (m_State != ExperimentState.PostTaskRest)
+                return;
+
+            m_RestReadyPressed = true;
+        }
+
+        /// <summary>
+        /// The post-task resting acquisition: instructions, a READY press, then the recording.
+        ///
+        /// Kept as its own method purely so the READY gate is explicit at the call site. The
+        /// acquisition itself is the shared block below — pre- and post-task rest MUST be the
+        /// same procedure, or the two recordings are not comparable, and the surest way to keep
+        /// them identical is for there to be one implementation.
+        /// </summary>
+        IEnumerator RunPostTaskRest()
+        {
+            yield return RunRestBlock(
+                ExperimentState.PostTaskRest,
+                LocKeys.PostTaskRestInstructions,
+                EventTypes.PostTaskRestStart,
+                EventTypes.PostTaskRestEnd,
+                m_Config.postTaskRestDurationSeconds,
+                "POST_TASK",
+                requireReadyPress: true,
+                SetAreaCInstructionAndStatus);
+        }
+
+        /// <summary>
+        /// ONE eyes-open resting EEG acquisition block, used by both the pre- and the post-task
+        /// recordings.
+        ///
+        /// WHAT THIS IS. An acquisition period, not a task. Nothing is presented, nothing is
+        /// measured behaviourally, nothing is scored, and no response is possible. The EEG that
+        /// is already being recorded simply continues while the participant sits still and
+        /// fixates. The block's only outputs are two markers and the passage of time.
+        ///
+        /// WHY ONE METHOD FOR BOTH. The pre- and post-task recordings are only comparable if the
+        /// participant was asked for the same thing and shown the same thing for the same length
+        /// of time. Two implementations would drift. The differences that MATTER — which state,
+        /// which instruction, which markers, which duration, whether a READY press gates it —
+        /// are parameters; everything else is shared by construction.
+        ///
+        /// WHAT IT DELIBERATELY DOES NOT DO:
+        ///   * it does not start, stop, restart or reconfigure EEG acquisition — the inlet and
+        ///     the recorder have been running since the session opened and are left alone;
+        ///   * it does not compute, accumulate or store any statistic over the recording;
+        ///   * it does not supply a baseline to anything;
+        ///   * it does not narrate. Instructions may be spoken in this project; a resting
+        ///     recording may not contain speech, so nothing here plays audio at all.
+        ///
+        /// THE PARTICIPANT CANNOT SKIP IT. During the acquisition every control is off screen:
+        /// no START, no ENTER, no READY, no Recenter, no response buttons. There is nothing to
+        /// press. The only exits are the developer abort path and the researcher's own hands,
+        /// both of which are already recorded as interventions.
+        /// </summary>
+        /// <param name="setText">
+        /// The area's instruction/status writer — Area A's for the pre-task block, Area C's for
+        /// the post-task one. Passing it in is what lets one method drive two rooms without
+        /// knowing which room it is in.
+        /// </param>
+        IEnumerator RunRestBlock(ExperimentState state, string instructionKey,
+            string startEvent, string endEvent, float durationSeconds, string label,
+            bool requireReadyPress, System.Action<string, string> setText)
+        {
+            SetState(state);
+
+            // ---- A clear field of view -----------------------------------------------------
+            // Everything that could be looked at, read or pressed comes down before the
+            // instruction goes up, so the resting condition is the same in both areas whatever
+            // the previous phase happened to leave on screen.
+            if (m_UI != null)
+            {
+                m_UI.ClearWordDisplay();
+                m_UI.ShowRecognitionCounter(false);
+                m_UI.ShowStartButton(false);
+                m_UI.ShowEnterAreaBButton(false);
+                m_UI.ShowRestartButton(false);
+                m_UI.ShowNewTrialButton(false);
+                m_UI.ShowEndButton(false);
+                m_UI.SetResults(string.Empty);
+                m_UI.ShowFixationPoint(false);
+            }
+
+            if (m_RecognitionPanel != null)
+                m_RecognitionPanel.Show(false);
+
+            setText?.Invoke(ExperimentLocalization.Get(instructionKey), string.Empty);
+
+            // ---- Instructions --------------------------------------------------------------
+            // READ, never spoken. Instruction narration is allowed elsewhere in this project,
+            // but a resting block that began moments after a voice stopped would carry the
+            // auditory response to that voice into the recording.
+            if (requireReadyPress)
+            {
+                m_RestReadyPressed = false;
+
+                if (m_UI != null)
+                    m_UI.ShowRestReadyButton(true);
+
+                // No timeout. The participant decides when they are settled; a resting recording
+                // started while somebody is still getting comfortable is not a resting recording.
+                while (!m_RestReadyPressed && m_State != ExperimentState.Aborted)
+                    yield return null;
+
+                if (m_UI != null)
+                    m_UI.ShowRestReadyButton(false);
+            }
+            else
+            {
+                var deadline = Time.time + m_Config.restInstructionDurationSeconds;
+
+                while (Time.time < deadline && m_State != ExperimentState.Aborted)
+                    yield return null;
+            }
+
+            if (m_State == ExperimentState.Aborted)
+                yield break;
+
+            // ---- The acquisition interval --------------------------------------------------
+            // From here until the end marker the participant sees ONE stationary glyph and
+            // nothing else. The instruction comes down: leaving text up would give the eyes
+            // something to re-read, and reading is not rest.
+            setText?.Invoke(string.Empty, string.Empty);
+
+            if (m_UI != null)
+            {
+                m_UI.ShowRecenterButtons(false);
+                m_UI.ShowFixationPoint(true);
+            }
+
+            var startedRealtime = Time.realtimeSinceStartupAsDouble;
+
+            Log(startEvent, e =>
+            {
+                e.protocolMode = ProtocolModeTag();
+                e.notes = "rest_block=" + label + "; condition=EYES_OPEN_FIXATION; " +
+                          "planned_duration_s=" +
+                          durationSeconds.ToString("F1", CultureInfo.InvariantCulture) + "; " +
+                          "task=NONE; response=NONE; narration=NONE; " +
+                          "acquisition=CONTINUOUS_UNCHANGED";
+            });
+
+            var elapsed = 0d;
+            var nextReport = 30d;
+
+            while (elapsed < durationSeconds && m_State != ExperimentState.Aborted)
+            {
+                yield return null;
+                elapsed = Time.realtimeSinceStartupAsDouble - startedRealtime;
+
+                // RESEARCHER-VISIBLE ONLY. The Console gets a progress line every 30 s; the
+                // participant's view is not touched. A visible countdown would be a changing
+                // visual element in the middle of a resting recording, and the brief asks for
+                // none.
+                if (elapsed >= nextReport)
+                {
+                    Debug.Log("[IKEA_EEG] " + label + " REST — " + elapsed.ToString("F0") +
+                              " s of " + durationSeconds.ToString("F0") + " s elapsed.");
+
+                    nextReport += 30d;
+                }
+            }
+
+            var achieved = Time.realtimeSinceStartupAsDouble - startedRealtime;
+            var aborted = m_State == ExperimentState.Aborted;
+
+            Log(endEvent, e =>
+            {
+                e.protocolMode = ProtocolModeTag();
+                e.notes = "rest_block=" + label + "; condition=EYES_OPEN_FIXATION; " +
+                          "planned_duration_s=" +
+                          durationSeconds.ToString("F1", CultureInfo.InvariantCulture) + "; " +
+                          "achieved_duration_s=" +
+                          achieved.ToString("F3", CultureInfo.InvariantCulture) + "; " +
+                          "completed=" + (aborted ? "FALSE" : "TRUE") + "; " +
+                          "task=NONE; response=NONE; narration=NONE";
+            });
+
+            // ---- Hand the room back --------------------------------------------------------
+            if (m_UI != null)
+            {
+                m_UI.ShowFixationPoint(false);
+                m_UI.ShowRecenterButtons(true);
+            }
+
+            setText?.Invoke(string.Empty, string.Empty);
         }
 
         /// <summary>

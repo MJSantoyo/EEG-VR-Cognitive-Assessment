@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -24,6 +24,21 @@ namespace IkeaEeg.Data
         /// changes without this file changing too.
         /// </summary>
         HumanVerifiedAcquisitionUi = 2,
+
+        /// <summary>
+        /// A person physically traced each electrode from the scalp position to its acquisition
+        /// channel and confirmed the correspondence on the hardware itself.
+        ///
+        /// STRONGER THAN <see cref="HumanVerifiedAcquisitionUi"/>, which only says the
+        /// acquisition software was asked what it thought. This says somebody followed the
+        /// wires. It is the level of evidence a claim like "this is F3" actually requires.
+        ///
+        /// It carries the SAME caveat as every human-supplied value here: it describes one
+        /// setup at one moment. Re-cap the participant differently, or change the amplifier's
+        /// channel order, and this file becomes wrong without anything noticing. APPENDED as 3
+        /// so the existing serialized values keep their meaning.
+        /// </summary>
+        PhysicallyVerifiedPlacement = 3,
     }
 
     /// <summary>One acquisition channel and the electrode it is wired to.</summary>
@@ -81,7 +96,7 @@ namespace IkeaEeg.Data
 
         [Header("Provenance")]
         [Tooltip("Where the channel mapping below came from.")]
-        public EegConfigSource mappingSource = EegConfigSource.HumanVerifiedAcquisitionUi;
+        public EegConfigSource mappingSource = EegConfigSource.PhysicallyVerifiedPlacement;
 
         [Tooltip("Where the acquisition filter state below came from.")]
         public EegConfigSource filterStateSource = EegConfigSource.HumanVerifiedAcquisitionUi;
@@ -89,10 +104,18 @@ namespace IkeaEeg.Data
         [Tooltip("Free text: who verified this, when, and against what.")]
         [TextArea(2, 4)]
         public string verificationNote =
-            "Channel order and filter state read from the AURA acquisition UI by the " +
-            "researcher. The LSL stream publishes an empty <desc/> and provides none of this " +
-            "information, so this configuration is NOT self-verifying: if the cap or the " +
-            "amplifier configuration changes, this asset must be updated by hand.";
+            "MAPPING: physically confirmed 2026-09-15 by the researcher, electrode by electrode, " +
+            "against the acquisition hardware for the current cap setup — " +
+            "CH1=Fp1, CH2=F3, CH3=Fz, CH4=F4, CH5=Cz, CH6=P3, CH7=Pz, CH8=P4. " +
+            "This supersedes the earlier status, where the order had only been read off the " +
+            "AURA acquisition UI and the mapping was therefore carried as unconfirmed. " +
+            "FILTER STATE: still read from the AURA acquisition UI, not physically traced. " +
+            "SCOPE OF THIS CLAIM: it establishes WHICH ELECTRODE EACH CHANNEL IS, and nothing " +
+            "further. It says nothing about signal quality, about whether any baseline or " +
+            "normalization method is valid, or about whether a workload level may be reported. " +
+            "Those remain unapproved and are gated independently. " +
+            "NOT SELF-VERIFYING: the LSL stream publishes an empty <desc/>, so if the cap or " +
+            "the amplifier configuration changes this asset must be updated by hand.";
 
         // ---- Montage ----------------------------------------------------------------------
 

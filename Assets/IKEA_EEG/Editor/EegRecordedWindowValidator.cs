@@ -252,6 +252,9 @@ namespace IkeaEeg.EditorTools
             /// <summary>True when the file's own header disclaims a verified electrode map.</summary>
             public bool montageUnverified;
 
+            /// <summary>The montage provenance line the file carries, when it has one.</summary>
+            public string montageNote = string.Empty;
+
             public readonly List<double> analysisTimestamps = new List<double>();
             public readonly List<double> localRawTimestamps = new List<double>();
             public readonly List<double[]> samples = new List<double[]>();
@@ -445,7 +448,15 @@ namespace IkeaEeg.EditorTools
             else if (body.IndexOf("No electrode mapping is claimed",
                          StringComparison.OrdinalIgnoreCase) >= 0)
             {
+                // The wording written by builds BEFORE the montage was physically traced.
+                // Recordings made then still say this, and still mean it.
                 recording.montageUnverified = true;
+            }
+            else if (body.IndexOf("Electrode mapping physically confirmed",
+                         StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                recording.montageUnverified = false;
+                recording.montageNote = body;
             }
         }
 
@@ -521,6 +532,11 @@ namespace IkeaEeg.EditorTools
                           $"nominal_srate_hz={recording.nominalRateHz:F3}");
             sb.AppendLine($"  file samples: {recording.sampleCount} spanning " +
                           $"{recording.analysisTimestamps[recording.sampleCount - 1] - recording.analysisTimestamps[0]:F3} s");
+
+            if (!recording.montageUnverified && recording.montageNote.Length > 0)
+            {
+                sb.AppendLine($"  montage: {recording.montageNote}");
+            }
 
             if (recording.montageUnverified)
             {

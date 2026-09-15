@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Text.RegularExpressions;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -113,6 +114,8 @@ namespace IkeaEeg.EditorTools
                 CheckBlock12ChannelHealth);
             RunSection("BLOCK 13 — SESSION-CONTROL ACCIDENTAL-ACTION LOCK",
                 CheckBlock13SessionControlLock);
+            RunSection("BLOCK 12 — RESTING EEG ACQUISITION BLOCKS",
+                CheckBlock12RestingAcquisition);
             RunSection("LANGUAGE WORD SETS + PROVENANCE", CheckLanguageWordSets);
             RunSection("RECALL ADAPTIVE STOP (SILENCE DETECTION)", CheckRecallSilenceDetector);
             RunSection("RECALL RECORDING STOP REPORTING", CheckRecordingStopReporting);
@@ -7084,6 +7087,474 @@ namespace IkeaEeg.EditorTools
                 "guard does not fire on healthy input");
         }
 
+
+        /// <summary>
+        /// Block 12: the pre- and post-task resting EEG acquisition blocks.
+        ///
+        /// WHAT THIS SECTION IS DEFENDING.
+        ///
+        ///   1. THE LIFECYCLE. The whole scientific value of these two recordings is that they
+        ///      sit inside the SAME run as the task, on the same clocks, in one continuous EEG
+        ///      file. A post-task block that ran after TRIAL_END, or after the END button
+        ///      appeared, would be a separate recording wearing the same name. The ordering
+        ///      assertions below are about exactly that, and they are checked against the real
+        ///      source rather than against a comment claiming it.
+        ///
+        ///   2. THE ACQUISITION DESIGN IS FROZEN. 180 s, eyes open, no task, no response, no
+        ///      narration. Those are not defaults to be tuned; they are the protocol.
+        ///
+        ///   3. THAT NOTHING WAS QUIETLY UNLOCKED. Confirming the montage moves one gate. It
+        ///      must not move a workload label, a baseline or a normalization.
+        /// </summary>
+        static void CheckBlock12RestingAcquisition()
+        {
+            var config = AssetDatabase.LoadAssetAtPath<ExperimentConfig>(
+                ExperimentAssetBuilder.ConfigPath);
+
+            var managerSource = StripCommentsAndAttributes(File.ReadAllText(
+                "Assets/IKEA_EEG/Scripts/Experiment/ExperimentManager.cs"));
+
+            // ---- A: the frozen acquisition design -------------------------------------------
+            var defaults = ScriptableObject.CreateInstance<ExperimentConfig>();
+
+            try
+            {
+                Assert(System.Math.Abs(defaults.preTaskRestDurationSeconds - 180f) < 0.001f,
+                    $"PRE_TASK_REST is 180 s by design ({defaults.preTaskRestDurationSeconds})");
+
+                Assert(System.Math.Abs(defaults.postTaskRestDurationSeconds - 180f) < 0.001f,
+                    $"POST_TASK_REST is 180 s by design ({defaults.postTaskRestDurationSeconds})");
+
+                Assert(System.Math.Abs(defaults.preTaskRestDurationSeconds -
+                                       defaults.postTaskRestDurationSeconds) < 0.001f,
+                    "both blocks are the SAME length — two recordings of different durations " +
+                    "under the same instruction would not be comparable");
+            }
+            finally
+            {
+                Object.DestroyImmediate(defaults);
+            }
+
+            if (config != null)
+            {
+                Assert(System.Math.Abs(config.preTaskRestDurationSeconds - 180f) < 0.001f &&
+                       System.Math.Abs(config.postTaskRestDurationSeconds - 180f) < 0.001f,
+                    $"the config asset in this project carries 180 s / 180 s " +
+                    $"({config.preTaskRestDurationSeconds} / {config.postTaskRestDurationSeconds})");
+            }
+
+            // ---- B: the four markers exist and are distinct ---------------------------------
+            var markers = new[]
+            {
+                EventTypes.PreTaskRestStart, EventTypes.PreTaskRestEnd,
+                EventTypes.PostTaskRestStart, EventTypes.PostTaskRestEnd,
+            };
+
+            Assert(markers.Distinct().Count() == 4,
+                "the four rest markers are four DIFFERENT strings");
+
+            Assert(EventTypes.PreTaskRestStart == "PRE_TASK_REST_START" &&
+                   EventTypes.PreTaskRestEnd == "PRE_TASK_REST_END" &&
+                   EventTypes.PostTaskRestStart == "POST_TASK_REST_START" &&
+                   EventTypes.PostTaskRestEnd == "POST_TASK_REST_END",
+                "the marker names are exactly the ones the acquisition design specifies");
+
+            foreach (var marker in markers)
+            {
+                Assert(managerSource.Contains(marker.Replace("_", string.Empty)) ||
+                       managerSource.Contains("EventTypes.Pre") ||
+                       managerSource.Contains("EventTypes.Post"),
+                    $"{marker} is referenced by the manager");
+            }
+
+            Assert(managerSource.Contains("EventTypes.PreTaskRestStart") &&
+                   managerSource.Contains("EventTypes.PreTaskRestEnd") &&
+                   managerSource.Contains("EventTypes.PostTaskRestStart") &&
+                   managerSource.Contains("EventTypes.PostTaskRestEnd"),
+                "all four markers are emitted through the EXISTING EventTypes constants, so " +
+                "they travel the existing CSV and LSL paths with no schema change");
+
+            // The post-task block must be labelled separately in the data, not merely named
+            // differently in code.
+            Assert(managerSource.Contains("\"POST_TASK\"") &&
+                   managerSource.Contains("\"PRE_TASK\""),
+                "each block stamps its own rest_block label into the event notes");
+
+            // ---- C: THE LIFECYCLE. Ordering, checked positionally ---------------------------
+            var areaCStart = managerSource.IndexOf("IEnumerator RunAreaC()",
+                System.StringComparison.Ordinal);
+
+            Assert(areaCStart >= 0, "RunAreaC exists");
+
+            if (areaCStart >= 0)
+            {
+                var areaCEnd = managerSource.IndexOf("IEnumerator RunPostTaskRest",
+                    areaCStart, System.StringComparison.Ordinal);
+
+                if (areaCEnd < areaCStart)
+                    areaCEnd = managerSource.Length;
+
+                var body = managerSource.Substring(areaCStart, areaCEnd - areaCStart);
+
+                var delayedIndex = body.IndexOf("RunDelayedRecognitionAreaC()",
+                    System.StringComparison.Ordinal);
+                var restIndex = body.IndexOf("RunPostTaskRest()", System.StringComparison.Ordinal);
+                var finishIndex = body.IndexOf("FinishAreaC()", System.StringComparison.Ordinal);
+
+                Assert(delayedIndex >= 0 && restIndex > delayedIndex,
+                    "POST_TASK_REST runs AFTER the cognitive task — it cannot begin until " +
+                    "delayed recognition has finished");
+
+                Assert(restIndex >= 0 && finishIndex > restIndex,
+                    "POST_TASK_REST runs BEFORE FinishAreaC. This is the assertion the whole " +
+                    "lifecycle requirement rests on: FinishAreaC calls EndTrial() and raises " +
+                    "RESTART / NEW TRIAL / END, so a rest placed after it would be outside the " +
+                    "trial clock with a termination control on screen throughout");
+
+                var durationIndex = body.IndexOf("CaptureRunDuration", System.StringComparison.Ordinal);
+
+                Assert(durationIndex >= 0 && durationIndex < restIndex,
+                    "the COGNITIVE run duration is captured before the rest begins, so three " +
+                    "minutes of deliberate stillness does not inflate a reported task duration");
+            }
+
+            // Termination is unreachable during the block, structurally: FinishAreaC is the only
+            // thing that raises the END control, and it has not run yet.
+            var finishStart = managerSource.IndexOf("void FinishAreaC()",
+                System.StringComparison.Ordinal);
+
+            if (finishStart >= 0)
+            {
+                var finishBody = managerSource.Substring(finishStart,
+                    Mathf.Min(2500, managerSource.Length - finishStart));
+
+                Assert(finishBody.Contains("ShowEndButton(true)"),
+                    "FinishAreaC is what raises the END control");
+
+                Assert(finishBody.Contains("EndTrial()"),
+                    "FinishAreaC is what closes the trial — and it runs after the rest");
+            }
+
+            // The END handler cannot be reached from the rest state either.
+            var endHandler = managerSource.IndexOf("void OnEndPressed()",
+                System.StringComparison.Ordinal);
+
+            Assert(endHandler >= 0, "the END handler exists");
+
+            // ---- D: the pre-task block gates the cognitive task -----------------------------
+            var startHandler = managerSource.IndexOf("void OnStartPressed()",
+                System.StringComparison.Ordinal);
+
+            Assert(startHandler >= 0, "the START handler exists");
+
+            if (startHandler >= 0)
+            {
+                var handlerBody = managerSource.Substring(startHandler,
+                    Mathf.Min(2500, managerSource.Length - startHandler));
+
+                Assert(handlerBody.Contains("RunPreTaskRestThenAreaA()"),
+                    "START enters the pre-task rest wrapper, not RunAreaA directly");
+
+                Assert(!handlerBody.Contains("StartCoroutine(RunAreaA())"),
+                    "nothing starts RunAreaA directly any more — the cognitive task has exactly " +
+                    "one entry point and the rest block is in front of it");
+            }
+
+            var wrapperStart = managerSource.IndexOf("IEnumerator RunPreTaskRestThenAreaA()",
+                System.StringComparison.Ordinal);
+
+            Assert(wrapperStart >= 0, "the pre-task wrapper exists");
+
+            if (wrapperStart >= 0)
+            {
+                var wrapperEnd = managerSource.IndexOf("void OnEnterAreaBPressed",
+                    wrapperStart, System.StringComparison.Ordinal);
+                var wrapper = wrapperEnd > wrapperStart
+                    ? managerSource.Substring(wrapperStart, wrapperEnd - wrapperStart)
+                    : managerSource.Substring(wrapperStart);
+
+                var restCall = wrapper.IndexOf("RunRestBlock(", System.StringComparison.Ordinal);
+                var areaACall = wrapper.IndexOf("RunAreaA()", System.StringComparison.Ordinal);
+
+                Assert(restCall >= 0 && areaACall > restCall,
+                    "the rest block is yielded to BEFORE RunAreaA — encoding cannot start until " +
+                    "the 180 s recording has finished");
+
+                Assert(wrapper.Contains("ExperimentState.PreTaskRest"),
+                    "the wrapper runs the block in the PreTaskRest state");
+            }
+
+            // Both blocks go through ONE implementation, so they cannot drift apart.
+            Assert(Regex.Matches(managerSource, @"IEnumerator RunRestBlock\(").Count == 1,
+                "there is exactly ONE rest-block implementation shared by both recordings");
+
+            // ---- E: it cannot be skipped ----------------------------------------------------
+            var blockStart = managerSource.IndexOf("IEnumerator RunRestBlock(",
+                System.StringComparison.Ordinal);
+
+            Assert(blockStart >= 0, "the shared rest block exists");
+
+            if (blockStart >= 0)
+            {
+                var blockEnd = managerSource.IndexOf("IEnumerator RunDelayedRecognitionAreaC",
+                    blockStart, System.StringComparison.Ordinal);
+
+                if (blockEnd < blockStart)
+                    blockEnd = managerSource.Length;
+
+                var block = managerSource.Substring(blockStart, blockEnd - blockStart);
+
+                foreach (var control in new[]
+                         {
+                             "ShowStartButton(false)", "ShowEnterAreaBButton(false)",
+                             "ShowEndButton(false)", "ShowRestartButton(false)",
+                             "ShowNewTrialButton(false)", "ShowRecenterButtons(false)",
+                         })
+                {
+                    Assert(block.Contains(control),
+                        $"the acquisition interval takes down {control} — during the recording " +
+                        "there is no control on screen to press");
+                }
+
+                Assert(block.Contains("m_RecognitionPanel.Show(false)"),
+                    "the recognition response pair is down for the whole block");
+
+                Assert(block.Contains("ShowFixationPoint(true)"),
+                    "a stationary fixation point is raised for the acquisition interval");
+
+                // No narration, no audio, at all.
+                foreach (var forbidden in new[]
+                         {
+                             "Speak", "PlayCue", "AudioCue", "GetWordClip", "PlayNarration",
+                         })
+                {
+                    Assert(!block.Contains(forbidden),
+                        $"the rest block contains no {forbidden} — a resting recording carries " +
+                        "no speech and no cue");
+                }
+
+                // No acquisition interference.
+                foreach (var forbidden in new[]
+                         {
+                             "BeginRun", "EndRun", "Connect(", "Disconnect", "new AuraLslReceiver",
+                             "new EegAnalysisTimebase", "Reset()",
+                         })
+                {
+                    Assert(!block.Contains(forbidden),
+                        $"the rest block never calls {forbidden} — EEG acquisition has been " +
+                        "running since the session opened and is left completely alone");
+                }
+
+                // No statistics, no baseline.
+                foreach (var forbidden in new[]
+                         {
+                             "SupplyApprovedBaseline", "ShadowBaseline", "Normalize",
+                             "baseline", "Mean(", "Median(",
+                         })
+                {
+                    Assert(!block.Contains(forbidden),
+                        $"the rest block computes no {forbidden} — it records, it does not " +
+                        "analyse, and nothing here supplies a baseline to anything");
+                }
+            }
+
+            // ---- F: no second EEG receiver anywhere -----------------------------------------
+            var receivers = Object.FindObjectsByType<AuraLslReceiver>(
+                FindObjectsInactive.Include, FindObjectsSortMode.None);
+
+            Assert(receivers.Length == 1,
+                $"the scene still contains exactly ONE AuraLslReceiver ({receivers.Length})");
+
+            var recorders = Object.FindObjectsByType<EegRunRecorder>(
+                FindObjectsInactive.Include, FindObjectsSortMode.None);
+
+            Assert(recorders.Length == 1,
+                $"exactly ONE EegRunRecorder ({recorders.Length}) — the rest blocks reuse the " +
+                "session's recording rather than opening their own");
+
+            // ---- G: the fixation UI, one object per area ------------------------------------
+            var ui = Object.FindAnyObjectByType<ExperimentUIController>();
+
+            Assert(ui != null, "the UI controller is in the scene");
+
+            if (ui != null)
+            {
+                var fixA = UiLabel(ui, "m_AreaAFixation");
+                var fixC = UiLabel(ui, "m_AreaCFixation");
+
+                Assert(fixA != null && fixC != null, "both fixation labels are bound");
+
+                if (fixA != null && fixC != null)
+                {
+                    Assert(!ReferenceEquals(fixA, fixC),
+                        "Area A and Area C have SEPARATE fixation objects — one world-space " +
+                        "label cannot serve two rooms");
+
+                    Assert(!fixA.gameObject.activeSelf && !fixC.gameObject.activeSelf,
+                        "both are authored INACTIVE — no fixation point before a block runs");
+
+                    var canvasA = FindInSceneIncludingInactive("UI_A_Canvas");
+                    var canvasC = FindInSceneIncludingInactive("UI_C_Canvas");
+
+                    if (canvasA != null && canvasC != null)
+                    {
+                        Assert(fixA.transform.IsChildOf(canvasA.transform) &&
+                               fixC.transform.IsChildOf(canvasC.transform),
+                            "each fixation point is on its own area's canvas");
+                    }
+
+                    // Same world height in both rooms: the two recordings are only comparable
+                    // if the participant was looking at the same place.
+                    var delta = Mathf.Abs(fixA.transform.position.y - fixC.transform.position.y);
+
+                    Assert(delta < 0.02f,
+                        $"both fixation points sit at the same world height " +
+                        $"({delta * 1000f:F0} mm apart)");
+
+                    ui.ShowFixationPoint(true);
+
+                    Assert(ui.fixationVisible && fixA.text.Length > 0 && fixC.text.Length > 0,
+                        "raising the fixation point activates it and writes its glyph");
+
+                    var glyph = fixA.text;
+                    ui.ShowFixationPoint(false);
+
+                    Assert(!fixA.gameObject.activeSelf && !fixC.gameObject.activeSelf,
+                        "lowering it deactivates both");
+
+                    Info($"fixation glyph: \"{glyph}\" at world y " +
+                         $"{fixA.transform.position.y:F3} m");
+                }
+
+                Assert(ui.restReadyButton != null,
+                    "the post-task READY control is bound");
+
+                if (ui.restReadyButton != null)
+                {
+                    Assert(!ui.restReadyButton.gameObject.activeSelf,
+                        "READY is authored INACTIVE — it appears only for the post-task block");
+                }
+            }
+
+            // ---- H: the montage, physically confirmed ---------------------------------------
+            var montage = AuraMontageConfig.CreateHumanVerifiedDefault();
+
+            var expected = new[] { "Fp1", "F3", "Fz", "F4", "Cz", "P3", "Pz", "P4" };
+
+            for (var i = 0; i < expected.Length; i++)
+            {
+                Assert(montage.LabelOfIndex(i) == expected[i],
+                    $"channel {i + 1} is {expected[i]} (montage says " +
+                    $"'{montage.LabelOfIndex(i)}')");
+            }
+
+            Assert(montage.mappingSource == EegConfigSource.PhysicallyVerifiedPlacement,
+                $"the mapping is recorded as PHYSICALLY VERIFIED, not merely read off a UI " +
+                $"({montage.mappingSource})");
+
+            Assert(montage.verificationNote.Contains("physically confirmed") &&
+                   montage.verificationNote.Contains("2026-09-15"),
+                "the provenance note is TRACEABLE — it says what was confirmed and when");
+
+            Assert(montage.verificationNote.Contains("nothing about signal quality") ||
+                   montage.verificationNote.Contains("says nothing about signal quality"),
+                "and it states the LIMIT of the claim: which electrode is which, and no more");
+
+            // ---- I: the montage gate moved, and nothing else did -----------------------------
+            Assert(IkeaEeg.Neuro.ShadowModeController.MontageVerified,
+                "Shadow Mode no longer reports MONTAGE_UNVERIFIED");
+
+            Assert(IkeaEeg.Neuro.ShadowModeController.MontageStatus.Contains("PHYSICALLY_VERIFIED"),
+                $"and its per-row status string says so traceably " +
+                $"(\"{IkeaEeg.Neuro.ShadowModeController.MontageStatus}\")");
+
+            Assert(!IkeaEeg.Neuro.ShadowModeController.NormalizationApproved &&
+                   !IkeaEeg.Neuro.ShadowModeController.DecisionRuleApproved,
+                "normalization and the decision rule remain UNAPPROVED — confirming the montage " +
+                "unlocked neither");
+
+            // The gate chain now stops at normalization instead of at the montage, and never
+            // reaches None.
+            var nextGate = IkeaEeg.Neuro.ShadowModeController.FirstUnmetGate(
+                featureValid: true, roiClean: true, roiValuesPresent: true,
+                montageVerified: IkeaEeg.Neuro.ShadowModeController.MontageVerified,
+                normalizationApproved: IkeaEeg.Neuro.ShadowModeController.NormalizationApproved,
+                baselineValid: true,
+                decisionRuleApproved: IkeaEeg.Neuro.ShadowModeController.DecisionRuleApproved);
+
+            Assert(nextGate == IkeaEeg.Neuro.ShadowRejection.NoApprovedNormalization,
+                $"with everything else satisfied the FIRST unmet gate is now " +
+                $"NoApprovedNormalization, not MontageUnverified ({nextGate})");
+
+            Assert(nextGate != IkeaEeg.Neuro.ShadowRejection.None,
+                "the chain still never clears — no path exists to an emitted label");
+
+            // And the level is Indeterminate structurally, whatever the gates say.
+            var shadowSource = StripCommentsAndAttributes(File.ReadAllText(
+                "Assets/IKEA_EEG/Scripts/Neuro/ShadowModeController.cs"));
+
+            Assert(shadowSource.Contains("const WorkloadLevel level = WorkloadLevel.Indeterminate"),
+                "Row() still hard-codes Indeterminate — LOW / MODERATE / HIGH cannot be emitted " +
+                "by any branch, so flipping the montage gate could not have unlocked one");
+
+            foreach (var forbidden in new[]
+                     { "WorkloadLevel.Low", "WorkloadLevel.Moderate", "WorkloadLevel.High" })
+            {
+                Assert(!shadowSource.Contains(forbidden),
+                    $"the controller never names {forbidden} at all");
+            }
+
+            // ---- J: no automatic baseline from the rest blocks -------------------------------
+            Assert(!managerSource.Contains("SupplyApprovedBaseline"),
+                "the manager never supplies a baseline — PRE_TASK_REST is identifiable in the " +
+                "data for future processing, but nothing feeds it to anything automatically");
+
+            Assert(!managerSource.Contains("ShadowBaseline"),
+                "the manager does not touch ShadowBaseline");
+
+            // ---- K: nothing else moved -------------------------------------------------------
+            var csvSource = File.ReadAllText("Assets/IKEA_EEG/Scripts/Data/CsvEventSink.cs");
+
+            Assert(csvSource.Contains("\"stimulus_offset_time\","),
+                "the behavioural event CSV header is unchanged — new event NAMES need no new " +
+                "columns");
+
+            var recorderSource = File.ReadAllText(
+                "Assets/IKEA_EEG/Scripts/Data/RawEegRecorder.cs");
+
+            Assert(recorderSource.Contains("lsl_timestamp_analysis,lsl_timestamp_local_raw") ||
+                   (recorderSource.Contains("lsl_timestamp_analysis") &&
+                    recorderSource.Contains("lsl_timestamp_local_raw") &&
+                    recorderSource.Contains("lsl_timestamp_remote_raw")),
+                "the raw_eeg column schema is unchanged");
+
+            Assert(recorderSource.Contains("Electrode mapping physically confirmed"),
+                "the raw EEG file now records the confirmed mapping in its provenance header");
+
+            // Recognition parameters untouched.
+            if (config != null)
+            {
+                Assert(System.Math.Abs(config.recognitionWordDisplaySeconds - 2f) < 0.001f &&
+                       System.Math.Abs(config.recognitionInterWordGapSeconds - 0.25f) < 0.001f &&
+                       System.Math.Abs(config.recognitionResponseTimeoutSeconds - 15f) < 0.001f,
+                    $"Recognition timing parameters are unchanged " +
+                    $"({config.recognitionWordDisplaySeconds} s / " +
+                    $"{config.recognitionInterWordGapSeconds} s / " +
+                    $"{config.recognitionResponseTimeoutSeconds} s)");
+            }
+
+            // EEG processing untouched.
+            var pipelineSource = File.ReadAllText(
+                "Assets/IKEA_EEG/Scripts/Data/EegFeaturePipeline.cs");
+
+            foreach (var token in new[] { "PreTaskRest", "PostTaskRest", "restBlock" })
+            {
+                Assert(!pipelineSource.Contains(token),
+                    $"the feature pipeline knows nothing about {token} — the rest blocks record, " +
+                    "they do not alter processing");
+            }
+        }
+
         /// <summary>
         /// Finds a GameObject by name anywhere in the loaded scene, INCLUDING inactive ones.
         ///
@@ -7411,9 +7882,13 @@ namespace IkeaEeg.EditorTools
                 Object.DestroyImmediate(broken);
 
                 // ---- Provenance --------------------------------------------------------------
-                Assert(montage.mappingSource == EegConfigSource.HumanVerifiedAcquisitionUi,
-                    $"the mapping is recorded as HUMAN-VERIFIED, not as stream metadata " +
-                    $"({montage.mappingSource})");
+                // UPDATED 2026-09-15: the mapping was physically traced electrode by electrode,
+                // which is a stronger claim than "somebody read the acquisition UI". The
+                // assertion moves with the evidence; what it must NOT become is a claim that the
+                // STREAM supplied it, which is checked immediately below and is still false.
+                Assert(montage.mappingSource == EegConfigSource.PhysicallyVerifiedPlacement,
+                    $"the mapping is recorded as PHYSICALLY VERIFIED, not merely read off an " +
+                    $"acquisition UI ({montage.mappingSource})");
 
                 Assert(montage.mappingSource != EegConfigSource.LslStreamMetadata,
                     "the montage never claims LSL provided it — the stream publishes an empty desc");
@@ -7431,7 +7906,7 @@ namespace IkeaEeg.EditorTools
 
                 foreach (var required in new[]
                          {
-                             "montage_source=HumanVerifiedAcquisitionUi",
+                             "montage_source=PhysicallyVerifiedPlacement",
                              "CH2=F3", "CH7=Pz",
                              "acquisition_notch=OFF",
                              "acquisition_bandpass=OFF",
@@ -8517,11 +8992,21 @@ namespace IkeaEeg.EditorTools
                 for (var i = 0; i < 20; i++)
                     valid = controller.Evaluate(Window(40d + i, 12d + i * 0.1d));
 
-                Assert(valid.montageStatus == "UNVERIFIED",
-                    $"montage_status remains UNVERIFIED ({valid.montageStatus})");
+                // UPDATED 2026-09-15. The montage gate is satisfied, so the chain now stops at
+                // the NEXT unmet prerequisite. That is the whole point of a chain: confirming
+                // one thing reveals the next thing, it does not open the door.
+                Assert(valid.montageStatus.Contains("PHYSICALLY_VERIFIED"),
+                    $"montage_status is now traceably verified ({valid.montageStatus})");
 
-                Assert(valid.rejectedReason == IkeaEeg.Neuro.ShadowRejection.MontageUnverified,
-                    $"a valid window is gated by MONTAGEUNVERIFIED ({valid.rejectedReason})");
+                Assert(valid.rejectedReason ==
+                       IkeaEeg.Neuro.ShadowRejection.NoApprovedNormalization,
+                    $"a valid window is now gated by NO_APPROVED_NORMALIZATION — the montage is " +
+                    $"no longer what blocks it ({valid.rejectedReason})");
+
+                Assert(valid.level == IkeaEeg.Neuro.WorkloadLevel.Indeterminate,
+                    $"and the level is STILL Indeterminate ({valid.level}) — verifying the " +
+                    "montage did not unlock a workload label, because nothing in the controller " +
+                    "can emit one");
 
                 Assert(!controller.baseline.isValid && !valid.baselineValid,
                     "20 valid task windows do NOT create a baseline — accumulation is gone");
@@ -8604,14 +9089,26 @@ namespace IkeaEeg.EditorTools
                         "the chain clears only when every prerequisite is met");
                 }
 
-                // The three prerequisites must all still be false in Phase 1.
+                // UPDATED 2026-09-15. MontageVerified is now TRUE — the electrodes were
+                // physically traced — so it is checked separately from the two that remain
+                // false. All three are still compile-time constants, which is the property that
+                // stops anyone enabling them from the Inspector without doing the work.
+                var montageField = G.GetField("MontageVerified",
+                    BindingFlags.Public | BindingFlags.Static);
+
+                Assert(montageField != null && montageField.IsLiteral &&
+                       (bool)montageField.GetRawConstantValue(),
+                    "MontageVerified is a compile-time constant and is now TRUE");
+
+                // THE TWO THAT STILL GATE EVERYTHING. These are what actually stand between the
+                // project and a workload label, and neither has moved.
                 foreach (var name in new[]
-                         { "MontageVerified", "NormalizationApproved", "DecisionRuleApproved" })
+                         { "NormalizationApproved", "DecisionRuleApproved" })
                 {
                     var field = G.GetField(name, BindingFlags.Public | BindingFlags.Static);
 
                     Assert(field != null && field.IsLiteral && !(bool)field.GetRawConstantValue(),
-                        $"{name} is a compile-time constant and is false in Phase 1");
+                        $"{name} is a compile-time constant and is STILL false");
                 }
 
                 // ---- 8. byte-identical output for identical input ------------------------

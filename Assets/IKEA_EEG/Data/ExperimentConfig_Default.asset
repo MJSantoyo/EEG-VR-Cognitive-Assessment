@@ -117,6 +117,9 @@ MonoBehaviour:
   recognitionResponseTimeoutSeconds: 15
   recognitionInterItemGapSeconds: 0.15
   enableRecognitionDeveloperCheatsheet: 0
+  preTaskRestDurationSeconds: 180
+  postTaskRestDurationSeconds: 180
+  restInstructionDurationSeconds: 12
   instructionDurationSeconds: 8
   wordDisplaySeconds: 2
   interWordGapSeconds: 0.5

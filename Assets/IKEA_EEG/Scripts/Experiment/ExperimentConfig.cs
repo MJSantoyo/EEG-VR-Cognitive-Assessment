@@ -279,6 +279,25 @@ namespace IkeaEeg.Experiment
                  "the CSV, the markers or the EEG.")]
         public bool enableRecognitionDeveloperCheatsheet;
 
+        [Header("Resting EEG acquisition blocks")]
+        [Tooltip("PRE-TASK eyes-open resting EEG, seconds. The acquisition design is FROZEN at " +
+                 "180 s; this field exists so the value is inspectable and logged, not so it " +
+                 "can be tuned. Changing it changes the protocol.")]
+        [Range(30f, 600f)]
+        public float preTaskRestDurationSeconds = 180f;
+
+        [Tooltip("POST-TASK eyes-open resting EEG, seconds. FROZEN at 180 s, matching the " +
+                 "pre-task block so the two recordings are the same length under the same " +
+                 "instruction. It is a RECOVERY recording and is never used as a baseline.")]
+        [Range(30f, 600f)]
+        public float postTaskRestDurationSeconds = 180f;
+
+        [Tooltip("How long the rest instructions stay on screen before the fixation point " +
+                 "replaces them. Reading time only — the acquisition interval itself begins " +
+                 "after this and is not shortened by it.")]
+        [Range(3f, 60f)]
+        public float restInstructionDurationSeconds = 12f;
+
         [Header("Area A — instructions & encoding")]
         [Tooltip("How long the Area A instruction panel is shown before the words start.")]
         public float instructionDurationSeconds = 8f;
