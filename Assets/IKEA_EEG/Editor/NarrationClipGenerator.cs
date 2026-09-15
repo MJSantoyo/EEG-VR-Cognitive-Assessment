@@ -294,6 +294,13 @@ namespace IkeaEeg.EditorTools
             config.areaBInstructionNarrationClips = new List<NarrationClipEntry>();
             config.recognitionDelayedNarrationClips = new List<NarrationClipEntry>();
 
+            // RESET THESE TOO. Added when the resting blocks gained narration, and omitted from
+            // this reset at the time — which meant a second run would APPEND a duplicate EN entry
+            // rather than replace it. Every other list here is rebuilt from scratch; these are
+            // now rebuilt the same way, so the generator is idempotent again.
+            config.preTaskRestNarrationClips = new List<NarrationClipEntry>();
+            config.postTaskRestNarrationClips = new List<NarrationClipEntry>();
+
             var report = new StringBuilder();
             report.AppendLine("[IKEA_EEG] ===== NARRATION GENERATION =====");
 

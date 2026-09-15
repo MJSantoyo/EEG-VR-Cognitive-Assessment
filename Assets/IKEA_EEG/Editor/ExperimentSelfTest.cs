@@ -7830,14 +7830,64 @@ namespace IkeaEeg.EditorTools
                    generatorSource.Contains("postTaskRestNarrationClips"),
                 "and assigns them into the config after generation");
 
+            // THE ASSETS THEMSELVES. This is what was actually wrong when the instruction was
+            // silent in Play Mode: the wiring was correct end to end, and the WAVs simply did
+            // not exist because the generator had never been run since the ids were added.
+            // Lookup returned null, SpeakRestInstructions warned and returned 0, and the block
+            // ran text-only exactly as designed. Asserting the CLIP RESOLVES is the only check
+            // that would have caught that — every structural assertion already passed.
             if (config != null)
             {
+                var preClip = config.GetPreTaskRestNarration(ExperimentLanguage.English);
+                var postClip = config.GetPostTaskRestNarration(ExperimentLanguage.English);
+
+                Assert(preClip != null,
+                    "the PRE-TASK resting narration clip RESOLVES for English — the config " +
+                    "entry exists and its AudioClip reference is not missing");
+
+                Assert(postClip != null,
+                    "the POST-TASK resting narration clip resolves for English");
+
+                if (preClip != null && postClip != null)
+                {
+                    // Long enough to be the real three-sentence instruction rather than a
+                    // truncated or silent file.
+                    Assert(preClip.length > 5f && postClip.length > 5f,
+                        $"both clips carry real speech (pre {preClip.length:F1} s, " +
+                        $"post {postClip.length:F1} s)");
+
+                    Assert(preClip.samples > 0 && postClip.samples > 0,
+                        "both clips have audio samples");
+
+                    Info($"resting narration: {preClip.name} {preClip.length:F1} s, " +
+                         $"{postClip.name} {postClip.length:F1} s");
+                }
+
+                // ONE entry each. The generator appends, so a list it forgets to reset gains a
+                // duplicate on every run — which is exactly what happened to these two lists
+                // until the reset was added.
                 var preCount = config.preTaskRestNarrationClips?.Count ?? 0;
                 var postCount = config.postTaskRestNarrationClips?.Count ?? 0;
 
-                Info($"resting narration clips currently in the config: pre {preCount}, " +
-                     $"post {postCount}. ZERO means the generator has not been run yet — the " +
-                     "instruction is shown but not spoken until it is.");
+                Assert(preCount == 1 && postCount == 1,
+                    $"exactly one entry per resting clip list (pre {preCount}, post {postCount}) " +
+                    "— no duplicate accumulated across generator runs");
+            }
+
+            var genSource = File.ReadAllText(
+                "Assets/IKEA_EEG/Editor/NarrationClipGenerator.cs");
+
+            Assert(genSource.Contains("config.preTaskRestNarrationClips = new List<NarrationClipEntry>()") &&
+                   genSource.Contains("config.postTaskRestNarrationClips = new List<NarrationClipEntry>()"),
+                "the generator RESETS both resting lists before reassigning, like every other " +
+                "narration list — so running it twice replaces rather than duplicates");
+
+            // The instruction window must not cut the voice off mid-sentence.
+            if (!string.IsNullOrEmpty(block))
+            {
+                Assert(block.Contains("narrationSeconds + 0.5f"),
+                    "the non-READY path holds the instruction until the narration has finished, " +
+                    "with the configured window as a floor — the same rule Area A applies");
             }
 
             // ---- D: the desktop mouse layer -------------------------------------------------
