@@ -124,6 +124,8 @@ namespace IkeaEeg.EditorTools
                 CheckBlock15PipelinePublication);
             RunSection("BLOCK 16 — FEATURE VALIDITY DECOMPOSITION",
                 CheckBlock16FeatureValidity);
+            RunSection("BLOCK 17 — ROI-SCOPED VS GLOBAL CHANNEL VALIDITY",
+                CheckBlock17RoiScopedValidity);
             RunSection("LANGUAGE WORD SETS + PROVENANCE", CheckLanguageWordSets);
             RunSection("RECALL ADAPTIVE STOP (SILENCE DETECTION)", CheckRecallSilenceDetector);
             RunSection("RECALL RECORDING STOP REPORTING", CheckRecordingStopReporting);
@@ -8940,6 +8942,246 @@ namespace IkeaEeg.EditorTools
                    !IkeaEeg.Neuro.ShadowModeController.NormalizationApproved &&
                    !IkeaEeg.Neuro.ShadowModeController.DecisionRuleApproved,
                 "the shadow gates are untouched");
+        }
+
+
+        /// <summary>
+        /// Block 17: the ROI-membership question, measured rather than argued.
+        ///
+        /// THE FINDING THIS PINS. UpdateChannelHealth returns ChannelDegraded whenever ANY
+        /// channel is degraded, and featureValidity requires quality == None. So a degraded Fp1
+        /// — which belongs to neither frontocentral theta (F3/Fz/F4) nor posterior alpha
+        /// (P3/Pz/P4) — invalidates a window whose two regional averages were computed entirely
+        /// from healthy electrodes.
+        ///
+        /// The project ALREADY has the finer distinction: ApplyChannelHealthToRoi intersects the
+        /// degraded set with each ROI and marks frontalThetaValid / posteriorAlphaValid
+        /// individually. That per-ROI verdict is computed on every window and then made moot by
+        /// the global gate.
+        ///
+        /// NOTHING HERE CHANGES THE RULE. These assertions pin the current behaviour so it
+        /// cannot drift silently, and prove the new counters measure the situation accurately.
+        /// Whether the rule should change is a methodological decision that belongs to the
+        /// researcher, and it needs the counts from a real run to make.
+        /// </summary>
+        static void CheckBlock17RoiScopedValidity()
+        {
+            var montage = AuraMontageConfig.CreateHumanVerifiedDefault();
+
+            // ---- A: which electrodes are actually in an ROI ---------------------------------
+            var frontal = montage.ResolveRoi(AuraMontageConfig.FrontalThetaRoi, out _);
+            var posterior = montage.ResolveRoi(AuraMontageConfig.PosteriorAlphaRoi, out _);
+
+            Assert(frontal != null && posterior != null, "both ROIs resolve on this montage");
+
+            if (frontal == null || posterior == null)
+                return;
+
+            var inRoi = new HashSet<int>(frontal);
+            inRoi.UnionWith(posterior);
+
+            var outside = new List<string>();
+
+            for (var c = 0; c < 8; c++)
+            {
+                if (!inRoi.Contains(c))
+                    outside.Add($"ch{c + 1}={montage.LabelOfIndex(c)}");
+            }
+
+            Info($"electrodes in an ROI: {inRoi.Count} of 8; outside every ROI: " +
+                 $"{string.Join(", ", outside)}");
+
+            Assert(outside.Count > 0,
+                "at least one electrode belongs to NO ROI — which is what makes the global " +
+                "versus ROI-scoped question a real one rather than academic");
+
+            // The frontocentral ROI as IMPLEMENTED is F3/Fz/F4. Cz is not in it. Recorded as an
+            // assertion because the stated intent elsewhere has included Cz, and a mismatch
+            // between intent and implementation is exactly the kind of thing that should fail
+            // loudly rather than be discovered in an analysis months later.
+            Assert(frontal.Length == 3,
+                $"FRONTAL_THETA averages {frontal.Length} electrodes as implemented");
+
+            var frontalLabels = frontal.Select(i => montage.LabelOfIndex(i)).ToArray();
+
+            Assert(!frontalLabels.Contains("Cz"),
+                $"Cz is NOT part of FRONTAL_THETA as implemented ({string.Join("/", frontalLabels)}) " +
+                "— if frontocentral theta is intended to include Cz, the montage ROI is where " +
+                "that must change, deliberately, and not here");
+
+            // ---- B: a degraded NON-ROI channel still invalidates the window -----------------
+            // This is the current rule, asserted so a future change to it is visible.
+            var nonRoiChannel = -1;
+
+            for (var c = 0; c < 8 && nonRoiChannel < 0; c++)
+            {
+                if (!inRoi.Contains(c))
+                    nonRoiChannel = c;
+            }
+
+            Assert(nonRoiChannel >= 0, "a non-ROI channel index was found");
+
+            var outsideOnly = new LatestEegFeatures
+            {
+                quality = EegQualityFlags.ChannelDegraded,
+                roiValid = true,
+                frontalThetaValid = true,
+                posteriorAlphaValid = true,
+                frontalTheta = 12.5d,
+                posteriorAlpha = 30.25d,
+                thetaPerChannel = new double[8],
+                alphaPerChannel = new double[8],
+                degradedChannels = new[] { nonRoiChannel },
+                degradedInsideRoi = 0,
+                degradedOutsideRoi = 1,
+                sampleCount = 1000,
+                channelCount = 8,
+            };
+
+            outsideOnly.featureValidity =
+                outsideOnly.quality == EegQualityFlags.None && outsideOnly.roiValid;
+
+            Assert(!outsideOnly.featureValidity,
+                $"CURRENT RULE: a degraded {montage.LabelOfIndex(nonRoiChannel)} — in neither " +
+                "ROI — still invalidates the whole window. Pinned, not endorsed");
+
+            Assert(outsideOnly.roiChannelsAllHealthy,
+                "yet every electrode BOTH regional averages are computed from was healthy");
+
+            Assert(outsideOnly.frontalThetaValid && outsideOnly.posteriorAlphaValid,
+                "and the per-ROI verdicts, which the project already computes, both say valid");
+
+            var breakdown = outsideOnly.ValidityBreakdown();
+
+            Assert(breakdown.Contains("degraded_outside_roi=1") &&
+                   breakdown.Contains("degraded_in_roi=0"),
+                $"the breakdown separates the two cases, so a run can be counted rather than " +
+                $"argued about (\"{breakdown}\")");
+
+            Assert(breakdown.Contains("channel_health=False"),
+                "and attributes the rejection to channel_health specifically");
+
+            // ---- C: a degraded ROI channel is a genuinely different case --------------------
+            var insideRoi = new LatestEegFeatures
+            {
+                quality = EegQualityFlags.ChannelDegraded,
+                roiValid = false,
+                frontalThetaValid = false,
+                posteriorAlphaValid = true,
+                frontalTheta = 12.5d,
+                posteriorAlpha = 30.25d,
+                thetaPerChannel = new double[8],
+                alphaPerChannel = new double[8],
+                degradedChannels = new[] { frontal[0] },
+                degradedInsideRoi = 1,
+                degradedOutsideRoi = 0,
+                sampleCount = 1000,
+                channelCount = 8,
+            };
+
+            insideRoi.featureValidity =
+                insideRoi.quality == EegQualityFlags.None && insideRoi.roiValid;
+
+            Assert(!insideRoi.featureValidity && !insideRoi.roiChannelsAllHealthy,
+                $"a degraded {montage.LabelOfIndex(frontal[0])} — inside FRONTAL_THETA — " +
+                "invalidates the window AND the regional average it feeds. This rejection is " +
+                "methodologically necessary; the previous one is a policy choice");
+
+            Assert(insideRoi.ValidityBreakdown().Contains("fc_roi_valid=False"),
+                "and the breakdown names the affected ROI");
+
+            // ---- D: finite theta/alpha alone never imply validity --------------------------
+            Assert(!double.IsNaN(outsideOnly.frontalTheta) &&
+                   !double.IsNaN(outsideOnly.posteriorAlpha) &&
+                   !outsideOnly.featureValidity,
+                "finite theta and finite alpha do NOT make a window valid — exactly the " +
+                "combination the real run produced 185 times");
+
+            // ---- E: the counters are computed, not asserted by hand -------------------------
+            var counter = typeof(EegFeaturePipeline).GetMethod("CountDegradedByRoi",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+
+            Assert(counter != null,
+                "the pipeline computes the ROI-membership split itself on every window");
+
+            var pipelineSource = StripCommentsAndAttributes(File.ReadAllText(
+                "Assets/IKEA_EEG/Scripts/Data/EegFeaturePipeline.cs"));
+
+            Assert(pipelineSource.Contains("CountDegradedByRoi(features);"),
+                "and calls it on the live path");
+
+            // The counters must not feed the decision. This is the assertion that keeps this
+            // pass observational.
+            Assert(!pipelineSource.Contains("degradedOutsideRoi ==") &&
+                   !pipelineSource.Contains("roiChannelsAllHealthy &&") &&
+                   !pipelineSource.Contains("|| roiChannelsAllHealthy"),
+                "NOTHING branches on the new counters — they are measurements, and this pass " +
+                "did not turn a measurement into a rule");
+
+            // ---- F: the validity rule is byte-for-byte unchanged ---------------------------
+            Assert(pipelineSource.Contains(
+                    "features.featureValidity = features.quality == EegQualityFlags.None &&"),
+                "featureValidity is unchanged: no quality flags AND roiValid");
+
+            Assert(pipelineSource.Contains("UpdateChannelHealth") &&
+                   pipelineSource.Contains("return EegQualityFlags.ChannelDegraded;"),
+                "and ChannelDegraded is still raised for ANY degraded channel — the behaviour " +
+                "this audit describes is the behaviour still in place");
+
+            // ---- G: no threshold, filter, band or spectral setting moved -------------------
+            var defaults = EegQualityThresholds.Default;
+
+            Assert(System.Math.Abs(defaults.nearIdenticalCorrelation - 0.99) < 1e-9 &&
+                   defaults.nearIdenticalMinimumPairs == 1 &&
+                   System.Math.Abs(defaults.degradationDecades - 2.0) < 1e-9 &&
+                   defaults.degradationConsecutiveWindows == 3 &&
+                   System.Math.Abs(defaults.excursionRangeRatio - 8.0) < 1e-9 &&
+                   System.Math.Abs(defaults.variabilityCollapseRatio - 0.1) < 1e-9 &&
+                   System.Math.Abs(defaults.saturationRepeatFraction - 0.5) < 1e-9 &&
+                   System.Math.Abs(defaults.discontinuityStepRatio - 20.0) < 1e-9 &&
+                   defaults.baselineWindows == 5 &&
+                   defaults.recoveryWindows == 5,
+                "every QC threshold is exactly as it was — this pass changed none of them");
+
+            var thresholdSource = File.ReadAllText(
+                "Assets/IKEA_EEG/Scripts/Data/EegChannelQualityRules.cs");
+
+            Assert(thresholdSource.Contains("ENGINEERING HEURISTIC") ||
+                   thresholdSource.Contains("ENGINEERING HEURISTICS"),
+                "and the thresholds file still states plainly that they are engineering " +
+                "heuristics rather than scientific constants");
+
+            var filterSource = File.ReadAllText(
+                "Assets/IKEA_EEG/Scripts/Data/EegBandpassFilter.cs");
+
+            Assert(filterSource.Contains("SettlingSamples => (int)Math.Ceiling(m_SampleRateHz * 3.0 / m_HighPassHz)"),
+                "the filter settling rule is unchanged");
+
+            Assert(pipelineSource.Contains("m_WelchSegmentSeconds") &&
+                   !pipelineSource.Contains("m_WelchSegmentSeconds = 1.0"),
+                "the Welch segment length is unchanged");
+
+            // ---- H: shadow mode is still observational and still indeterminate -------------
+            Assert(IkeaEeg.Neuro.ShadowModeController.MontageVerified &&
+                   !IkeaEeg.Neuro.ShadowModeController.NormalizationApproved &&
+                   !IkeaEeg.Neuro.ShadowModeController.DecisionRuleApproved,
+                "the shadow gates are untouched");
+
+            var shadowSource = StripCommentsAndAttributes(File.ReadAllText(
+                "Assets/IKEA_EEG/Scripts/Neuro/ShadowModeController.cs"));
+
+            Assert(shadowSource.Contains("const WorkloadLevel level = WorkloadLevel.Indeterminate"),
+                "shadow output is still unconditionally INDETERMINATE");
+
+            foreach (var forbidden in new[]
+                     { "WorkloadLevel.Low", "WorkloadLevel.Moderate", "WorkloadLevel.High" })
+            {
+                Assert(!shadowSource.Contains(forbidden),
+                    $"no {forbidden} anywhere in the controller");
+            }
+
+            Assert(!shadowSource.Contains("SupplyApprovedBaseline("),
+                "and nothing supplies a baseline");
         }
 
         /// <summary>

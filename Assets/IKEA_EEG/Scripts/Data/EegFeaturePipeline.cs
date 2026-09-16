@@ -243,6 +243,33 @@ namespace IkeaEeg.Data
         // threshold, no change to how any of them is decided — they only give the existing bits
         // names so a rejection can state its own reason.
 
+        /// <summary>
+        /// Degraded channels that belong to NO region of interest.
+        ///
+        /// PURELY OBSERVATIONAL — nothing reads this to decide anything. It exists because the
+        /// validity rule cannot currently tell these apart: UpdateChannelHealth returns
+        /// ChannelDegraded whenever ANY channel is degraded, and featureValidity requires
+        /// quality == None, so a degraded Fp1 — which contributes to neither frontocentral theta
+        /// nor posterior alpha — invalidates a window whose two ROI averages were computed
+        /// entirely from healthy electrodes.
+        ///
+        /// Whether that is the right rule is a methodological question, not a coding one. This
+        /// field measures how often the situation actually arises so the question can be
+        /// answered from data rather than from argument.
+        /// </summary>
+        public int degradedOutsideRoi;
+
+        /// <summary>Degraded channels that DO belong to at least one ROI.</summary>
+        public int degradedInsideRoi;
+
+        /// <summary>
+        /// True when no degraded channel participates in EITHER ROI — i.e. both regional
+        /// averages were computed only from healthy electrodes.
+        ///
+        /// Observational. featureValidity does not consult it.
+        /// </summary>
+        public bool roiChannelsAllHealthy => degradedInsideRoi == 0;
+
         /// <summary>The IIR filter had run long enough for its output to be signal.</summary>
         public bool filterSettled => (quality & EegQualityFlags.FilterNotSettled) == 0;
 
@@ -270,6 +297,17 @@ namespace IkeaEeg.Data
         /// <summary>No quality flag of any kind is set — the first half of featureValidity.</summary>
         public bool qualityValid => quality == EegQualityFlags.None;
 
+        /// <summary>Whether any channel has been marked degraded by the health tracker.</summary>
+        public bool channelHealthPassed =>
+            (quality & EegQualityFlags.ChannelDegraded) == 0;
+
+        /// <summary>Whether the between-channel checks passed.</summary>
+        public bool crossChannelChecksPassed =>
+            (quality & (EegQualityFlags.NearIdenticalChannels |
+                        EegQualityFlags.IdenticalChannels |
+                        EegQualityFlags.ChannelPowerOutlier |
+                        EegQualityFlags.TransientArtifactSuspected)) == 0;
+
         /// <summary>
         /// One line naming each sub-condition, for a log or a diagnostic column.
         ///
@@ -280,10 +318,18 @@ namespace IkeaEeg.Data
         {
             return string.Format(CultureInfo.InvariantCulture,
                 "filter_settled={0}; window_complete={1} ({2} samples); spectral_valid={3}; " +
-                "channel_checks={4}; roi_valid={5}; quality_valid={6}; feature_valid={7}; " +
-                "flags={8}",
+                "channel_checks={4}; cross_channel={5}; channel_health={6}; " +
+                "valid_channels={7}; degraded_in_roi={8}; degraded_outside_roi={9}; " +
+                "fc_roi_valid={10}; post_roi_valid={11}; roi_valid={12}; " +
+                "finite_theta={13}; finite_alpha={14}; quality_valid={15}; feature_valid={16}; " +
+                "flags={17}",
                 filterSettled, windowComplete, sampleCount, spectralValid,
-                channelChecksPassed, roiValid, qualityValid, featureValidity, QualityText());
+                channelChecksPassed, crossChannelChecksPassed, channelHealthPassed,
+                channelCount - (degradedChannels?.Length ?? 0),
+                degradedInsideRoi, degradedOutsideRoi,
+                frontalThetaValid, posteriorAlphaValid, roiValid,
+                !double.IsNaN(frontalTheta), !double.IsNaN(posteriorAlpha),
+                qualityValid, featureValidity, QualityText());
         }
 
         public string QualityText()
@@ -1177,8 +1223,53 @@ namespace IkeaEeg.Data
         /// the montage's all-or-nothing rule exists to prevent. The VALUE is still computed and
         /// still present — flagged, not deleted — so a researcher can see what was rejected.
         /// </summary>
+        /// <summary>
+        /// Counts degraded channels by ROI membership. OBSERVATIONAL ONLY — it decides nothing.
+        ///
+        /// Runs regardless of m_InvalidateRoiOnDegradedChannel, because the question it answers
+        /// ("would this window have survived an ROI-scoped rule?") has to be measurable whatever
+        /// the current rule happens to be.
+        /// </summary>
+        void CountDegradedByRoi(LatestEegFeatures features)
+        {
+            features.degradedInsideRoi = 0;
+            features.degradedOutsideRoi = 0;
+
+            var degraded = features.degradedChannels;
+
+            if (degraded == null || degraded.Length == 0 || m_Montage == null)
+                return;
+
+            var inRoi = new HashSet<int>();
+
+            foreach (var roi in new[]
+                     {
+                         AuraMontageConfig.FrontalThetaRoi,
+                         AuraMontageConfig.PosteriorAlphaRoi,
+                     })
+            {
+                var indices = m_Montage.ResolveRoi(roi, out _);
+
+                if (indices == null)
+                    continue;
+
+                foreach (var index in indices)
+                    inRoi.Add(index);
+            }
+
+            foreach (var channel in degraded)
+            {
+                if (inRoi.Contains(channel))
+                    features.degradedInsideRoi++;
+                else
+                    features.degradedOutsideRoi++;
+            }
+        }
+
         void ApplyChannelHealthToRoi(LatestEegFeatures features)
         {
+            CountDegradedByRoi(features);
+
             if (m_Montage == null || m_Health == null)
                 return;
 
