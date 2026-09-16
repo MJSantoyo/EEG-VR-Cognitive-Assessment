@@ -332,6 +332,36 @@ namespace IkeaEeg.Data
                 qualityValid, featureValidity, QualityText());
         }
 
+        /// <summary>
+        /// The same conditions as <see cref="ValidityBreakdown"/>, minus the raw sample count.
+        ///
+        /// A TALLY KEY, not a report. The breakdown embeds the exact number of samples in the
+        /// window, and that number jitters by a sample or two between otherwise identical
+        /// windows. Keying a histogram on it split a single cause into dozens of near-duplicate
+        /// rows and hid the very distribution the tally exists to show. window_complete is kept
+        /// as a BOOLEAN, so a genuinely short window still forms a group of its own — what is
+        /// dropped is the count, not the condition.
+        ///
+        /// OBSERVATIONAL ONLY. Nothing branches on this and no validity decision reads it.
+        /// </summary>
+        public string ValiditySignature()
+        {
+            return string.Format(CultureInfo.InvariantCulture,
+                "filter_settled={0}; window_complete={1}; spectral_valid={2}; " +
+                "channel_checks={3}; cross_channel={4}; channel_health={5}; " +
+                "valid_channels={6}; degraded_in_roi={7}; degraded_outside_roi={8}; " +
+                "fc_roi_valid={9}; post_roi_valid={10}; roi_valid={11}; " +
+                "finite_theta={12}; finite_alpha={13}; quality_valid={14}; " +
+                "feature_valid={15}; flags={16}",
+                filterSettled, windowComplete, spectralValid,
+                channelChecksPassed, crossChannelChecksPassed, channelHealthPassed,
+                channelCount - (degradedChannels?.Length ?? 0),
+                degradedInsideRoi, degradedOutsideRoi,
+                frontalThetaValid, posteriorAlphaValid, roiValid,
+                !double.IsNaN(frontalTheta), !double.IsNaN(posteriorAlpha),
+                qualityValid, featureValidity, QualityText());
+        }
+
         public string QualityText()
         {
             if (quality == EegQualityFlags.None)

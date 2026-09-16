@@ -160,17 +160,29 @@ namespace IkeaEeg.Neuro
             if (features == null)
                 return;
 
-            var reason = decision.rejectedReason == ShadowRejection.FeatureInvalid
-                ? "FeatureInvalid :: " + features.ValidityBreakdown()
+            // GROUPED BY CAUSE, not by window. The tally is keyed on the SIGNATURE, which
+            // omits the raw sample count: that number jitters by a sample or two between
+            // otherwise identical windows, and keying on it fragmented one cause across dozens
+            // of rows differing only in "(999 samples)" versus "(1000 samples)". The grouping
+            // changed; not one validity decision did — both strings are read from a window
+            // that has already been evaluated.
+            var cause = decision.rejectedReason == ShadowRejection.FeatureInvalid
+                ? "FeatureInvalid :: " + features.ValiditySignature()
                 : decision.rejectedReason.ToString();
 
-            m_RejectionTally.TryGetValue(reason, out var count);
-            m_RejectionTally[reason] = count + 1;
+            m_RejectionTally.TryGetValue(cause, out var count);
+            m_RejectionTally[cause] = count + 1;
 
-            if (reason == m_LastBreakdown)
+            if (cause == m_LastBreakdown)
                 return;
 
-            m_LastBreakdown = reason;
+            m_LastBreakdown = cause;
+
+            // The console line keeps the FULL breakdown, sample count included. Reading one
+            // window is the case where that number is worth having.
+            var reason = decision.rejectedReason == ShadowRejection.FeatureInvalid
+                ? "FeatureInvalid :: " + features.ValidityBreakdown()
+                : cause;
 
             Debug.Log($"[IKEA_EEG] Shadow window {windowsObserved}: {reason}");
 

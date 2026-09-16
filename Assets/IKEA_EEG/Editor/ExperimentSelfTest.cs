@@ -9065,6 +9065,70 @@ namespace IkeaEeg.EditorTools
             Assert(breakdown.Contains("channel_health=False"),
                 "and attributes the rejection to channel_health specifically");
 
+            // ---- B2: the rejection tally groups by CAUSE, not by sample count -------------
+            // The tally used to be keyed on the full breakdown, which embeds the exact sample
+            // count. Two windows rejected for the identical reason landed in separate rows
+            // because one held 999 samples and the other 1000, so the histogram fragmented
+            // into near-duplicates and hid the distribution it exists to show.
+            var jittered = new LatestEegFeatures
+            {
+                quality = outsideOnly.quality,
+                roiValid = outsideOnly.roiValid,
+                frontalThetaValid = outsideOnly.frontalThetaValid,
+                posteriorAlphaValid = outsideOnly.posteriorAlphaValid,
+                frontalTheta = outsideOnly.frontalTheta,
+                posteriorAlpha = outsideOnly.posteriorAlpha,
+                thetaPerChannel = new double[8],
+                alphaPerChannel = new double[8],
+                degradedChannels = new[] { nonRoiChannel },
+                degradedInsideRoi = 0,
+                degradedOutsideRoi = 1,
+                sampleCount = 998,          // THE ONLY DIFFERENCE
+                channelCount = 8,
+            };
+
+            jittered.featureValidity =
+                jittered.quality == EegQualityFlags.None && jittered.roiValid;
+
+            Assert(outsideOnly.ValidityBreakdown() != jittered.ValidityBreakdown(),
+                "two windows identical but for a 2-sample difference still produce DIFFERENT " +
+                "full breakdowns — the per-window report keeps the count");
+
+            Assert(outsideOnly.ValiditySignature() == jittered.ValiditySignature(),
+                "...yet the SAME tally signature, so a rejection histogram counts them as one " +
+                "cause instead of two rows");
+
+            Assert(!outsideOnly.ValiditySignature().Contains("samples"),
+                "the signature carries no raw sample count at all");
+
+            Assert(outsideOnly.ValiditySignature().Contains("window_complete=True"),
+                "but it keeps window_complete as a CONDITION — the count is dropped, the " +
+                "check is not");
+
+            var truncated = new LatestEegFeatures
+            {
+                quality = outsideOnly.quality | EegQualityFlags.InsufficientSamples,
+                roiValid = true,
+                frontalThetaValid = true,
+                posteriorAlphaValid = true,
+                thetaPerChannel = new double[8],
+                alphaPerChannel = new double[8],
+                degradedChannels = new[] { nonRoiChannel },
+                degradedInsideRoi = 0,
+                degradedOutsideRoi = 1,
+                sampleCount = 400,
+                channelCount = 8,
+            };
+
+            Assert(truncated.ValiditySignature() != outsideOnly.ValiditySignature(),
+                "a GENUINELY short window still forms its own group — grouping merges " +
+                "sample-count jitter, never two different causes");
+
+            Assert(outsideOnly.featureValidity == jittered.featureValidity &&
+                   !outsideOnly.featureValidity,
+                "and the validity decision is untouched by any of this: the signature is read " +
+                "from a window that has ALREADY been evaluated, and decides nothing");
+
             // ---- C: a degraded ROI channel is a genuinely different case --------------------
             var insideRoi = new LatestEegFeatures
             {
