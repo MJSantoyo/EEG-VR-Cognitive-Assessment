@@ -13882,6 +13882,51 @@ namespace IkeaEeg.EditorTools
 
         static void CheckRunLifecycle()
         {
+            // ---- Editor sessions must not land in the participant data directory -----------
+            // Every caller here — this self test included — mints a REAL session id through the
+            // real EventLogger, and until 2026-09-16 created a real folder in the real data
+            // root beside the participant runs. One batch pass left eleven. The data was never
+            // wrong, but a directory listing could no longer be read as the record of runs.
+            var probe = new GameObject("EditorSandboxRootProbe").AddComponent<EventLogger>();
+
+            try
+            {
+                Assert(!Application.isPlaying,
+                    "this check runs OUTSIDE Play Mode — which is the condition it is about");
+
+                Assert(probe.configuredRootFolderName == "IKEA_EEG_Data",
+                    $"the configured data root is untouched ({probe.configuredRootFolderName})");
+
+                Assert(probe.rootFolderName ==
+                       "IKEA_EEG_Data" + EventLogger.EditorSandboxSuffix,
+                    $"but outside Play Mode the logger writes to the sandbox root " +
+                    $"({probe.rootFolderName})");
+
+                probe.BeginSession();
+
+                Assert(probe.sessionDirectory.Contains(EventLogger.EditorSandboxSuffix),
+                    $"and a session opened from the editor really is written there " +
+                    $"({probe.sessionDirectory})");
+
+                var realRoot = Path.Combine(Application.persistentDataPath, "IKEA_EEG_Data");
+
+                Assert(!probe.sessionDirectory.StartsWith(
+                           realRoot + Path.DirectorySeparatorChar,
+                           System.StringComparison.Ordinal),
+                    "and is NOT a child of the real data root, so editor activity cannot be " +
+                    "mistaken for a participant run");
+
+                Assert(probe.sessionId.StartsWith("S_", System.StringComparison.Ordinal),
+                    $"while the session id itself is unchanged ({probe.sessionId}) — the folder " +
+                    "moved, the session did not");
+
+                probe.EndSession("self test");
+            }
+            finally
+            {
+                Object.DestroyImmediate(probe.gameObject);
+            }
+
             // ---- RESTART's discard guard: the data-safety property that matters most ---------
             const string root = "IKEA_EEG_Data";
             var dataRoot = SessionDiscardGuard.DataRoot(root);

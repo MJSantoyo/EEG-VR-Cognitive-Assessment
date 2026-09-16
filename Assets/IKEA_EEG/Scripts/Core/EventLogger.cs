@@ -67,10 +67,34 @@ namespace IkeaEeg.Core
         public string sessionDirectory { get; private set; } = string.Empty;
 
         /// <summary>
-        /// Name of the data folder inside persistentDataPath. Exposed so the RESTART discard
-        /// guard can prove a path is inside the data root before touching it.
+        /// Suffix appended to the data root for any session opened OUTSIDE Play Mode.
+        ///
+        /// The self test, the validation tools and anything else driving this logger from a
+        /// menu or from batch mode mint REAL session ids and used to create real session
+        /// folders in the real data root, indistinguishable from a participant run — one
+        /// self-test pass left eleven of them. No recorded data was ever wrong; the DIRECTORY
+        /// was, because a researcher listing it cannot tell a run from a test fixture.
+        ///
+        /// Application.isPlaying is the discriminator, because it is the one the data actually
+        /// depends on: true in Play Mode and in a player build, false in edit and batch mode.
+        /// Nothing else about the session changes — same id, same schema, same sinks, same
+        /// events. Only the folder they land in.
         /// </summary>
-        public string rootFolderName => m_RootFolderName;
+        public const string EditorSandboxSuffix = "_EditorSandbox";
+
+        /// <summary>
+        /// Name of the data folder inside persistentDataPath THIS LOGGER WILL WRITE TO.
+        ///
+        /// Exposed so the RESTART discard guard can prove a path is inside the data root
+        /// before touching it — which is why it reports the ACTIVE root rather than the
+        /// configured one. A guard told the wrong root either refuses a legitimate discard,
+        /// or accepts a path that is not where the session actually is.
+        /// </summary>
+        public string rootFolderName =>
+            Application.isPlaying ? m_RootFolderName : m_RootFolderName + EditorSandboxSuffix;
+
+        /// <summary>The configured root, before any edit-mode redirection.</summary>
+        public string configuredRootFolderName => m_RootFolderName;
         public bool sessionActive => m_SessionActive;
         public bool verboseConsole => m_VerboseConsole;
 
@@ -189,8 +213,12 @@ namespace IkeaEeg.Core
             // The run id carries its run number, so a folder listing reads in run order and no
             // two runs of one sitting can ever collide on disk.
             sessionId = BuildSessionId(m_Clock.sessionStartLocal, runIndex);
+
+            // rootFolderName, NOT m_RootFolderName: outside Play Mode this redirects the whole
+            // session into the editor sandbox, so test and tooling sessions never appear in the
+            // directory a researcher reads as the record of participant runs.
             sessionDirectory = Path.Combine(
-                Application.persistentDataPath, m_RootFolderName, sessionId);
+                Application.persistentDataPath, rootFolderName, sessionId);
 
             try
             {
@@ -212,7 +240,7 @@ namespace IkeaEeg.Core
             m_SessionActive = true;
             m_Bus.InitializeSinks(context);
 
-            Debug.Log($"[IKEA_EEG] ===== SESSION {sessionId} =====\n" +
+            Debug.Log($"[IKEA_EEG] ===== SESSION {sessionId} ====={(Application.isPlaying ? string.Empty : " [EDITOR SANDBOX, NOT A PARTICIPANT RUN]")}\n" +
                       $"[IKEA_EEG] Data folder: {sessionDirectory}\n" +
                       $"[IKEA_EEG] High-resolution timer available: {SessionClock.isHighResolution}");
 
