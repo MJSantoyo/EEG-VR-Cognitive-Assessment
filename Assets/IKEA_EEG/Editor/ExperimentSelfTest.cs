@@ -8995,19 +8995,23 @@ namespace IkeaEeg.EditorTools
                 "at least one electrode belongs to NO ROI — which is what makes the global " +
                 "versus ROI-scoped question a real one rather than academic");
 
-            // The frontocentral ROI as IMPLEMENTED is F3/Fz/F4. Cz is not in it. Recorded as an
-            // assertion because the stated intent elsewhere has included Cz, and a mismatch
-            // between intent and implementation is exactly the kind of thing that should fail
-            // loudly rather than be discovered in an analysis months later.
-            Assert(frontal.Length == 3,
+            // The frontocentral ROI is F3/Fz/F4/Cz — the frontal ring plus the vertex. Cz was
+            // absent until 2026-09-16 while every statement of intent included it; it was added
+            // in the montage, deliberately, before any baseline existed. Asserted so the set
+            // theta_fc is averaged over cannot change again without a test saying so.
+            Assert(frontal.Length == 4,
                 $"FRONTAL_THETA averages {frontal.Length} electrodes as implemented");
 
             var frontalLabels = frontal.Select(i => montage.LabelOfIndex(i)).ToArray();
 
-            Assert(!frontalLabels.Contains("Cz"),
-                $"Cz is NOT part of FRONTAL_THETA as implemented ({string.Join("/", frontalLabels)}) " +
-                "— if frontocentral theta is intended to include Cz, the montage ROI is where " +
-                "that must change, deliberately, and not here");
+            Assert(frontalLabels.Contains("Cz"),
+                $"Cz IS part of FRONTAL_THETA ({string.Join("/", frontalLabels)}) — theta_fc " +
+                "therefore means mean(F3,Fz,F4,Cz), and is NOT comparable with the purely " +
+                "frontal value logged by runs recorded before 2026-09-16");
+
+            Assert(frontalLabels.Contains("F3") && frontalLabels.Contains("Fz") &&
+                   frontalLabels.Contains("F4"),
+                "and the three frontal electrodes are unchanged by that correction");
 
             // ---- B: a degraded NON-ROI channel still invalidates the window -----------------
             // This is the current rule, asserted so a future change to it is visible.
@@ -9467,11 +9471,12 @@ namespace IkeaEeg.EditorTools
                 // ---- ROIs, resolved by LABEL -----------------------------------------------
                 var frontal = montage.ResolveRoi(AuraMontageConfig.FrontalThetaRoi, out var fp);
 
-                Assert(frontal != null && frontal.Length == 3,
-                    $"FRONTAL_THETA resolves to three channels ({fp})");
+                Assert(frontal != null && frontal.Length == 4,
+                    $"FRONTAL_THETA resolves to four channels ({fp})");
 
-                Assert(frontal != null && frontal[0] == 1 && frontal[1] == 2 && frontal[2] == 3,
-                    "FRONTAL_THETA = F3, Fz, F4 -> sample indices 1, 2, 3");
+                Assert(frontal != null && frontal[0] == 1 && frontal[1] == 2 && frontal[2] == 3 &&
+                       frontal[3] == 4,
+                    "FRONTAL_THETA = F3, Fz, F4, Cz -> sample indices 1, 2, 3, 4");
 
                 var posterior = montage.ResolveRoi(AuraMontageConfig.PosteriorAlphaRoi, out var pp);
 
@@ -9482,9 +9487,9 @@ namespace IkeaEeg.EditorTools
                        posterior[2] == 7,
                     "POSTERIOR_ALPHA = P3, Pz, P4 -> sample indices 5, 6, 7");
 
-                // Fp1 and Cz are kept, just not aggregated.
+                // Fp1 is kept but not aggregated. Cz IS aggregated, into FRONTAL_THETA.
                 Assert(montage.IndexOfLabel("Fp1") == 0 && montage.IndexOfLabel("Cz") == 4,
-                    "Fp1 and Cz remain mapped and available, though outside the initial ROIs");
+                    "Fp1 and Cz remain mapped at their acquisition indices");
 
                 var inAnyRoi = new HashSet<int>();
                 foreach (var roi in montage.regions)
@@ -9493,8 +9498,11 @@ namespace IkeaEeg.EditorTools
                         inAnyRoi.Add(index);
                 }
 
-                Assert(!inAnyRoi.Contains(0) && !inAnyRoi.Contains(4),
-                    "Fp1 and Cz are not silently folded into an aggregated ROI");
+                Assert(!inAnyRoi.Contains(0),
+                    "Fp1 is the only electrode in no ROI; it is not silently folded into one");
+
+                Assert(inAnyRoi.Contains(4),
+                    "Cz IS aggregated — into FRONTAL_THETA — as the montage now defines it");
 
                 // ---- All-or-nothing ROI resolution ------------------------------------------
                 var broken = AuraMontageConfig.CreateHumanVerifiedDefault();

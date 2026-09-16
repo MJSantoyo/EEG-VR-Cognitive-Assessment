@@ -140,10 +140,11 @@ namespace IkeaEeg.EditorTools
         static readonly EegBand k_Alpha = EegBand.Alpha;   // 8-12 Hz
 
         /// <summary>
-        /// The frontocentral theta set THIS ANALYSIS was asked for. It is NOT the project's
-        /// FRONTAL_THETA ROI, which is F3/Fz/F4 with no Cz — the difference is reported rather
-        /// than reconciled, because silently redefining a project ROI would change what every
-        /// other tool means by the same name.
+        /// The frontocentral theta set THIS ANALYSIS was asked for. Since 2026-09-16 it is also
+        /// the project's FRONTAL_THETA ROI, which gained Cz on that date; before then the ROI
+        /// was F3/Fz/F4 and the two genuinely differed. Both are still resolved and reported
+        /// separately, so a recording made on either side of that change can be read without
+        /// having to know which definition was in force when it was cut.
         /// </summary>
         static readonly string[] k_FrontocentralLabels = { "F3", "Fz", "F4", "Cz" };
 
@@ -1055,11 +1056,34 @@ namespace IkeaEeg.EditorTools
                     if (index != channel)
                         continue;
 
-                    names.Add("FRONTAL_THETA (project ROI, F3/Fz/F4)");
+                    names.Add("FRONTAL_THETA (project ROI, " +
+                              DescribeChannelSet(m_ProjectFrontalIndices) + ")");
                     break;
                 }
 
                 return string.Join(", ", names);
+            }
+
+            /// <summary>
+            /// The electrode labels of a channel set, read from the montage rather than
+            /// restated. A hard-coded "F3/Fz/F4" in a generated report is a claim that goes on
+            /// being printed long after the ROI it describes has changed.
+            /// </summary>
+            string DescribeChannelSet(int[] indices)
+            {
+                if (indices == null || indices.Length == 0)
+                    return "unresolved";
+
+                var labels = new List<string>();
+
+                foreach (var index in indices)
+                {
+                    labels.Add(index >= 0 && m_Labels != null && index < m_Labels.Length
+                        ? m_Labels[index]
+                        : "ch" + (index + 1));
+                }
+
+                return string.Join("/", labels);
             }
 
             static int CountFalse(List<bool> flags)
@@ -2667,12 +2691,29 @@ namespace IkeaEeg.EditorTools
                                                recording.nominalRateHz * 100d, 4) +
                                   " %, which moves the frequency axis by that");
                 report.AppendLine("  fraction and does not change the segment length in samples.");
-                report.AppendLine("* The project's `FRONTAL_THETA` ROI is **F3/Fz/F4** — it does not");
-                report.AppendLine("  include Cz. The frontocentral set requested for this analysis");
-                report.AppendLine("  (**F3/Fz/F4/Cz**) is therefore NOT the project ROI. Both are");
-                report.AppendLine("  computed and reported separately in the CSVs");
-                report.AppendLine("  (`frontocentral_theta_*` versus `project_frontal_theta_*`).");
-                report.AppendLine("  Neither definition was changed.");
+                var projectFrontal = DescribeChannelSet(m_ProjectFrontalIndices);
+                var requestedFrontal = string.Join("/", k_FrontocentralLabels);
+
+                report.AppendLine("* The project's `FRONTAL_THETA` ROI is **" + projectFrontal +
+                                  "**; the frontocentral set");
+                report.AppendLine("  requested for this analysis is **" + requestedFrontal + "**.");
+
+                if (string.Equals(projectFrontal, requestedFrontal, StringComparison.Ordinal))
+                {
+                    report.AppendLine("  They are the SAME set: Cz was added to the project ROI on");
+                    report.AppendLine("  2026-09-16. `frontocentral_theta_*` and");
+                    report.AppendLine("  `project_frontal_theta_*` are therefore computed over");
+                    report.AppendLine("  identical electrodes and should agree. A recording made");
+                    report.AppendLine("  BEFORE that date carries a purely frontal `theta_fc` and is");
+                    report.AppendLine("  not comparable with a later one on that feature.");
+                }
+                else
+                {
+                    report.AppendLine("  They are DIFFERENT sets. Both are computed and reported");
+                    report.AppendLine("  separately in the CSVs (`frontocentral_theta_*` versus");
+                    report.AppendLine("  `project_frontal_theta_*`). Neither definition was changed");
+                    report.AppendLine("  by this analysis.");
+                }
                 report.AppendLine();
 
                 report.AppendLine("### Still requires live validation");

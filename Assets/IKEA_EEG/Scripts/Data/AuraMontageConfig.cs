@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -146,7 +146,14 @@ namespace IkeaEeg.Data
             new EegRoi
             {
                 roiName = FrontalThetaRoi,
-                labels = new List<string> { "F3", "Fz", "F4" },
+
+                // Frontocentral theta: the frontal ring PLUS the vertex. Cz was absent here
+                // until 2026-09-16 while every statement of intent included it, which made the
+                // logged theta_fc a purely frontal average under a frontocentral name. Corrected
+                // deliberately and before any baseline was computed, because a baseline and a
+                // live window must be averaged over the SAME electrodes or their ratio carries a
+                // fixed bias from the composition change alone.
+                labels = new List<string> { "F3", "Fz", "F4", "Cz" },
             },
             new EegRoi
             {
