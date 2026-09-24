@@ -1,0 +1,1180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IKEA_EEG — Investigator Console</title>
+<style>
+/* ============================================================================
+   DESIGN TOKENS
+   One place for colour, spacing, radius, shadow and type. Components below
+   reference tokens only, never raw hex, so a palette change is a single edit.
+   ========================================================================= */
+:root{
+  /* -- surfaces -- */
+  --bg:              #f7f8fa;
+  --surface:         #ffffff;
+  --surface-sunken:  #fbfbfd;
+  --surface-hover:   #f9fafc;
+  --border:          #e4e7ee;
+  --border-soft:     #eef0f5;
+
+  /* -- text -- */
+  --text:            #1a1d27;
+  --text-muted:      #5d6577;
+  --text-faint:      #8b93a3;
+
+  /* -- accents -- */
+  --accent:          #4f52c9;   /* primary: blue-indigo */
+  --accent-strong:   #3d40ad;
+  --accent-wash:     #eeeffc;
+  --accent-edge:     #d9daf6;
+  --accent-2:        #2f6fd0;   /* secondary: scientific blue */
+  --accent-2-wash:   #e9f1fc;
+
+  /* -- state (restrained; for state only, never decoration) -- */
+  --ok:              #0e8a67;
+  --ok-wash:         #e7f5f0;
+  --ok-edge:         #c4e6da;
+  --warn:            #a76a12;
+  --warn-wash:       #fdf4e6;
+  --warn-edge:       #f0e0c0;
+  --danger:          #c8443f;
+  --danger-wash:     #fceceb;
+  --danger-edge:     #f4d3d1;
+
+  /* -- mock identity: present, never dominant -- */
+  --mock:            #a8620b;
+  --mock-wash:       #fdf3e5;
+  --mock-edge:       #eed9b8;
+
+  /* -- spacing scale -- */
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:20px; --s6:24px; --s8:32px;
+
+  /* -- radius -- */
+  --r-sm:6px; --r:10px; --r-lg:14px; --r-pill:999px;
+
+  /* -- shadow -- */
+  --shadow-sm: 0 1px 2px rgba(20,24,40,.05);
+  --shadow:    0 1px 2px rgba(20,24,40,.04), 0 3px 12px rgba(20,24,40,.045);
+
+  /* -- typography --
+     System sans for everything a person READS. Monospace only where character
+     alignment genuinely helps: identifiers, paths, timestamps, exact numbers. */
+  --font-ui: system-ui, "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto,
+             "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace;
+
+  --fs-xs:11px; --fs-sm:12px; --fs-base:13.5px; --fs-md:15px;
+  --fs-lg:19px; --fs-xl:26px; --fs-2xl:34px;
+  --lh:1.5;
+}
+
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;max-width:100%;overflow-x:hidden}
+body{
+  background:var(--bg); color:var(--text);
+  font-family:var(--font-ui); font-size:var(--fs-base); line-height:var(--lh);
+  -webkit-font-smoothing:antialiased;
+}
+
+/* ============================================================================
+   MOCK IDENTITY
+   A banner and a chip. Deliberately NOT a page-wide outline: a full-height
+   outline on the centred max-width shell painted a tall amber rectangle that
+   read as a second page sitting behind the first. Identity belongs on the
+   status chip that answers "what kind of data is this", not on the chrome.
+   ========================================================================= */
+#mockbar{
+  display:none; background:var(--mock); color:#fff;
+  padding:var(--s2) var(--s5);
+  font-size:var(--fs-sm); font-weight:600; letter-spacing:.06em;
+  text-transform:uppercase; text-align:center;
+  position:sticky; top:0; z-index:50;
+}
+body.mock #mockbar{display:block}
+
+/* ============================================================================
+   SHELL
+   ========================================================================= */
+.shell{max-width:1500px; margin:0 auto; padding:var(--s6) var(--s6) var(--s8)}
+
+header.top{
+  display:flex; align-items:flex-start; justify-content:space-between;
+  gap:var(--s6); flex-wrap:wrap; margin-bottom:var(--s5);
+}
+.brand h1{margin:0; font-size:var(--fs-lg); font-weight:600; letter-spacing:-.01em}
+.brand p{margin:2px 0 0; color:var(--text-muted); font-size:var(--fs-sm)}
+.topright{display:flex; align-items:center; gap:var(--s2); flex-wrap:wrap}
+
+/* ---- chips ---- */
+.chip{
+  display:inline-flex; align-items:center; gap:var(--s2);
+  padding:5px 11px; border-radius:var(--r-pill);
+  font-size:var(--fs-xs); font-weight:600; letter-spacing:.02em;
+  border:1px solid transparent; white-space:nowrap;
+}
+.chip.ok{background:var(--ok-wash); color:var(--ok); border-color:var(--ok-edge)}
+.chip.warn{background:var(--warn-wash); color:var(--warn); border-color:var(--warn-edge)}
+.chip.bad{background:var(--danger-wash); color:var(--danger); border-color:var(--danger-edge)}
+.chip.idle{background:#f1f3f7; color:var(--text-muted); border-color:var(--border)}
+.chip.mock{background:var(--mock-wash); color:var(--mock); border-color:var(--mock-edge)}
+.chip.accent{background:var(--accent-wash); color:var(--accent); border-color:var(--accent-edge)}
+.dot{width:6px; height:6px; border-radius:50%; background:currentColor; flex:none}
+.dot.beat{animation:beat 2s ease-in-out infinite}
+@keyframes beat{0%,100%{opacity:1}50%{opacity:.35}}
+
+.tabs{display:flex; gap:2px; background:#eceef4; padding:3px; border-radius:var(--r)}
+.tabs button{
+  border:0; background:transparent; font-family:inherit; font-size:var(--fs-sm);
+  font-weight:600; color:var(--text-muted); padding:6px 14px;
+  border-radius:var(--r-sm); cursor:pointer;
+}
+.tabs button[aria-selected=true]{background:var(--surface); color:var(--text); box-shadow:var(--shadow-sm)}
+
+/* ============================================================================
+   PRIMARY STATUS STRIP — the seven things readable from arm's length
+   ========================================================================= */
+.strip{
+  display:grid; gap:var(--s3); margin-bottom:var(--s4);
+  grid-template-columns:repeat(8,minmax(0,1fr));
+}
+.tile{
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg);
+  padding:var(--s4); box-shadow:var(--shadow-sm); min-width:0;
+  display:flex; flex-direction:column; justify-content:space-between; gap:var(--s2);
+}
+.tile.wide{grid-column:span 2}
+.tile .tl{
+  font-size:var(--fs-xs); font-weight:600; letter-spacing:.07em;
+  text-transform:uppercase; color:var(--text-faint);
+}
+.tile .tv{font-size:var(--fs-xl); font-weight:600; letter-spacing:-.02em; line-height:1.1;
+  overflow-wrap:anywhere}
+.tile .tv.sm{font-size:var(--fs-md); font-weight:600; letter-spacing:0}
+.tile .ts{font-size:var(--fs-xs); color:var(--text-muted); overflow-wrap:anywhere}
+.tile.state-ok{background:var(--ok-wash); border-color:var(--ok-edge)}
+.tile.state-ok .tv{color:var(--ok)}
+.tile.state-bad{background:var(--danger-wash); border-color:var(--danger-edge)}
+.tile.state-bad .tv{color:var(--danger)}
+.tile.state-warn{background:var(--warn-wash); border-color:var(--warn-edge)}
+.tile.state-warn .tv{color:var(--warn)}
+.tile.state-accent{background:var(--accent-wash); border-color:var(--accent-edge)}
+.tile.state-accent .tv{color:var(--accent)}
+@media(max-width:1280px){.strip{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media(max-width:720px){.strip{grid-template-columns:repeat(2,minmax(0,1fr))}.tile.wide{grid-column:span 2}}
+
+/* ============================================================================
+   GRID + CARDS
+   ========================================================================= */
+.grid{display:grid; gap:var(--s3); grid-template-columns:repeat(12,minmax(0,1fr))}
+.card{
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg);
+  box-shadow:var(--shadow); padding:var(--s4) var(--s5) var(--s5); min-width:0;
+}
+.c3{grid-column:span 3}.c4{grid-column:span 4}.c5{grid-column:span 5}
+.c6{grid-column:span 6}.c7{grid-column:span 7}.c8{grid-column:span 8}.c12{grid-column:span 12}
+@media(max-width:1280px){.c3,.c4,.c5{grid-column:span 6}.c7,.c8{grid-column:span 12}}
+@media(max-width:820px){.card{grid-column:span 12}}
+
+.card h2{
+  margin:0 0 var(--s3); font-size:var(--fs-xs); font-weight:700; letter-spacing:.08em;
+  text-transform:uppercase; color:var(--text-faint);
+  display:flex; align-items:center; justify-content:space-between; gap:var(--s2);
+  flex-wrap:wrap;
+}
+
+/* ---- key/value: labels in sans, values in mono only when identifier-like ---- */
+.kv{display:grid; grid-template-columns:auto minmax(0,1fr); gap:6px var(--s4); align-items:baseline}
+.kv dt{color:var(--text-muted); font-size:var(--fs-sm); white-space:nowrap}
+.kv dd{margin:0; text-align:right; font-size:var(--fs-sm); overflow-wrap:anywhere}
+.kv dd.id{font-family:var(--font-mono); font-size:var(--fs-sm)}
+.kv dd.path{font-family:var(--font-mono); font-size:var(--fs-xs); color:var(--text-muted)}
+.kv dd.strong{font-weight:600}
+
+.metric{font-size:var(--fs-xl); font-weight:600; letter-spacing:-.02em; line-height:1.15;
+  font-family:var(--font-mono)}
+.metric .unit{font-family:var(--font-ui); font-size:var(--fs-sm); font-weight:500;
+  color:var(--text-faint)}
+.metric-label{font-size:var(--fs-xs); color:var(--text-muted); margin-top:3px}
+.metric-row{display:grid; grid-template-columns:1fr 1fr; gap:var(--s4)}
+
+/* ---- electrode tiles ---- */
+.montage{display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:var(--s2)}
+.el{border:1px solid var(--border); border-radius:var(--r); padding:var(--s3) 6px;
+  text-align:center; background:var(--surface-sunken)}
+.el .lab{font-family:var(--font-mono); font-size:var(--fs-md); font-weight:600}
+.el .st{font-size:9.5px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+  margin-top:2px}
+.el .roi{font-size:9.5px; color:var(--text-faint); margin-top:2px; min-height:12px}
+.el.healthy{background:var(--ok-wash); border-color:var(--ok-edge)}
+.el.healthy .st{color:var(--ok)}
+.el.degraded{background:var(--danger-wash); border-color:var(--danger-edge)}
+.el.degraded .st{color:var(--danger)}
+.el.unknown .st{color:var(--text-faint)}
+
+/* ---- validity conditions ---- */
+.conds{display:flex; flex-wrap:wrap; gap:5px}
+.cond{display:inline-flex; align-items:center; gap:5px; border:1px solid var(--border);
+  border-radius:var(--r-sm); padding:4px 8px; font-size:var(--fs-xs);
+  background:var(--surface-sunken); color:var(--text-muted)}
+.cond .nm{font-family:var(--font-mono)}
+.cond.pass{background:var(--ok-wash); border-color:var(--ok-edge); color:var(--ok)}
+.cond.fail{background:var(--danger-wash); border-color:var(--danger-edge); color:var(--danger);
+  font-weight:600}
+
+.callout{margin-top:var(--s3); border-radius:var(--r); padding:var(--s3);
+  background:var(--danger-wash); border:1px solid var(--danger-edge); color:#9a3531;
+  overflow-wrap:anywhere; font-size:var(--fs-sm)}
+.callout.pass{background:var(--ok-wash); border-color:var(--ok-edge); color:#0b6b52}
+.callout.neutral{background:var(--surface-sunken); border-color:var(--border); color:var(--text-muted)}
+.callout b{display:block; font-size:var(--fs-xs); letter-spacing:.07em;
+  text-transform:uppercase; opacity:.8; margin-bottom:3px; font-weight:700}
+.callout .val{font-family:var(--font-mono)}
+
+/* ---- tables ---- */
+.tblwrap{overflow:auto; max-height:300px; border:1px solid var(--border-soft);
+  border-radius:var(--r)}
+table{width:100%; border-collapse:collapse; font-size:var(--fs-sm)}
+thead th{position:sticky; top:0; background:var(--surface-sunken); text-align:left;
+  font-size:var(--fs-xs); letter-spacing:.07em; text-transform:uppercase;
+  color:var(--text-faint); font-weight:700; padding:7px 11px;
+  border-bottom:1px solid var(--border)}
+tbody td{padding:6px 11px; border-bottom:1px solid var(--border-soft); white-space:nowrap}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover{background:var(--surface-hover)}
+td.mono{font-family:var(--font-mono)}
+td.wrap{white-space:normal; overflow-wrap:anywhere}
+.num{text-align:right; font-family:var(--font-mono)}
+.count{font-family:var(--font-mono); font-weight:600; color:var(--accent)}
+
+/* ---- files ---- */
+.files{display:flex; flex-direction:column; gap:6px}
+.file{display:flex; align-items:center; gap:var(--s3); padding:8px 11px;
+  border:1px solid var(--border); border-radius:var(--r); background:var(--surface-sunken)}
+.file .nm{flex:1; min-width:0}
+.file .fn{font-family:var(--font-mono); font-size:var(--fs-sm); overflow-wrap:anywhere}
+.file .ds{font-size:var(--fs-xs); color:var(--text-faint); display:block; margin-top:1px}
+.file .sz{font-family:var(--font-mono); font-size:var(--fs-xs); color:var(--text-muted)}
+.file.on{background:var(--ok-wash); border-color:var(--ok-edge)}
+.file.off{opacity:.6}
+.tick{width:16px; height:16px; border-radius:50%; flex:none; display:grid; place-items:center;
+  font-size:10px; font-weight:700; color:#fff; background:var(--ok)}
+.tick.off{background:#c6cad3}
+
+/* ---- EEG monitor ---- */
+.eegwrap{position:relative; border:1px solid var(--border-soft); border-radius:var(--r);
+  background:var(--surface-sunken); overflow:hidden}
+#eegCanvas{display:block; width:100%; height:330px}
+.eegveil{position:absolute; inset:0; display:grid; place-items:center; text-align:center;
+  padding:var(--s5); background:rgba(251,251,253,.93); color:var(--text-muted);
+  font-size:var(--fs-sm)}
+.eegveil strong{display:block; color:var(--text); font-size:var(--fs-md); margin-bottom:6px}
+.eegmeta{display:flex; gap:var(--s4); flex-wrap:wrap; margin-top:var(--s3);
+  font-size:var(--fs-xs); color:var(--text-muted)}
+.eegmeta span b{font-family:var(--font-mono); color:var(--text); font-weight:600}
+
+/* ---- VR placeholder ---- */
+.vrbox{border:1px dashed var(--border); border-radius:var(--r);
+  background:var(--surface-sunken); padding:var(--s6) var(--s5); text-align:center}
+.vrbox .big{font-size:var(--fs-md); font-weight:600; color:var(--text-muted)}
+.vrbox .sub{font-size:var(--fs-sm); color:var(--text-faint); margin-top:var(--s2);
+  max-width:56ch; margin-left:auto; margin-right:auto}
+
+/* ---- offline ---- */
+.picker{display:flex; gap:var(--s2); align-items:center; flex-wrap:wrap; margin-bottom:var(--s3)}
+select,input[type=search]{font-family:inherit; font-size:var(--fs-base); padding:7px 10px;
+  border:1px solid var(--border); border-radius:var(--r); background:var(--surface);
+  color:var(--text); min-width:250px; max-width:100%}
+select{font-family:var(--font-mono); font-size:var(--fs-sm)}
+select:focus,input:focus{outline:2px solid var(--accent-wash); border-color:var(--accent)}
+button.act{font-family:inherit; font-size:var(--fs-sm); font-weight:600; padding:7px 15px;
+  border-radius:var(--r); border:1px solid var(--border); background:var(--surface);
+  cursor:pointer; color:var(--text)}
+button.act:hover{border-color:var(--accent); color:var(--accent)}
+pre.diag{margin:0; font-family:var(--font-mono); font-size:var(--fs-xs); line-height:1.6;
+  white-space:pre-wrap; overflow-wrap:anywhere; background:var(--surface-sunken);
+  border:1px solid var(--border-soft); border-radius:var(--r); padding:var(--s3);
+  max-height:340px; overflow:auto; color:var(--text-muted)}
+.empty{color:var(--text-faint); font-size:var(--fs-sm); padding:var(--s5) var(--s1);
+  text-align:center}
+.subhead{font-size:var(--fs-xs); font-weight:700; letter-spacing:.07em; text-transform:uppercase;
+  color:var(--text-faint); margin:var(--s4) 0 var(--s2)}
+
+.note{font-size:var(--fs-xs); color:var(--text-faint); margin-top:var(--s3); line-height:1.6}
+footer.foot{margin-top:var(--s6); padding-top:var(--s4); border-top:1px solid var(--border);
+  color:var(--text-faint); font-size:var(--fs-xs); display:flex; justify-content:space-between;
+  gap:var(--s4); flex-wrap:wrap}
+footer .path{font-family:var(--font-mono)}
+.hidden{display:none !important}
+</style>
+</head>
+<body>
+
+<div id="mockbar">Demo / mock data — simulated values, not real EEG</div>
+
+<div class="shell">
+
+<header class="top">
+  <div class="brand">
+    <h1>IKEA_EEG — Investigator Console</h1>
+    <p>Read-only monitor. Observes the session; controls nothing.</p>
+  </div>
+  <div class="topright">
+    <span class="chip idle" id="srcChip"><span class="dot"></span><span>connecting</span></span>
+    <span class="chip idle" id="linkChip">—</span>
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-view="live">Live</button>
+      <button role="tab" aria-selected="false" data-view="offline">Session review</button>
+    </div>
+  </div>
+</header>
+
+<!-- ============================ LIVE ============================ -->
+<div id="view-live">
+
+  <!-- primary status strip -->
+  <div class="strip">
+    <div class="tile wide" id="t_phase">
+      <div class="tl">Current phase</div>
+      <div class="tv sm" id="v_phase">—</div>
+      <div class="ts" id="v_phasesub">—</div>
+    </div>
+    <div class="tile" id="t_stream">
+      <div class="tl">EEG stream</div>
+      <div class="tv sm" id="v_stream">—</div>
+      <div class="ts" id="v_streamsub">—</div>
+    </div>
+    <div class="tile" id="t_valid">
+      <div class="tl">Valid channels</div>
+      <div class="tv" id="v_valid">—</div>
+      <div class="ts">of 8 electrodes</div>
+    </div>
+    <div class="tile" id="t_quality">
+      <div class="tl">Channel quality</div>
+      <div class="tv sm" id="v_quality">—</div>
+      <div class="ts" id="v_qualitysub">—</div>
+    </div>
+    <div class="tile" id="t_fv">
+      <div class="tl">Feature validity</div>
+      <div class="tv sm" id="v_fv">—</div>
+      <div class="ts" id="v_fvsub">—</div>
+    </div>
+    <div class="tile" id="t_qc">
+      <div class="tl">QC warning</div>
+      <div class="tv sm" id="v_qc">—</div>
+      <div class="ts" id="v_qcsub">—</div>
+    </div>
+    <div class="tile" id="t_shadow">
+      <div class="tl">Shadow mode</div>
+      <div class="tv sm" id="v_shadow">—</div>
+      <div class="ts" id="v_shadowsub">—</div>
+    </div>
+  </div>
+
+  <div class="grid">
+
+    <!-- EEG monitor -->
+    <section class="card c8">
+      <h2>
+        <span>Live EEG monitor — display only</span>
+        <span class="chip idle" id="eegChip">—</span>
+      </h2>
+      <div class="eegwrap">
+        <canvas id="eegCanvas"></canvas>
+        <div class="eegveil" id="eegVeil">
+          <div><strong>No EEG display feed</strong>
+          The status writer does not publish waveform samples yet.
+          Run with <span style="font-family:var(--font-mono)">--mock</span> to develop this panel.</div>
+        </div>
+      </div>
+      <div class="eegmeta">
+        <span>Window <b id="eeg_span">—</b></span>
+        <span>Display rate <b id="eeg_rate">—</b></span>
+        <span>Scale <b id="eeg_scale">—</b></span>
+        <span>Buffered <b id="eeg_n">—</b></span>
+      </div>
+      <div class="note" id="eeg_note">
+        Unfiltered, decimated for display. This is a picture of the stream, not the analysis
+        path — no value shown here feeds a feature, a decision or a recorded file.
+      </div>
+    </section>
+
+    <!-- Session -->
+    <section class="card c4">
+      <h2>Session</h2>
+      <dl class="kv">
+        <dt>Session ID</dt><dd class="id strong" id="s_id">—</dd>
+        <dt>Experiment session</dt><dd class="id" id="s_exp">—</dd>
+        <dt>Run</dt><dd class="id" id="s_run">—</dd>
+        <dt>Elapsed</dt><dd class="id strong" id="s_elapsed">00:00</dd>
+        <dt>Area</dt><dd id="s_room">—</dd>
+        <dt>Data root</dt><dd class="id" id="s_root">—</dd>
+        <dt>Directory</dt><dd class="path" id="s_dir">—</dd>
+      </dl>
+    </section>
+
+    <!-- Acquisition -->
+    <section class="card c4">
+      <h2>EEG acquisition</h2>
+      <div class="metric-row" style="margin-bottom:var(--s4)">
+        <div>
+          <div class="metric" id="a_samples">0</div>
+          <div class="metric-label">samples received</div>
+        </div>
+        <div>
+          <div class="metric" id="a_windows">0</div>
+          <div class="metric-label">feature windows</div>
+        </div>
+      </div>
+      <dl class="kv">
+        <dt>Stream name</dt><dd class="id" id="a_stream">AURA</dd>
+        <dt>Nominal rate</dt><dd class="id" id="a_srate">—</dd>
+        <dt>Stream channels</dt><dd class="id" id="a_chans">—</dd>
+        <dt>Latest LSL timestamp</dt><dd class="id" id="a_lsl">—</dd>
+        <dt>Time correction</dt><dd class="id" id="a_corr">—</dd>
+        <dt>Receiver detail</dt><dd id="a_detail">—</dd>
+      </dl>
+    </section>
+
+    <!-- Channel quality -->
+    <section class="card c4">
+      <h2>Channel quality</h2>
+      <div class="montage" id="montage"></div>
+      <dl class="kv" style="margin-top:var(--s4)">
+        <dt>Degraded inside ROI</dt><dd class="id strong" id="q_inroi">—</dd>
+        <dt>Degraded outside ROI</dt><dd class="id strong" id="q_outroi">—</dd>
+        <dt>Near-identical pairs</dt><dd class="id strong" id="q_pairs">—</dd>
+      </dl>
+      <div class="note" id="degradedDetail"></div>
+    </section>
+
+    <!-- Feature window -->
+    <section class="card c8">
+      <h2>
+        <span>Latest feature window</span>
+        <span class="chip idle" id="w_valid">—</span>
+      </h2>
+      <div class="metric-row" style="margin-bottom:var(--s4)">
+        <div>
+          <div class="metric" id="w_theta">—</div>
+          <div class="metric-label">theta_fc — mean(F3, Fz, F4, Cz), 4–8 Hz</div>
+        </div>
+        <div>
+          <div class="metric" id="w_alpha">—</div>
+          <div class="metric-label">alpha_post — mean(P3, Pz, P4), 8–12 Hz</div>
+        </div>
+      </div>
+      <dl class="kv" style="margin-bottom:var(--s3)">
+        <dt>Window span (LSL)</dt><dd class="id" id="w_span">—</dd>
+        <dt>Samples</dt><dd class="id" id="w_samples">—</dd>
+        <dt>ROI validity</dt><dd id="w_roi">—</dd>
+        <dt>Power units</dt><dd id="w_units">—</dd>
+      </dl>
+      <div class="conds" id="w_conds"></div>
+      <div class="callout" id="w_flags"><b>Quality flags</b><span class="val" id="w_flagtxt">—</span></div>
+    </section>
+
+    <!-- Shadow -->
+    <section class="card c4">
+      <h2>Shadow mode</h2>
+      <div style="margin-bottom:var(--s4)">
+        <div class="metric" id="sh_level" style="font-size:var(--fs-lg)">INDETERMINATE</div>
+        <div class="metric-label">Structurally the only reachable value. LOW, MODERATE and HIGH
+          are undefined and appear nowhere in the controller.</div>
+      </div>
+      <dl class="kv">
+        <dt>Observing</dt><dd id="sh_sub">—</dd>
+        <dt>Windows observed</dt><dd class="id" id="sh_obs">—</dd>
+        <dt>Decisions generated</dt><dd class="id" id="sh_dec">—</dd>
+        <dt>Rows written</dt><dd class="id" id="sh_rows">—</dd>
+        <dt>First unmet gate</dt><dd class="id" id="sh_reason">—</dd>
+        <dt>Baseline</dt><dd id="sh_base">—</dd>
+        <dt>Normalization</dt><dd id="sh_norm">—</dd>
+        <dt>Montage</dt><dd class="id" id="sh_mont">—</dd>
+        <dt>Controller</dt><dd class="id" id="sh_ver">—</dd>
+      </dl>
+    </section>
+
+    <!-- QC -->
+    <section class="card c8">
+      <h2>QC diagnostics — grouped rejection breakdown</h2>
+      <div class="callout" id="dominantBox">
+        <b>Dominant cause this session</b><span class="val" id="dominant">—</span>
+      </div>
+      <div class="tblwrap" style="margin-top:var(--s3)">
+        <table>
+          <thead><tr><th class="num" style="width:76px">Count</th><th>Cause</th></tr></thead>
+          <tbody id="rejBody"></tbody>
+        </table>
+      </div>
+      <div class="note">Grouped by diagnostic cause. Raw sample count is deliberately excluded
+        from the grouping key, so a single cause stays a single row.</div>
+    </section>
+
+    <!-- Files -->
+    <section class="card c4">
+      <h2>Data files — current session</h2>
+      <div class="files" id="liveFiles"></div>
+    </section>
+
+    <!-- VR placeholder -->
+    <section class="card c4">
+      <h2>
+        <span>VR participant view</span>
+        <span class="chip idle">Not implemented</span>
+      </h2>
+      <div class="vrbox">
+        <div class="big">No video feed</div>
+        <div class="sub">Real VR spectator streaming is <b>not implemented</b>. This panel marks
+          where a low-rate, read-only spectator snapshot could live. See the feasibility notes
+          in <span style="font-family:var(--font-mono)">README.md</span>.</div>
+      </div>
+    </section>
+
+    <!-- Events -->
+    <section class="card c8">
+      <h2><span>Recent events</span><span class="chip idle" id="ev_total">—</span></h2>
+      <div class="tblwrap">
+        <table>
+          <thead><tr>
+            <th style="width:110px">Time</th><th style="width:120px">LSL</th>
+            <th style="width:270px">Event</th><th>Phase</th>
+          </tr></thead>
+          <tbody id="evBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<!-- ============================ OFFLINE ============================ -->
+<div id="view-offline" class="hidden">
+  <div class="grid">
+    <section class="card c12">
+      <h2><span>Recorded session review</span><span class="chip idle" id="offCount">—</span></h2>
+      <div class="picker">
+        <input type="search" id="filter" placeholder="Filter sessions by ID…">
+        <select id="sessionSel"><option>loading…</option></select>
+        <button class="act" id="loadBtn">Load session</button>
+      </div>
+      <div class="note" id="offRoot">—</div>
+    </section>
+
+    <section class="card c5">
+      <h2>Session metadata</h2>
+      <dl class="kv" id="offMeta"><dt>—</dt><dd>—</dd></dl>
+    </section>
+
+    <section class="card c7">
+      <h2>File inventory</h2>
+      <div class="files" id="offFiles"><div class="empty">No session loaded.</div></div>
+    </section>
+
+    <section class="card c5">
+      <h2>Shadow decisions summary</h2>
+      <div id="offShadow"><div class="empty">No session loaded.</div></div>
+    </section>
+
+    <section class="card c7">
+      <h2><span>Persisted diagnostics</span>
+          <span class="chip idle">shadow_diagnostics.txt</span></h2>
+      <pre class="diag" id="offDiag">No session loaded.</pre>
+    </section>
+
+    <section class="card c12">
+      <h2><span>Events</span><span class="chip idle" id="offEvTotal">—</span></h2>
+      <div class="tblwrap">
+        <table>
+          <thead><tr>
+            <th style="width:110px">Time</th><th style="width:120px">LSL</th>
+            <th style="width:270px">Event</th><th>Phase</th>
+          </tr></thead>
+          <tbody id="offEvBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</div>
+
+<footer class="foot">
+  <span>Observational only — no threshold, filter, ROI, montage, baseline, normalization,
+        workload level or difficulty control is exposed here, by design.</span>
+  <span class="path" id="footpath">—</span>
+</footer>
+</div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const txt = (id, v) => { const e = $(id); if (e) e.textContent = v; };
+
+const fmt = {
+  int: n => (n === null || n === undefined) ? "—" : Number(n).toLocaleString("en-US"),
+  f: (n, d = 2) => (n === null || n === undefined || Number.isNaN(n)) ? "—" : Number(n).toFixed(d),
+  clock: s => {
+    if (s === null || s === undefined) return "—";
+    s = Math.max(0, Math.floor(s));
+    const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+    return (h ? String(h).padStart(2, "0") + ":" : "") +
+           String(m).padStart(2, "0") + ":" + String(x).padStart(2, "0");
+  },
+  phase: p => (p || "—").replace(/([a-z])([A-Z])/g, "$1 $2")
+};
+
+const esc = s => String(s === null || s === undefined ? "" : s)
+  .replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function chip(el, cls, label, beat) {
+  el.className = "chip " + cls;
+  el.innerHTML = '<span class="dot' + (beat ? " beat" : "") + '"></span>' + esc(label);
+}
+function tileState(id, cls) {
+  const el = $(id);
+  el.className = "tile" + (el.classList.contains("wide") ? " wide" : "") +
+                 (cls ? " state-" + cls : "");
+}
+
+/* ============================================================================
+   TRANSPORT
+   Two independent questions, two independent indicators:
+     srcChip  — WHAT KIND of data is this?  (live / mock / none)
+     linkChip — is the browser talking to its own server?
+   Conflating them is what let mock mode display a red "server unreachable",
+   which reads as an EEG or hardware failure. It never can be: in mock mode
+   there is no hardware and no Unity to fail.
+   ========================================================================= */
+let isMock = false;
+let lastGoodSource = null;
+let consecutiveFailures = 0;
+
+async function get(url) {
+  const r = await fetch(url, { cache: "no-store" });
+  if (!r.ok) throw new Error(url + " -> " + r.status);
+  return r.json();
+}
+
+// Beyond this age a LIVE snapshot is a record of a Unity that has stopped, not a live
+// feed. Saying "Unity connected" over a two-minute-old file is the kind of quiet untruth
+// that gets believed during a session.
+const STALE_AFTER_SECONDS = 15;
+
+function renderSourceChip(src, ageSeconds) {
+  if (src === "LIVE") {
+    const stale = ageSeconds !== null && ageSeconds !== undefined &&
+                  ageSeconds > STALE_AFTER_SECONDS;
+    if (stale) {
+      chip($("srcChip"), "warn",
+           "Unity not running — last snapshot " + fmt.clock(ageSeconds) + " ago", false);
+    } else {
+      chip($("srcChip"), "ok", "Live — Unity running", true);
+    }
+  } else if (src === "MOCK") {
+    chip($("srcChip"), "mock", "Simulated data", true);
+  } else {
+    chip($("srcChip"), "idle", "Waiting for Unity", false);
+  }
+}
+
+function renderLink(ok, ageSeconds) {
+  const c = $("linkChip");
+  if (!ok) {
+    // About the DASHBOARD's own server. Never about EEG, and never red in mock,
+    // where a stale frame means a dropped poll and nothing more.
+    c.className = "chip " + (isMock ? "warn" : "bad");
+    c.textContent = isMock
+      ? "mock feed paused — " + consecutiveFailures + " missed poll(s)"
+      : "dashboard server not responding (" + consecutiveFailures + ")";
+    return;
+  }
+  if (ageSeconds === null || ageSeconds === undefined) { c.className = "chip idle"; c.textContent = "—"; return; }
+  c.className = "chip " + (ageSeconds < 3 ? "ok" : ageSeconds < 15 ? "warn" : "bad");
+  c.textContent = "snapshot " + fmt.f(ageSeconds, 1) + " s old";
+}
+
+/* ---------------- status rendering ---------------- */
+function renderStatus(s) {
+  const src = s.data_source || "NONE";
+  isMock = src === "MOCK";
+  lastGoodSource = src;
+  document.body.classList.toggle("mock", isMock);
+  renderSourceChip(src, isMock ? 0 : s.age_seconds);
+
+  if (src === "NONE") {
+    renderLink(true, null);
+    $("linkChip").className = "chip idle";
+    $("linkChip").textContent = "no snapshot file";
+    txt("v_phase", "Unity not running");
+    txt("v_phasesub", s.reason || "");
+    txt("footpath", s.expected_path || "—");
+    ["t_phase","t_stream","t_valid","t_quality","t_fv","t_qc","t_shadow"]
+      .forEach(t => tileState(t, ""));
+    return;
+  }
+
+  renderLink(true, isMock ? 0 : s.age_seconds);
+
+  const ss = s.session || {}, aq = s.acquisition || {},
+        w = s.window || {}, sh = s.shadow || {};
+
+  /* ---- primary strip ---- */
+  txt("v_phase", fmt.phase(ss.phase));
+  txt("v_phasesub", (ss.active ? "session active" : "no active session") +
+                    (ss.room ? " · " + ss.room : ""));
+  tileState("t_phase", ss.active ? "accent" : "");
+
+  txt("v_stream", aq.connected ? "Streaming" : "Not connected");
+  txt("v_streamsub", fmt.int(aq.samples_received) + " samples · " +
+                     fmt.int(aq.windows_published) + " windows");
+  tileState("t_stream", aq.connected ? "ok" : "bad");
+
+  const vc = w.present ? w.valid_channels : null;
+  txt("v_valid", vc === null ? "—" : vc);
+  tileState("t_valid", vc === null ? "" : vc === 8 ? "ok" : vc >= 6 ? "warn" : "bad");
+
+  // "All healthy" is a CLAIM, and it may only be made when electrodes have actually been
+  // assessed. With no montage reported, or before the first analysed window, the honest
+  // answer is that nothing is known -- shown neutral, never green. A monitor that reports
+  // health it cannot know is worse than no monitor.
+  const chans = s.channels || [];
+  const degraded = chans.filter(c => c.state === "degraded");
+  const assessed = chans.length > 0 && w.present;
+
+  if (!chans.length) {
+    txt("v_quality", "No data");
+    txt("v_qualitysub", "no electrode information in the snapshot");
+    tileState("t_quality", "");
+  } else if (!assessed) {
+    txt("v_quality", "Unknown");
+    txt("v_qualitysub", chans.length + " electrodes mapped · awaiting first analysed window");
+    tileState("t_quality", "");
+  } else if (degraded.length) {
+    txt("v_quality", degraded.map(c => c.label).join(", "));
+    txt("v_qualitysub", degraded.length + " degraded electrode(s)");
+    tileState("t_quality", "bad");
+  } else {
+    txt("v_quality", "All healthy");
+    txt("v_qualitysub", chans.length + " of " + chans.length + " electrodes");
+    tileState("t_quality", "ok");
+  }
+
+  txt("v_fv", w.present ? (w.feature_validity ? "VALID" : "INVALID") : "—");
+  txt("v_fvsub", w.present
+      ? (w.feature_validity ? "window usable" : "first failing gate below")
+      : "no window yet");
+  tileState("t_fv", !w.present ? "" : w.feature_validity ? "ok" : "bad");
+
+  const flagTxt = w.flags || "";
+  const flagged = flagTxt.indexOf("FLAGGED") >= 0;
+  txt("v_qc", !w.present ? "—" : flagged ? flagTxt.replace("FLAGGED: ", "") : "None");
+  txt("v_qcsub", !w.present ? "no window yet"
+      : flagged ? "quality flags raised" : "all checks passed");
+  tileState("t_qc", !w.present ? "" : flagged ? "bad" : "ok");
+
+  txt("v_shadow", sh.level || "INDETERMINATE");
+  txt("v_shadowsub", (sh.subscribed ? "observing" : "not observing") +
+                     " · " + fmt.int(sh.rows_written) + " rows");
+  tileState("t_shadow", "accent");
+
+  /* ---- session ---- */
+  txt("s_id", ss.session_id || "— no session —");
+  txt("s_exp", ss.experiment_session_id || "—");
+  txt("s_run", ss.run_index ? "r" + String(ss.run_index).padStart(2, "0") : "—");
+  txt("s_elapsed", fmt.clock(ss.elapsed_seconds));
+  txt("s_room", ss.room || "—");
+  txt("s_root", ss.root_folder || "—");
+  txt("s_dir", ss.directory || "—");
+  txt("footpath", ss.directory || "—");
+
+  /* ---- acquisition ---- */
+  txt("a_samples", fmt.int(aq.samples_received));
+  txt("a_windows", fmt.int(aq.windows_published));
+  txt("a_stream", aq.stream_name || "AURA");
+  txt("a_srate", aq.nominal_srate ? fmt.f(aq.nominal_srate, 1) + " Hz" : "—");
+  txt("a_chans", aq.stream_channels || "—");
+  txt("a_lsl", w.present ? fmt.f(w.lsl_end, 3) : "—");
+  txt("a_corr", aq.time_correction !== undefined ? fmt.f(aq.time_correction, 6) + " s" : "—");
+  txt("a_detail", aq.detail || "—");
+
+  /* ---- electrodes ---- */
+  const m = $("montage"); m.innerHTML = "";
+  (s.channels || []).forEach(c => {
+    const d = document.createElement("div");
+    d.className = "el " + (c.state || "unknown");
+    const roi = c.rois ? c.rois.replace("FRONTAL_THETA", "theta ROI")
+                               .replace("POSTERIOR_ALPHA", "alpha ROI") : "no ROI";
+    d.innerHTML = '<div class="lab">' + esc(c.label) + "</div>" +
+                  '<div class="st">' + esc(c.state || "unknown") + "</div>" +
+                  '<div class="roi">' + esc(roi) + "</div>";
+    m.appendChild(d);
+  });
+  txt("degradedDetail", w.degraded_detail || "");
+  txt("q_inroi", w.present ? w.degraded_in_roi : "—");
+  txt("q_outroi", w.present ? w.degraded_outside_roi : "—");
+  txt("q_pairs", w.present ? (w.near_identical_pairs ?? 0) : "—");
+
+  /* ---- feature window ---- */
+  if (!w.present) {
+    chip($("w_valid"), "idle", "no window yet", false);
+    ["w_theta","w_alpha","w_span","w_samples","w_roi","w_units"].forEach(k => txt(k, "—"));
+    $("w_conds").innerHTML = ""; txt("w_flagtxt", "—");
+  } else {
+    chip($("w_valid"), w.feature_validity ? "ok" : "bad",
+         w.feature_validity ? "featureValidity TRUE" : "featureValidity FALSE", false);
+    txt("w_theta", fmt.f(w.theta_fc, 2));
+    txt("w_alpha", fmt.f(w.alpha_post, 2));
+    txt("w_span", fmt.f(w.lsl_start, 2) + " → " + fmt.f(w.lsl_end, 2));
+    txt("w_samples", fmt.int(w.sample_count) + " over " + fmt.int(w.channel_count) + " ch");
+    txt("w_roi", "frontocentral " + (w.fc_roi_valid ? "valid" : "INVALID") +
+                 " · posterior " + (w.post_roi_valid ? "valid" : "INVALID"));
+    txt("w_units", w.power_units || "—");
+
+    const conds = [
+      ["filter_settled", w.filter_settled], ["window_complete", w.window_complete],
+      ["spectral_valid", w.spectral_valid], ["channel_checks", w.channel_checks],
+      ["cross_channel", w.cross_channel], ["channel_health", w.channel_health],
+      ["roi_valid", w.roi_valid]
+    ];
+    $("w_conds").innerHTML = conds.map(([k, v]) =>
+      '<span class="cond ' + (v ? "pass" : "fail") + '">' + (v ? "✓" : "✕") +
+      ' <span class="nm">' + k + "</span></span>").join("");
+
+    $("w_flags").className = "callout" + (flagged ? "" : " pass");
+    txt("w_flagtxt", flagTxt || "—");
+  }
+
+  /* ---- shadow ---- */
+  txt("sh_level", sh.level || "INDETERMINATE");
+  txt("sh_sub", sh.subscribed ? "yes" : "no");
+  txt("sh_obs", fmt.int(sh.windows_observed));
+  txt("sh_dec", fmt.int(sh.decisions_generated));
+  txt("sh_rows", fmt.int(sh.rows_written));
+  txt("sh_reason", sh.rejected_reason || "—");
+  txt("sh_base", sh.baseline_valid ? "valid" : "not approved");
+  txt("sh_norm", "not approved");
+  txt("sh_mont", sh.montage_status || "—");
+  txt("sh_ver", sh.controller_version || "—");
+
+  /* ---- rejection tally ---- */
+  const rows = (sh.rejections || []).slice().filter(r => r.count > 0)
+                 .sort((a, b) => b.count - a.count);
+  const body = $("rejBody"); body.innerHTML = "";
+  if (!rows.length) {
+    body.innerHTML = '<tr><td colspan="2" class="wrap" style="color:var(--text-faint)">' +
+                     "No rejections recorded yet.</td></tr>";
+    txt("dominant", "—");
+    $("dominantBox").className = "callout neutral";
+  } else {
+    rows.forEach(r => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = '<td class="num count">' + fmt.int(r.count) + "</td>" +
+                     '<td class="wrap mono" style="font-size:var(--fs-xs)">' +
+                     esc(r.cause) + "</td>";
+      body.appendChild(tr);
+    });
+    const top = rows[0].cause;
+    const fl = /flags=(.*)$/.exec(top);
+    const named = fl && fl[1].indexOf("FLAGGED") >= 0
+      ? fl[1].replace("FLAGGED: ", "")
+      : top.replace("FeatureInvalid :: ", "");
+    txt("dominant", named + "  —  " + fmt.int(rows[0].count) + " window(s)");
+    $("dominantBox").className = "callout";
+  }
+}
+
+function renderEvents(bodyId, totalId, data) {
+  const b = $(bodyId); b.innerHTML = "";
+  const rows = (data && data.recent) || [];
+  $(totalId).textContent = rows.length ? fmt.int(data.total) + " total" : "none";
+  if (!rows.length) {
+    b.innerHTML = '<tr><td colspan="4" class="wrap" style="color:var(--text-faint)">' +
+                  "No events yet.</td></tr>";
+    return;
+  }
+  rows.forEach(r => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = '<td class="mono">' + esc(r.timestamp) + "</td>" +
+                   '<td class="mono">' + esc(r.lsl) + "</td>" +
+                   '<td class="mono">' + esc(r.event) + "</td>" +
+                   '<td class="wrap">' + esc(fmt.phase(r.phase)) + "</td>";
+    b.appendChild(tr);
+  });
+}
+
+function renderFiles(target, files) {
+  const box = $(target); box.innerHTML = "";
+  if (!files || !files.length) { box.innerHTML = '<div class="empty">No session loaded.</div>'; return; }
+  files.forEach(f => {
+    const d = document.createElement("div");
+    d.className = "file " + (f.present ? "on" : "off");
+    d.innerHTML = '<span class="tick' + (f.present ? "" : " off") + '">' +
+                  (f.present ? "✓" : "–") + "</span>" +
+                  '<span class="nm"><span class="fn">' + esc(f.name) + "</span>" +
+                  '<span class="ds">' + esc(f.description) + "</span></span>" +
+                  '<span class="sz">' + esc(f.size) + "</span>";
+    box.appendChild(d);
+  });
+}
+
+/* ============================================================================
+   EEG MONITOR — display only
+   Client keeps a ring buffer and polls incrementally with ?since=, so only new
+   samples cross the wire. Canvas, no library.
+   ========================================================================= */
+const eeg = {
+  labels: [], rate: 50, windowSeconds: 10,
+  buf: [], nextIndex: null, available: false, simulated: false, units: ""
+};
+
+function eegCapacity() { return Math.ceil(eeg.rate * eeg.windowSeconds); }
+
+async function tickEeg() {
+  try {
+    const q = eeg.nextIndex === null ? "" : "?since=" + eeg.nextIndex;
+    const d = await get("/api/eeg" + q);
+
+    if (!d.available) {
+      eeg.available = false;
+      $("eegVeil").classList.remove("hidden");
+      chip($("eegChip"), "idle", "no feed", false);
+      $("eegVeil").innerHTML = "<div><strong>No EEG display feed</strong>" +
+        esc(d.reason || "") + "</div>";
+      return;
+    }
+
+    eeg.available = true;
+    eeg.simulated = !!d.simulated;
+    eeg.labels = d.channels || eeg.labels;
+    eeg.rate = d.rate || eeg.rate;
+    eeg.windowSeconds = d.window_seconds || eeg.windowSeconds;
+    eeg.units = d.units || "";
+
+    if (eeg.nextIndex === null || d.start_index > eeg.nextIndex) eeg.buf = [];
+    (d.samples || []).forEach(row => eeg.buf.push(row));
+    eeg.nextIndex = d.next_index;
+
+    const cap = eegCapacity();
+    if (eeg.buf.length > cap) eeg.buf.splice(0, eeg.buf.length - cap);
+
+    $("eegVeil").classList.add("hidden");
+    chip($("eegChip"), eeg.simulated ? "mock" : "ok",
+         eeg.simulated ? "SIMULATED — not real EEG" : "live display feed", true);
+
+    txt("eeg_span", eeg.windowSeconds.toFixed(0) + " s");
+    txt("eeg_rate", eeg.rate.toFixed(0) + " Hz (display)");
+    txt("eeg_n", fmt.int(eeg.buf.length) + " samples");
+    drawEeg();
+  } catch (e) {
+    /* transport handled by the link chip; leave the last trace on screen */
+  }
+}
+
+function drawEeg() {
+  const cv = $("eegCanvas");
+  const dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth, h = cv.clientHeight;
+  if (!w || !h) return;
+  if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
+    cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+  }
+  const g = cv.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, w, h);
+
+  const css = getComputedStyle(document.documentElement);
+  const cBorder = css.getPropertyValue("--border-soft").trim() || "#eee";
+  const cFaint = css.getPropertyValue("--text-faint").trim() || "#999";
+  const cTrace = eeg.simulated
+    ? (css.getPropertyValue("--mock").trim() || "#a8620b")
+    : (css.getPropertyValue("--accent-2").trim() || "#2f6fd0");
+
+  const n = eeg.labels.length || 8;
+  const padL = 44, padR = 10, padT = 8, padB = 18;
+  const plotW = Math.max(10, w - padL - padR);
+  const laneH = (h - padT - padB) / n;
+
+  /* time grid: one line per second */
+  g.strokeStyle = cBorder; g.lineWidth = 1;
+  g.font = '10px ' + (css.getPropertyValue("--font-mono").trim() || "monospace");
+  g.fillStyle = cFaint; g.textAlign = "center";
+  for (let sBack = 0; sBack <= eeg.windowSeconds; sBack++) {
+    const x = padL + plotW * (1 - sBack / eeg.windowSeconds);
+    g.beginPath(); g.moveTo(x + .5, padT); g.lineTo(x + .5, h - padB); g.stroke();
+    if (sBack % 2 === 0) g.fillText(sBack === 0 ? "now" : "-" + sBack + "s", x, h - 5);
+  }
+
+  /* per-channel scale from the visible buffer, so a flat channel stays flat */
+  const cap = eegCapacity();
+  const data = eeg.buf;
+  let peak = 1e-6;
+  for (let i = 0; i < data.length; i++)
+    for (let c = 0; c < n; c++) peak = Math.max(peak, Math.abs(data[i][c]));
+  const scale = (laneH * 0.40) / peak;
+  txt("eeg_scale", "±" + peak.toFixed(1) + " " + (eeg.units || "units"));
+
+  g.textAlign = "right";
+  for (let c = 0; c < n; c++) {
+    const mid = padT + laneH * (c + 0.5);
+
+    g.strokeStyle = cBorder;
+    g.beginPath(); g.moveTo(padL, mid + .5); g.lineTo(w - padR, mid + .5); g.stroke();
+
+    g.fillStyle = cFaint;
+    g.font = '11px ' + (css.getPropertyValue("--font-mono").trim() || "monospace");
+    g.fillText(eeg.labels[c] || "ch" + (c + 1), padL - 8, mid + 4);
+
+    if (data.length < 2) continue;
+    g.strokeStyle = cTrace; g.lineWidth = 1;
+    g.beginPath();
+    for (let i = 0; i < data.length; i++) {
+      const x = padL + plotW * (1 - (data.length - 1 - i) / (cap - 1));
+      const y = mid - data[i][c] * scale;
+      if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
+    }
+    g.stroke();
+  }
+
+  if (eeg.simulated) {
+    g.save();
+    g.font = '700 13px ' + (css.getPropertyValue("--font-ui").trim() || "sans-serif");
+    g.fillStyle = cTrace; g.globalAlpha = .55; g.textAlign = "right";
+    g.fillText("SIMULATED", w - padR - 4, padT + 14);
+    g.restore();
+  }
+}
+
+window.addEventListener("resize", () => { if (eeg.available) drawEeg(); });
+
+/* ============================================================================
+   POLLING
+   allSettled, not all: one endpoint failing must not blank the other panels.
+   ========================================================================= */
+async function tickLive() {
+  const [rs, re, rf] = await Promise.allSettled([
+    get("/api/status"), get("/api/events"), get("/api/files")
+  ]);
+
+  if (rs.status === "fulfilled") {
+    consecutiveFailures = 0;
+    renderStatus(rs.value);
+  } else {
+    consecutiveFailures++;
+    // Two missed polls before saying anything: a single dropped request during a
+    // redeploy is not a fault worth alarming a researcher mid-session about.
+    if (consecutiveFailures >= 2) {
+      renderSourceChip(lastGoodSource || "NONE", null);
+      renderLink(false);
+    }
+  }
+
+  if (re.status === "fulfilled") renderEvents("evBody", "ev_total", re.value);
+  if (rf.status === "fulfilled") renderFiles("liveFiles", rf.value.files);
+}
+
+/* ============================================================================
+   OFFLINE REVIEW
+   ========================================================================= */
+let allSessions = [];
+
+function fillSelect() {
+  const q = ($("filter").value || "").toLowerCase();
+  const sel = $("sessionSel");
+  const list = allSessions.filter(s => s.session_id.toLowerCase().includes(q));
+  sel.innerHTML = "";
+  if (!list.length) { sel.innerHTML = "<option>no match</option>"; return; }
+  list.forEach(s => {
+    const o = document.createElement("option");
+    o.value = s.session_id;
+    o.textContent = s.session_id + "   " + s.size +
+                    (s.has_eeg ? "   EEG" : "") + (s.has_shadow ? "   shadow" : "");
+    sel.appendChild(o);
+  });
+}
+
+async function loadSessions() {
+  try {
+    const d = await get("/api/sessions");
+    allSessions = d.sessions || [];
+    const withEeg = allSessions.filter(s => s.has_eeg).length;
+    $("offCount").className = "chip accent";
+    $("offCount").textContent = fmt.int(allSessions.length) + " folders · " +
+                                fmt.int(withEeg) + " with EEG";
+    txt("offRoot", "Data root: " + d.data_root +
+        (d.mock ? "   —   Mock mode affects the Live tab only; these recorded sessions are real."
+                : ""));
+    fillSelect();
+  } catch (e) {
+    $("offCount").className = "chip bad";
+    $("offCount").textContent = "session list unavailable";
+  }
+}
+
+async function loadSession() {
+  const id = $("sessionSel").value;
+  if (!id || id === "no match") return;
+  try {
+    const d = await get("/api/session/" + encodeURIComponent(id));
+    const meta = $("offMeta"); meta.innerHTML = "";
+    const add = (k, v, cls) => meta.insertAdjacentHTML("beforeend",
+      "<dt>" + esc(k) + '</dt><dd class="' + (cls || "") + '">' + esc(v) + "</dd>");
+
+    add("Session ID", d.session_id, "id strong");
+    add("Events", d.events ? fmt.int(d.events.total) + " rows" : "—", "id");
+    add("Shadow rows", d.shadow ? fmt.int(d.shadow.total_rows) : "—", "id");
+    add("Raw EEG", d.raw_eeg ? d.raw_eeg.size + " (not loaded)" : "—", "id");
+    add("Diagnostics", d.diagnostics ? "present" : "not present", "");
+    add("Directory", d.directory || "—", "path");
+
+    renderFiles("offFiles", d.files);
+    renderEvents("offEvBody", "offEvTotal", d.events || { recent: [], total: 0 });
+
+    $("offDiag").textContent = d.diagnostics ||
+      "shadow_diagnostics.txt is not present in this session.\n\n" +
+      "Sessions recorded before this file was introduced will not have one.";
+
+    const sh = $("offShadow");
+    if (!d.shadow) {
+      sh.innerHTML = '<div class="empty">No shadow_decisions.csv in this session.</div>';
+    } else {
+      const reasons = Object.entries(d.shadow.reasons || {}).sort((a, b) => b[1] - a[1]);
+      const chans = Object.entries(d.shadow.valid_channels || {}).sort((a, b) => b[0] - a[0]);
+      const tbl = rows => '<div class="tblwrap" style="max-height:160px"><table><tbody>' +
+        rows + "</tbody></table></div>";
+      sh.innerHTML =
+        '<dl class="kv"><dt>Total rows</dt><dd class="id strong">' +
+        fmt.int(d.shadow.total_rows) + "</dd></dl>" +
+        '<div class="subhead">Rejected reason</div>' +
+        tbl(reasons.map(([k, v]) => '<tr><td class="num count" style="width:72px">' +
+            fmt.int(v) + '</td><td class="wrap mono">' + esc(k) + "</td></tr>").join("")) +
+        '<div class="subhead">Valid channel count</div>' +
+        tbl(chans.map(([k, v]) => '<tr><td class="num count" style="width:72px">' +
+            fmt.int(v) + '</td><td class="wrap">' + esc(k) +
+            " of 8 healthy</td></tr>").join(""));
+    }
+  } catch (e) {
+    $("offDiag").textContent = "Could not load session: " + e.message;
+  }
+}
+
+/* ---------------- wiring ---------------- */
+document.querySelectorAll(".tabs button").forEach(b => {
+  b.addEventListener("click", () => {
+    document.querySelectorAll(".tabs button")
+      .forEach(x => x.setAttribute("aria-selected", String(x === b)));
+    const live = b.dataset.view === "live";
+    $("view-live").classList.toggle("hidden", !live);
+    $("view-offline").classList.toggle("hidden", live);
+    if (!live && !allSessions.length) loadSessions();
+    if (live && eeg.available) drawEeg();
+  });
+});
+$("loadBtn").addEventListener("click", loadSession);
+$("filter").addEventListener("input", fillSelect);
+$("sessionSel").addEventListener("change", loadSession);
+
+tickLive();  setInterval(tickLive, 1000);
+tickEeg();   setInterval(tickEeg, 400);
+</script>
+</body>
+</html>
