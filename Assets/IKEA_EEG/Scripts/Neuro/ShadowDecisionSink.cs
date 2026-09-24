@@ -1,7 +1,10 @@
 ﻿using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
+using System.Text;
 using UnityEngine;
 using IkeaEeg.Core;
+using IkeaEeg.Data;
 
 namespace IkeaEeg.Neuro
 {
@@ -21,6 +24,17 @@ namespace IkeaEeg.Neuro
     public sealed class ShadowDecisionSink : MonoBehaviour, IEventSink
     {
         public const string FileName = "shadow_decisions.csv";
+
+        /// <summary>
+        /// Session-end diagnostic summary. A SIBLING file, never a column.
+        ///
+        /// The rejection tally previously existed only in the Unity Console, which means only
+        /// in Editor.log — a file the next Editor launch overwrites. The evidence that named
+        /// NearIdenticalChannels as the cause of a whole run survived by luck. This persists
+        /// the same strings next to the data they describe, and leaves the frozen 15-column
+        /// shadow_decisions.csv untouched.
+        /// </summary>
+        public const string DiagnosticsFileName = "shadow_diagnostics.txt";
 
         [Tooltip("Rows buffered before touching the disk. Shadow mode must never add a frame " +
                  "spike near a stimulus marker.")]
@@ -108,6 +122,7 @@ namespace IkeaEeg.Neuro
         public void Shutdown()
         {
             Flush();
+            WriteDiagnostics();
 
             // Stated plainly at session end, so an empty file is never a silent outcome.
             if (rowsWritten == 0)
@@ -121,6 +136,81 @@ namespace IkeaEeg.Neuro
 
             Debug.Log($"[IKEA_EEG] Shadow decisions: {rowsWritten} row(s) written to " +
                       $"{m_FilePath}.");
+        }
+
+        /// <summary>
+        /// Writes the session-end diagnostic summary beside the decisions file.
+        ///
+        /// OBSERVATIONAL. Every value is read from a counter that already existed; nothing is
+        /// computed, nothing is judged, and no decision is revisited. Written on EVERY session,
+        /// including one that produced zero rows — that is the case where it is worth most.
+        ///
+        /// Failure here is logged and swallowed: a diagnostic file must never be able to take
+        /// a session down.
+        /// </summary>
+        void WriteDiagnostics()
+        {
+            if (string.IsNullOrEmpty(m_FilePath))
+                return;
+
+            var directory = Path.GetDirectoryName(m_FilePath);
+
+            if (string.IsNullOrEmpty(directory))
+                return;
+
+            var controller = GetComponent<ShadowModeController>();
+            var receiver = FindAnyObjectByType<AuraLslReceiver>();
+            var pipeline = FindAnyObjectByType<EegFeaturePipeline>();
+
+            var text = new StringBuilder();
+
+            text.AppendLine("# IKEA_EEG shadow-mode session diagnostics");
+            text.AppendLine("# Observational summary of what the shadow observer saw.");
+            text.AppendLine("# It approves nothing, and no value here fed any decision.");
+            text.AppendLine("# The decisions themselves are in " + FileName + ".");
+            text.AppendLine();
+
+            text.AppendLine("written_utc            = " +
+                System.DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss",
+                    CultureInfo.InvariantCulture));
+            text.AppendLine("controller_version     = " + ShadowModeController.ControllerVersion);
+            text.AppendLine();
+
+            text.AppendLine("## Counters");
+            text.AppendLine("samples_received       = " +
+                (receiver != null ? receiver.samplesReceived.ToString(CultureInfo.InvariantCulture)
+                                  : "unavailable (no receiver in scene)"));
+            text.AppendLine("windows_published      = " +
+                (pipeline != null ? pipeline.windowsPublished.ToString(CultureInfo.InvariantCulture)
+                                  : "unavailable (no pipeline in scene)"));
+            text.AppendLine("windows_observed       = " +
+                (controller != null ? controller.windowsObserved.ToString(CultureInfo.InvariantCulture)
+                                    : "unavailable (no controller on this object)"));
+            text.AppendLine("decisions_generated    = " +
+                (controller != null ? controller.decisionsGenerated.ToString(CultureInfo.InvariantCulture)
+                                    : "unavailable (no controller on this object)"));
+            text.AppendLine("rows_written           = " +
+                rowsWritten.ToString(CultureInfo.InvariantCulture));
+            text.AppendLine();
+
+            text.AppendLine("## Grouped rejection breakdown");
+            text.AppendLine("# Grouped by diagnostic CAUSE. The raw sample count is deliberately");
+            text.AppendLine("# not part of the grouping key: it jitters between otherwise");
+            text.AppendLine("# identical windows and would fragment one cause across many rows.");
+            text.AppendLine();
+            text.AppendLine(controller != null
+                ? controller.DescribeRejections()
+                : "unavailable (no controller on this object)");
+
+            try
+            {
+                File.WriteAllText(Path.Combine(directory, DiagnosticsFileName), text.ToString());
+            }
+            catch (IOException e)
+            {
+                Debug.LogWarning("[IKEA_EEG] Shadow diagnostics could not be written: " +
+                                 e.Message);
+            }
         }
 
         void OnDestroy() => Flush();

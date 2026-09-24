@@ -8314,6 +8314,79 @@ namespace IkeaEeg.EditorTools
                    !IkeaEeg.Neuro.ShadowModeController.DecisionRuleApproved,
                 "normalization and the decision rule remain UNAPPROVED");
 
+            // ---- The session-end diagnostic summary is PERSISTED, not just logged ----------
+            // The rejection tally lived only in the Console, which means only in Editor.log,
+            // which the next Editor launch overwrites. Evidence naming the cause of a whole
+            // run survived the last investigation by luck. Driven end to end here so it cannot
+            // quietly stop being written.
+            {
+                var diagRoot = Path.Combine(Application.persistentDataPath,
+                    "IKEA_EEG_SelfTestTemp", "diag_" + System.Guid.NewGuid().ToString("N")
+                        .Substring(0, 8));
+
+                var host = new GameObject("__Shadow_Diagnostics_Probe");
+
+                try
+                {
+                    Directory.CreateDirectory(diagRoot);
+
+                    var controller = host.AddComponent<IkeaEeg.Neuro.ShadowModeController>();
+                    var sink = host.AddComponent<IkeaEeg.Neuro.ShadowDecisionSink>();
+
+                    controller.ResetSession();
+                    sink.Initialize(new SessionContext { sessionDirectory = diagRoot });
+
+                    sink.Write(controller.Evaluate(Window(40d, 12d)));
+                    sink.Shutdown();
+
+                    var diagPath = Path.Combine(diagRoot,
+                        IkeaEeg.Neuro.ShadowDecisionSink.DiagnosticsFileName);
+
+                    Assert(File.Exists(diagPath),
+                        $"the session-end diagnostics file is written " +
+                        $"({IkeaEeg.Neuro.ShadowDecisionSink.DiagnosticsFileName})");
+
+                    var diagText = File.Exists(diagPath)
+                        ? File.ReadAllText(diagPath)
+                        : string.Empty;
+
+                    foreach (var field in new[]
+                             {
+                                 "windows_observed", "decisions_generated", "rows_written",
+                                 "samples_received", "Grouped rejection breakdown",
+                             })
+                    {
+                        Assert(diagText.Contains(field),
+                            $"and it records {field}");
+                    }
+
+                    Assert(diagText.Contains("rows_written           = 1"),
+                        "with the counter reporting the row this probe actually wrote");
+
+                    // The frozen schema is the whole reason this is a separate file.
+                    var decisionsPath = Path.Combine(diagRoot,
+                        IkeaEeg.Neuro.ShadowDecisionSink.FileName);
+
+                    Assert(File.Exists(decisionsPath) &&
+                           File.ReadAllText(decisionsPath).StartsWith(
+                               IkeaEeg.Neuro.ShadowDecision.CsvHeader,
+                               System.StringComparison.Ordinal),
+                        "while shadow_decisions.csv keeps its frozen 15-column header, " +
+                        "unwidened by any of this");
+                }
+                finally
+                {
+                    Object.DestroyImmediate(host);
+
+                    try
+                    {
+                        if (Directory.Exists(diagRoot))
+                            Directory.Delete(diagRoot, true);
+                    }
+                    catch (IOException) { }
+                }
+            }
+
             // Drive the REAL controller with clean features and read what a live row would say.
             if (controllers.Length == 1)
             {
