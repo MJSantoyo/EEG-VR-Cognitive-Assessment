@@ -158,7 +158,17 @@ namespace IkeaEeg.Neuro
             if (string.IsNullOrEmpty(directory))
                 return;
 
+            // The controller is NOT on this GameObject. ExperimentSceneBuilder puts the
+            // sink on the EventLogger object and the controller on the EEG object, so a
+            // GetComponent here found nothing and every counter the controller owns --
+            // windows_observed, decisions_generated and the whole rejection breakdown --
+            // was written as "unavailable" in the first real session. Located the same way
+            // as the receiver and the pipeline, which were correct from the start.
             var controller = GetComponent<ShadowModeController>();
+
+            if (controller == null)
+                controller = FindAnyObjectByType<ShadowModeController>();
+
             var receiver = FindAnyObjectByType<AuraLslReceiver>();
             var pipeline = FindAnyObjectByType<EegFeaturePipeline>();
 

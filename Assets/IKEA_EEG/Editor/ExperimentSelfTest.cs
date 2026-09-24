@@ -8324,14 +8324,26 @@ namespace IkeaEeg.EditorTools
                     "IKEA_EEG_SelfTestTemp", "diag_" + System.Guid.NewGuid().ToString("N")
                         .Substring(0, 8));
 
-                var host = new GameObject("__Shadow_Diagnostics_Probe");
+                // TWO GameObjects, matching what ExperimentSceneBuilder actually authors:
+                // the sink goes on the EventLogger object, the controller on the EEG
+                // object. This probe used to put both on one object, so it passed while
+                // the sink located the controller with GetComponent -- which finds nothing
+                // in the real scene. The first real session reported every controller
+                // counter as "unavailable". The fixture now encodes the real layout.
+                var sinkHost = new GameObject("__Shadow_Diagnostics_Probe_Logger");
+                var controllerHost = new GameObject("__Shadow_Diagnostics_Probe_Eeg");
 
                 try
                 {
                     Directory.CreateDirectory(diagRoot);
 
-                    var controller = host.AddComponent<IkeaEeg.Neuro.ShadowModeController>();
-                    var sink = host.AddComponent<IkeaEeg.Neuro.ShadowDecisionSink>();
+                    var controller =
+                        controllerHost.AddComponent<IkeaEeg.Neuro.ShadowModeController>();
+                    var sink = sinkHost.AddComponent<IkeaEeg.Neuro.ShadowDecisionSink>();
+
+                    Assert(sink.gameObject != controller.gameObject,
+                        "the sink and the controller are on DIFFERENT GameObjects, as the " +
+                        "scene builder authors them");
 
                     controller.ResetSession();
                     sink.Initialize(new SessionContext { sessionDirectory = diagRoot });
@@ -8363,6 +8375,21 @@ namespace IkeaEeg.EditorTools
                     Assert(diagText.Contains("rows_written           = 1"),
                         "with the counter reporting the row this probe actually wrote");
 
+                    // The regression that a real session exposed: a counter that reads
+                    // "unavailable" is a silent hole in the evidence, not a diagnostic.
+                    Assert(!diagText.Contains("unavailable"),
+                        "and NO counter reports \"unavailable\" -- the controller is found " +
+                        "even though it lives on another GameObject");
+
+                    // Zero, and correctly so: this probe calls Evaluate() directly, and
+                    // those two counters only advance through the subscribed
+                    // featuresPublished path. What matters is that they are NUMBERS read
+                    // from a controller that was found, not the word "unavailable".
+                    Assert(diagText.Contains("windows_observed       = 0") &&
+                           diagText.Contains("decisions_generated    = 0"),
+                        "the controller-owned counters carry real numbers read from a " +
+                        "controller on another GameObject");
+
                     // The frozen schema is the whole reason this is a separate file.
                     var decisionsPath = Path.Combine(diagRoot,
                         IkeaEeg.Neuro.ShadowDecisionSink.FileName);
@@ -8376,7 +8403,8 @@ namespace IkeaEeg.EditorTools
                 }
                 finally
                 {
-                    Object.DestroyImmediate(host);
+                    Object.DestroyImmediate(sinkHost);
+                    Object.DestroyImmediate(controllerHost);
 
                     try
                     {

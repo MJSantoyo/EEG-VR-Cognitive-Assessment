@@ -665,8 +665,10 @@ function renderSourceChip(src, ageSeconds) {
     const stale = ageSeconds !== null && ageSeconds !== undefined &&
                   ageSeconds > STALE_AFTER_SECONDS;
     if (stale) {
-      chip($("srcChip"), "warn",
-           "Unity not running — last snapshot " + fmt.clock(ageSeconds) + " ago", false);
+      // Primary statement: Unity is offline. The age is secondary and lives on the link
+      // chip beside it. A researcher glancing at this must never read a preserved
+      // snapshot as a running session.
+      chip($("srcChip"), "warn", "Unity offline", false);
     } else {
       chip($("srcChip"), "ok", "Live — Unity running", true);
     }
@@ -719,10 +721,17 @@ function renderStatus(s) {
         w = s.window || {}, sh = s.shadow || {};
 
   /* ---- primary strip ---- */
+  // When the snapshot is stale the strip is showing HISTORY, not a running session.
+  // Say so on the phase tile, and drop the accent that reads as "live".
+  const stale = !isMock && s.age_seconds !== undefined &&
+                s.age_seconds > STALE_AFTER_SECONDS;
+
   txt("v_phase", fmt.phase(ss.phase));
-  txt("v_phasesub", (ss.active ? "session active" : "no active session") +
-                    (ss.room ? " · " + ss.room : ""));
-  tileState("t_phase", ss.active ? "accent" : "");
+  txt("v_phasesub", stale
+      ? "last snapshot before Unity went offline · " + fmt.clock(s.age_seconds) + " ago"
+      : (ss.active ? "session active" : "no active session") +
+        (ss.room ? " · " + ss.room : ""));
+  tileState("t_phase", stale ? "" : ss.active ? "accent" : "");
 
   txt("v_stream", aq.connected ? "Streaming" : "Not connected");
   txt("v_streamsub", fmt.int(aq.samples_received) + " samples · " +
