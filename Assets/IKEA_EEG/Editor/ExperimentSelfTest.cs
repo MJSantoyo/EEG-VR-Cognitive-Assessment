@@ -170,6 +170,7 @@ namespace IkeaEeg.EditorTools
             RunSection("TIME FORMATTING", CheckTimeFormatting);
 
             RunSection("INTERACTION CONFIGURATION", CheckInteractionConfiguration);
+            RunSection("AREA A VISUALS SURVIVE A SCENE REBUILD", CheckAreaAVisualsPreserved);
 
             s_Log.AppendLine();
             s_Log.AppendLine(s_Failures == 0
@@ -13980,6 +13981,120 @@ namespace IkeaEeg.EditorTools
         // ---------------------------------------------------------------------------------
         // Multi-run identifiers + RESTART safety
         // ---------------------------------------------------------------------------------
+
+        /// <summary>
+        /// The regression that cost nine days: ExperimentSceneBuilder rebuilt Area A, the
+        /// AreaA_Visuals prefab instance went with it, the three graybox walls came back
+        /// visible, and nobody noticed until the storefront was reported missing.
+        ///
+        /// Two halves. First the CONTRACT: the builder must actually call the preservation
+        /// step, asserted against its source so deleting the call fails here. Then the
+        /// BEHAVIOUR: a synthetic Area_A_Entrance with three bare walls and no storefront is
+        /// put through PreserveAfterSceneRebuild and checked on every property that was wrong
+        /// when the loss was found.
+        /// </summary>
+        static void CheckAreaAVisualsPreserved()
+        {
+            // ---- the builder must call it ------------------------------------------
+            var builderSource = File.ReadAllText(
+                "Assets/IKEA_EEG/Editor/ExperimentSceneBuilder.cs");
+
+            Assert(builderSource.Contains("PreserveAfterSceneRebuild"),
+                "ExperimentSceneBuilder calls AreaAEnvironmentBuilder." +
+                "PreserveAfterSceneRebuild, so a rebuild cannot silently drop the storefront");
+
+            var callIndex = builderSource.IndexOf("PreserveAfterSceneRebuild",
+                System.StringComparison.Ordinal);
+            var saveIndex = builderSource.IndexOf("EditorSceneManager.SaveScene",
+                System.StringComparison.Ordinal);
+
+            Assert(callIndex > 0 && saveIndex > callIndex,
+                "and it calls it BEFORE the scene is saved, so the restored instance is part " +
+                "of what gets written to disk");
+
+            // ---- the prefab it restores from must exist ------------------------------
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(
+                AreaAEnvironmentBuilder.PrefabPath);
+
+            Assert(prefab != null,
+                $"the known-good prefab exists at {AreaAEnvironmentBuilder.PrefabPath}");
+
+            if (prefab == null)
+                return;
+
+            // ---- behaviour, on a synthetic Area A that has lost its storefront -------
+            var areaA = new GameObject("__AreaA_Preservation_Probe");
+            var wallNames = new[] { "Wall_A_Left", "Wall_A_Right", "Wall_A_Back" };
+
+            try
+            {
+                foreach (var wallName in wallNames)
+                {
+                    var wall = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                    wall.name = wallName;
+                    wall.transform.SetParent(areaA.transform, false);
+                }
+
+                Assert(areaA.transform.Find(AreaAEnvironmentBuilder.VisualRootName) == null,
+                    "the probe starts with NO storefront, exactly as a fresh rebuild leaves it");
+
+                AreaAEnvironmentBuilder.PreserveAfterSceneRebuild(areaA.transform);
+
+                var visuals = areaA.transform.Find(AreaAEnvironmentBuilder.VisualRootName);
+
+                Assert(visuals != null,
+                    $"{AreaAEnvironmentBuilder.VisualRootName} was re-instantiated");
+
+                if (visuals != null)
+                {
+                    Assert(PrefabUtility.GetCorrespondingObjectFromSource(visuals.gameObject)
+                               != null,
+                        "and it is a PREFAB INSTANCE, not a loose copy, so later prefab edits " +
+                        "still reach the scene");
+
+                    Assert(visuals.localPosition == Vector3.zero &&
+                           visuals.localRotation == Quaternion.identity &&
+                           visuals.localScale == Vector3.one,
+                        $"on the identity transform the validator requires " +
+                        $"(pos={visuals.localPosition}, scale={visuals.localScale})");
+                }
+
+                foreach (var wallName in wallNames)
+                {
+                    var wall = areaA.transform.Find(wallName);
+                    var renderer = wall == null ? null : wall.GetComponent<MeshRenderer>();
+                    var collider = wall == null ? null : wall.GetComponent<BoxCollider>();
+
+                    Assert(renderer != null && !renderer.enabled,
+                        $"{wallName}: MeshRenderer disabled");
+                    Assert(collider != null && collider.enabled,
+                        $"{wallName}: BoxCollider still enabled, so the far interactor cannot " +
+                        "escape sideways out of Area A");
+                    Assert(wall != null && wall.gameObject.activeSelf,
+                        $"{wallName}: GameObject still active");
+                }
+
+                // Idempotent: a second pass must not stack a second storefront.
+                AreaAEnvironmentBuilder.PreserveAfterSceneRebuild(areaA.transform);
+
+                var copies = 0;
+                for (var i = 0; i < areaA.transform.childCount; i++)
+                {
+                    if (areaA.transform.GetChild(i).name ==
+                        AreaAEnvironmentBuilder.VisualRootName)
+                    {
+                        copies++;
+                    }
+                }
+
+                Assert(copies == 1,
+                    $"calling it twice leaves exactly one storefront ({copies})");
+            }
+            finally
+            {
+                Object.DestroyImmediate(areaA);
+            }
+        }
 
         static void CheckRunLifecycle()
         {

@@ -178,6 +178,48 @@ namespace IkeaEeg.EditorTools
                 lookAt = new Vector3(0f, 2.20f, 1.9f),
                 fieldOfView = 56f, width = 1920, height = 1080,
             };
+
+            // ---- Area B, for the "is a wall cutting into the chairs" question --------
+            // Area B sits at world x = +100. The existing presentation shots of the
+            // showroom were taken from an arbitrary composed angle that puts the
+            // Wall_B_Back / Wall_B_Right corner directly behind the chair arc; these
+            // render what the PARTICIPANT actually sees from Spawn_B instead.
+            yield return new View
+            {
+                name = "30_AreaB_FromSpawn_Eye",
+                position = new Vector3(100f, 1.60f, -2.60f),
+                lookAt = new Vector3(100f, 1.10f, 1.60f),
+                fieldOfView = 84f, width = 1920, height = 1080,
+            };
+
+            yield return new View
+            {
+                name = "31_AreaB_FromSpawn_Wide",
+                position = new Vector3(100f, 1.60f, -2.60f),
+                lookAt = new Vector3(100f, 1.20f, 1.60f),
+                fieldOfView = 100f, width = 1920, height = 1080,
+            };
+
+            // Straight down the chair arc from above: any wall actually intersecting a
+            // chair would be unmissable in plan.
+            yield return new View
+            {
+                name = "32_AreaB_PlanOverhead",
+                // y just UNDER Ceiling_B (3.6 m) -- above it you photograph the slab.
+                position = new Vector3(100f, 3.35f, 0.60f),
+                lookAt = new Vector3(100f, 0f, 0.61f),
+                fieldOfView = 100f, width = 1920, height = 1080,
+            };
+
+            // The rightmost chair and the room corner behind it, from the participant
+            // side: the exact pairing that reads as a cut in the old presentation shot.
+            yield return new View
+            {
+                name = "33_AreaB_RightChair_CornerCheck",
+                position = new Vector3(101.2f, 1.55f, -1.60f),
+                lookAt = new Vector3(103.83f, 0.60f, 0.61f),
+                fieldOfView = 60f, width = 1920, height = 1080,
+            };
         }
 
         [MenuItem("IKEA_EEG/Visuals/Capture Area A Views", false, 202)]

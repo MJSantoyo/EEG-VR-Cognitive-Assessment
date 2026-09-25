@@ -86,9 +86,17 @@ namespace IkeaEeg.EditorTools
         const float k_LeafGlassZMin = 1.820f, k_LeafGlassZMax = 1.855f;
         const float k_SensorZMin = 1.820f, k_SensorZMax = 1.865f;
         const float k_LeafFrameZMin = 1.840f, k_LeafFrameZMax = 1.890f;
-        const float k_HeaderZMin = 1.870f, k_HeaderZMax = 1.930f;
-        const float k_FixedGlassZMin = 1.880f, k_FixedGlassZMax = 1.915f;
-        const float k_FixedFrameZMin = 1.900f, k_FixedFrameZMax = 1.950f;
+
+        // ONE SILVER PLANE. The header, the sill and both fixed-light frames used to sit
+        // 30-60 mm behind the leaf frames, so at the two mullions (x = +/-0.72) the eye saw
+        // the leaf frame edge, a shadowed depth step, and then the fixed frame edge -- three
+        // near-parallel verticals where the design intends one. Sharing the leaf frame plane
+        // makes each mullion a single continuous silver surface. Pure depth change: the
+        // widths, the materials and the opening are untouched, and the deepest surface moves
+        // from 1.950 to 1.900, further clear of the blocker at 1.96 rather than closer.
+        const float k_HeaderZMin = 1.840f, k_HeaderZMax = 1.900f;
+        const float k_FixedGlassZMin = 1.820f, k_FixedGlassZMax = 1.855f;
+        const float k_FixedFrameZMin = 1.840f, k_FixedFrameZMax = 1.890f;
 
         // The existing Facade_A_DoorBlocker starts at z = 1.96. Everything above ends before
         // it, so the blocker keeps its collider and its renderer and is simply hidden behind
@@ -98,7 +106,11 @@ namespace IkeaEeg.EditorTools
         // Storefront bay: fixed light | leaf | leaf | fixed light, filling the 2.6 m opening.
         const float k_FixedWidth = 0.58f;
         const float k_LeafWidth = 0.72f;
-        const float k_LeafGap = 0.003f;       // centre reveal, so the two leaves never touch
+        // Centre reveal. At 3 mm the two leaf frames read as one fat bar with a hairline
+        // crawling through it; at 14 mm they read as two leaves meeting at a deliberate
+        // joint, which is what a real sliding pair looks like. Still far narrower than the
+        // 720 mm leaf, so the opening and the leaf travel are unchanged.
+        const float k_LeafGap = 0.014f;
 
         const float k_GlazingTopY = 2.42f;    // silver header band sits above this
         const float k_CladTopY = 4.24f;       // just proud of the existing 4.20 m facade top
@@ -228,6 +240,182 @@ namespace IkeaEeg.EditorTools
 
         [MenuItem("IKEA_EEG/Visuals/Validate Area A Environment", false, 201)]
         public static void ValidateMenu() => Debug.Log(Validate());
+
+        /// <summary>
+        /// Re-applies ONLY the graybox-wall scene edit, without rebuilding anything.
+        ///
+        /// Hiding those three renderers is a SCENE edit, not prefab content, so restoring
+        /// AreaA_Visuals by dropping the prefab back into the hierarchy does not bring it
+        /// with it -- the walls come back visible and box the storefront in. Rebuild()
+        /// would fix it, but it also overwrites AreaA_Visuals.prefab, which is far more
+        /// than this needs.
+        ///
+        /// Calls the existing DisableGrayboxWallRenderers and nothing else: no geometry,
+        /// no materials, no colliders, no prefab write.
+        /// </summary>
+        [MenuItem("IKEA_EEG/Visuals/Hide Graybox Walls (scene edit only)", false, 202)]
+        public static void HideGrayboxWallsMenu()
+        {
+            var areaA = FindAreaARoot();
+
+            if (areaA == null)
+            {
+                EditorUtility.DisplayDialog("IKEA_EEG",
+                    $"Could not find '{AreaARootPath}' in the open scene.\n\n" +
+                    "Open Assets/IKEA_EEG/Scenes/IKEA_EEG_Experiment.unity first.", "OK");
+                return;
+            }
+
+            NormalizeVisualRootTransform(areaA);
+            DisableGrayboxWallRenderers(areaA);
+            EditorSceneManager.MarkSceneDirty(areaA.gameObject.scene);
+            Debug.Log("[IKEA_EEG] Graybox wall renderers disabled. The scene is dirty -- " +
+                      "save it to keep the change." + System.Environment.NewLine + Validate());
+        }
+
+        /// <summary>
+        /// Batch form of <see cref="HideGrayboxWallsMenu"/>:
+        /// Unity.exe -batchmode -quit -projectPath ... -executeMethod
+        ///   IkeaEeg.EditorTools.AreaAEnvironmentBuilder.HideGrayboxWallsFromCommandLine
+        ///
+        /// Opens the experiment scene, disables the three wall renderers, SAVES the scene,
+        /// and prints both validation reports. It regenerates NOTHING and writes no asset
+        /// other than the scene itself.
+        /// </summary>
+        public static void HideGrayboxWallsFromCommandLine()
+        {
+            var scene = EditorSceneManager.OpenScene(ExperimentSceneBuilder.ScenePath,
+                OpenSceneMode.Single);
+
+            var areaA = FindAreaARoot();
+
+            if (areaA == null)
+            {
+                Debug.LogError($"[IKEA_EEG] '{AreaARootPath}' not found -- nothing was changed.");
+                EditorApplication.Exit(2);
+                return;
+            }
+
+            NormalizeVisualRootTransform(areaA);
+            DisableGrayboxWallRenderers(areaA);
+
+            EditorSceneManager.MarkSceneDirty(scene);
+            EditorSceneManager.SaveScene(scene);
+
+            Debug.Log(Validate());
+            Debug.Log(ExperimentSceneBuilder.ValidateOpenScene());
+        }
+
+        /// <summary>
+        /// Puts the AreaA_Visuals instance back on the identity transform Rebuild() gives
+        /// it, and which Validate() requires.
+        ///
+        /// Restoring the prefab by hand is a drag-and-drop, and a drag-and-drop lands
+        /// wherever the mouse let go. The whole environment is authored in Area A local
+        /// space, so any offset moves the plaza off the floor and the storefront away from
+        /// the doorway -- the facade is visible but wrong, which is harder to spot than a
+        /// facade that is simply missing.
+        ///
+        /// Touches the INSTANCE transform only. The prefab asset is not opened or written.
+        /// </summary>
+        public static void NormalizeVisualRootTransform(Transform areaARoot)
+        {
+            var root = areaARoot.Find(VisualRootName);
+
+            if (root == null)
+            {
+                Debug.LogWarning($"[IKEA_EEG] '{VisualRootName}' not found under " +
+                                 "Area_A_Entrance; its transform was not normalized.");
+                return;
+            }
+
+            var wasPos = root.localPosition;
+            var wasRot = root.localRotation;
+            var wasScale = root.localScale;
+
+            if (wasPos == Vector3.zero && wasRot == Quaternion.identity &&
+                wasScale == Vector3.one)
+            {
+                return;
+            }
+
+            root.localPosition = Vector3.zero;
+            root.localRotation = Quaternion.identity;
+            root.localScale = Vector3.one;
+            EditorUtility.SetDirty(root);
+
+            Debug.Log($"[IKEA_EEG] {VisualRootName} transform normalized to identity " +
+                      $"(was pos={wasPos}, rot={wasRot.eulerAngles}, scale={wasScale}).");
+        }
+
+        /// <summary>
+        /// Instantiates the EXISTING AreaA_Visuals prefab under Area_A_Entrance when it is
+        /// not already there. Returns true when it had to add one.
+        ///
+        /// Loads the prefab asset. It does NOT regenerate it: the geometry, the materials
+        /// and the meshes on disk are the reviewed ones and this must not quietly replace
+        /// them with a fresh build that happens to differ.
+        /// </summary>
+        public static bool EnsureVisualsPresent(Transform areaARoot)
+        {
+            if (areaARoot == null)
+                return false;
+
+            if (areaARoot.Find(VisualRootName) != null)
+                return false;
+
+            var asset = AssetDatabase.LoadAssetAtPath<GameObject>(PrefabPath);
+
+            if (asset == null)
+            {
+                Debug.LogError($"[IKEA_EEG] {VisualRootName} is missing from the scene and " +
+                               $"the prefab could not be loaded from {PrefabPath}. Area A " +
+                               "has no storefront.");
+                return false;
+            }
+
+            var instance = (GameObject)PrefabUtility.InstantiatePrefab(asset, areaARoot);
+            instance.name = VisualRootName;
+            instance.transform.SetParent(areaARoot, false);
+
+            Debug.Log($"[IKEA_EEG] {VisualRootName} was missing and has been re-instantiated " +
+                      $"from {PrefabPath}.");
+
+            return true;
+        }
+
+        /// <summary>
+        /// Re-applies everything about Area A that lives in the SCENE rather than in the
+        /// prefab. Call at the end of a scene rebuild.
+        ///
+        /// WHY THIS EXISTS. ExperimentSceneBuilder recreates Area_A_Entrance from scratch,
+        /// and it knows nothing about the storefront: the prefab instance disappears and
+        /// the three graybox walls come back with their renderers on. That is precisely how
+        /// the visual work was lost on 2026-09-15 and only noticed nine days later. The
+        /// prefab, the meshes and the materials were never in danger -- the one-line scene
+        /// reference to them was.
+        ///
+        /// Three existing operations in sequence, nothing new: put the instance back if it
+        /// is gone, put it on the identity transform the validator requires, and switch the
+        /// three wall renderers off while leaving their GameObjects active and their
+        /// colliders enabled -- the colliders are what stop the far interactor selecting
+        /// out through the open sides.
+        ///
+        /// Regenerates nothing. Touches no geometry, no material and no collider.
+        /// </summary>
+        public static void PreserveAfterSceneRebuild(Transform areaARoot)
+        {
+            if (areaARoot == null)
+            {
+                Debug.LogWarning("[IKEA_EEG] Area A preservation skipped: no " +
+                                 "Area_A_Entrance was supplied.");
+                return;
+            }
+
+            EnsureVisualsPresent(areaARoot);
+            NormalizeVisualRootTransform(areaARoot);
+            DisableGrayboxWallRenderers(areaARoot);
+        }
 
         /// <summary>
         /// Batch entry point for validation ALONE:

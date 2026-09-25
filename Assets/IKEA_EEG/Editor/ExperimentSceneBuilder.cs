@@ -210,6 +210,16 @@ namespace IkeaEeg.EditorTools
                     xrOrigin.transform.SetPositionAndRotation(
                         spawn0.transform.position, spawn0.transform.rotation);
 
+                // ---- Area A visuals survive the rebuild -----------------------------
+                // This builder recreates Area_A_Entrance and knows nothing about the
+                // storefront, so without this the AreaA_Visuals prefab instance is dropped
+                // and the three graybox walls come back visible. That is exactly how the
+                // visual work was lost on 2026-09-15. Re-instantiates the EXISTING prefab
+                // and re-applies the two scene edits; it regenerates nothing and touches no
+                // geometry, material or collider.
+                AreaAEnvironmentBuilder.PreserveAfterSceneRebuild(
+                    environment.transform.Find("Area_A_Entrance"));
+
                 EditorUtility.DisplayProgressBar("IKEA_EEG", "Saving…", 0.95f);
 
                 EditorSceneManager.MarkSceneDirty(scene);
