@@ -262,24 +262,23 @@ td.wrap{white-space:normal; overflow-wrap:anywhere}
   font-size:10px; font-weight:700; color:#fff; background:var(--ok)}
 .tick.off{background:#c6cad3}
 
-/* ---- EEG monitor ---- */
-.eegwrap{position:relative; border:1px solid var(--border-soft); border-radius:var(--r);
-  background:var(--surface-sunken); overflow:hidden}
-#eegCanvas{display:block; width:100%; height:330px}
-.eegveil{position:absolute; inset:0; display:grid; place-items:center; text-align:center;
-  padding:var(--s5); background:rgba(251,251,253,.93); color:var(--text-muted);
-  font-size:var(--fs-sm)}
-.eegveil strong{display:block; color:var(--text); font-size:var(--fs-md); margin-bottom:6px}
-.eegmeta{display:flex; gap:var(--s4); flex-wrap:wrap; margin-top:var(--s3);
-  font-size:var(--fs-xs); color:var(--text-muted)}
-.eegmeta span b{font-family:var(--font-mono); color:var(--text); font-weight:600}
-
-/* ---- VR placeholder ---- */
-.vrbox{border:1px dashed var(--border); border-radius:var(--r);
-  background:var(--surface-sunken); padding:var(--s6) var(--s5); text-align:center}
-.vrbox .big{font-size:var(--fs-md); font-weight:600; color:var(--text-muted)}
-.vrbox .sub{font-size:var(--fs-sm); color:var(--text-faint); margin-top:var(--s2);
-  max-width:56ch; margin-left:auto; margin-right:auto}
+/* ---- participant view (reserved panel) ---- */
+.pvframe{
+  border:1px solid var(--border-soft); border-radius:var(--r);
+  background:
+    linear-gradient(var(--surface-sunken), var(--surface-sunken)) padding-box,
+    repeating-linear-gradient(135deg, var(--border-soft) 0 10px, transparent 10px 20px);
+  min-height:330px; display:grid; place-items:center; padding:var(--s6) var(--s5);
+}
+.pvinner{max-width:56ch; text-align:center; color:var(--text-muted)}
+.pvicon{width:64px; height:44px; color:var(--text-faint); margin-bottom:var(--s3)}
+.pvtitle{font-size:var(--fs-md); font-weight:600; color:var(--text); margin-bottom:var(--s2)}
+.pvbody{font-size:var(--fs-sm); line-height:1.6}
+.pvsteps{display:flex; flex-wrap:wrap; gap:6px; justify-content:center; margin-top:var(--s4)}
+.pvsteps span{
+  font-size:var(--fs-xs); color:var(--text-muted); background:var(--surface);
+  border:1px solid var(--border); border-radius:var(--r-pill); padding:4px 10px;
+}
 
 /* ---- offline ---- */
 .picker{display:flex; gap:var(--s2); align-items:center; flex-wrap:wrap; margin-bottom:var(--s3)}
@@ -374,29 +373,38 @@ footer .path{font-family:var(--font-mono)}
 
   <div class="grid">
 
-    <!-- EEG monitor -->
+    <!-- Participant view -->
     <section class="card c8">
       <h2>
-        <span>Live EEG monitor — display only</span>
-        <span class="chip idle" id="eegChip">—</span>
+        <span>Participant view</span>
+        <span class="chip idle" id="pvChip">No feed configured</span>
       </h2>
-      <div class="eegwrap">
-        <canvas id="eegCanvas"></canvas>
-        <div class="eegveil" id="eegVeil">
-          <div><strong>No EEG display feed</strong>
-          The status writer does not publish waveform samples yet.
-          Run with <span style="font-family:var(--font-mono)">--mock</span> to develop this panel.</div>
+      <div class="pvframe" id="pvFrame">
+        <div class="pvinner">
+          <svg viewBox="0 0 64 44" class="pvicon" aria-hidden="true">
+            <rect x="1.5" y="6.5" width="61" height="31" rx="7" fill="none"
+                  stroke="currentColor" stroke-width="2"/>
+            <circle cx="20" cy="22" r="7.5" fill="none" stroke="currentColor" stroke-width="2"/>
+            <circle cx="44" cy="22" r="7.5" fill="none" stroke="currentColor" stroke-width="2"/>
+            <path d="M27.5 22h9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          <div class="pvtitle">No participant view connected</div>
+          <div class="pvbody">
+            Spectator streaming from the headset is <b>not implemented</b>. This panel is the
+            reserved place for it: a low-rate, read-only snapshot of what the participant is
+            looking at, so a researcher standing beside them can confirm the scene without
+            taking the headset off.
+          </div>
+          <div class="pvsteps">
+            <span>Recommended: 1 Hz spectator camera, editor-only</span>
+            <span>Rejected: MJPEG server inside Unity</span>
+            <span>See ARCHITECTURE.md</span>
+          </div>
         </div>
       </div>
-      <div class="eegmeta">
-        <span>Window <b id="eeg_span">—</b></span>
-        <span>Display rate <b id="eeg_rate">—</b></span>
-        <span>Scale <b id="eeg_scale">—</b></span>
-        <span>Buffered <b id="eeg_n">—</b></span>
-      </div>
-      <div class="note" id="eeg_note">
-        Unfiltered, decimated for display. This is a picture of the stream, not the analysis
-        path — no value shown here feeds a feature, a decision or a recorded file.
+      <div class="note">
+        Nothing here reads or affects the headset. When a feed is added it will follow the same
+        one-way rule as the status file: Unity writes outward, the dashboard only ever reads.
       </div>
     </section>
 
@@ -518,17 +526,30 @@ footer .path{font-family:var(--font-mono)}
       <div class="files" id="liveFiles"></div>
     </section>
 
-    <!-- VR placeholder -->
+    <!-- Session EEG summary (descriptive only) -->
     <section class="card c4">
-      <h2>
-        <span>VR participant view</span>
-        <span class="chip idle">Not implemented</span>
-      </h2>
-      <div class="vrbox">
-        <div class="big">No video feed</div>
-        <div class="sub">Real VR spectator streaming is <b>not implemented</b>. This panel marks
-          where a low-rate, read-only spectator snapshot could live. See the feasibility notes
-          in <span style="font-family:var(--font-mono)">README.md</span>.</div>
+      <h2><span>Session EEG summary</span><span class="chip idle">Descriptive</span></h2>
+      <div class="metric-row" style="margin-bottom:var(--s4)">
+        <div>
+          <div class="metric" id="sum_windows">—</div>
+          <div class="metric-label">windows observed</div>
+        </div>
+        <div>
+          <div class="metric" id="sum_valid">—</div>
+          <div class="metric-label">passed featureValidity</div>
+        </div>
+      </div>
+      <dl class="kv">
+        <dt>Rejected on validity</dt><dd class="id strong" id="sum_invalid">—</dd>
+        <dt>Rows written</dt><dd class="id" id="sum_rows">—</dd>
+        <dt>Distinct causes</dt><dd class="id" id="sum_causes">—</dd>
+      </dl>
+      <div class="callout neutral" style="margin-top:var(--s3)">
+        <b>Dominant cause</b><span class="val" id="sum_dominant">—</span>
+      </div>
+      <div class="note">
+        Counts only, accumulated over the session. No interpretation, no thresholds, and no
+        judgement about whether the data is usable — that stays with the researcher.
       </div>
     </section>
 
@@ -874,6 +895,8 @@ function renderStatus(s) {
                      "No rejections recorded yet.</td></tr>";
     txt("dominant", "—");
     $("dominantBox").className = "callout neutral";
+    renderEegSummary(sh, rows);
+    return;
   } else {
     rows.forEach(r => {
       const tr = document.createElement("tr");
@@ -882,14 +905,50 @@ function renderStatus(s) {
                      esc(r.cause) + "</td>";
       body.appendChild(tr);
     });
-    const top = rows[0].cause;
-    const fl = /flags=(.*)$/.exec(top);
-    const named = fl && fl[1].indexOf("FLAGGED") >= 0
-      ? fl[1].replace("FLAGGED: ", "")
-      : top.replace("FeatureInvalid :: ", "");
-    txt("dominant", named + "  —  " + fmt.int(rows[0].count) + " window(s)");
+    txt("dominant", shortCause(rows[0].cause) + "  —  " +
+        fmt.int(rows[0].count) + " window(s)");
     $("dominantBox").className = "callout";
   }
+
+  renderEegSummary(sh, rows);
+}
+
+/* A cause string is a gate name plus a full condition breakdown. For a headline, the
+   useful part is the specific QC flag when one was raised, and the gate name otherwise. */
+function shortCause(cause) {
+  const s = String(cause || "");
+  const f = /flags=(.*)$/.exec(s);
+  if (f && f[1].indexOf("FLAGGED") >= 0) return f[1].replace("FLAGGED: ", "");
+  const gate = s.split(" :: ")[0];
+  return gate === s ? s : gate + " (no QC flag raised)";
+}
+
+/* Descriptive session counters. Arithmetic over the tally the controller already keeps —
+   no interpretation, no thresholds, and nothing that implies the data is or is not usable. */
+function renderEegSummary(sh, rows) {
+  const observed = sh.windows_observed;
+
+  if (observed === undefined || observed === null) {
+    ["sum_windows","sum_valid","sum_invalid","sum_rows","sum_causes","sum_dominant"]
+      .forEach(k => txt(k, "—"));
+    return;
+  }
+
+  // "FeatureInvalid" is the gate name the controller writes; anything else got past it.
+  const invalid = rows.reduce(
+    (n, r) => n + (String(r.cause).indexOf("FeatureInvalid") === 0 ? r.count : 0), 0);
+  const passed = Math.max(0, observed - invalid);
+
+  txt("sum_windows", fmt.int(observed));
+  txt("sum_valid", observed ? fmt.int(passed) : "—");
+  txt("sum_invalid", observed ? fmt.int(invalid) +
+      " (" + (100 * invalid / observed).toFixed(1) + "%)" : "—");
+  txt("sum_rows", fmt.int(sh.rows_written));
+  txt("sum_causes", fmt.int(rows.length));
+
+  if (!rows.length) { txt("sum_dominant", "none recorded yet"); return; }
+  txt("sum_dominant", shortCause(rows[0].cause) +
+      "  —  " + fmt.int(rows[0].count) + " of " + fmt.int(observed));
 }
 
 function renderEvents(bodyId, totalId, data) {
@@ -925,135 +984,6 @@ function renderFiles(target, files) {
     box.appendChild(d);
   });
 }
-
-/* ============================================================================
-   EEG MONITOR — display only
-   Client keeps a ring buffer and polls incrementally with ?since=, so only new
-   samples cross the wire. Canvas, no library.
-   ========================================================================= */
-const eeg = {
-  labels: [], rate: 50, windowSeconds: 10,
-  buf: [], nextIndex: null, available: false, simulated: false, units: ""
-};
-
-function eegCapacity() { return Math.ceil(eeg.rate * eeg.windowSeconds); }
-
-async function tickEeg() {
-  try {
-    const q = eeg.nextIndex === null ? "" : "?since=" + eeg.nextIndex;
-    const d = await get("/api/eeg" + q);
-
-    if (!d.available) {
-      eeg.available = false;
-      $("eegVeil").classList.remove("hidden");
-      chip($("eegChip"), "idle", "no feed", false);
-      $("eegVeil").innerHTML = "<div><strong>No EEG display feed</strong>" +
-        esc(d.reason || "") + "</div>";
-      return;
-    }
-
-    eeg.available = true;
-    eeg.simulated = !!d.simulated;
-    eeg.labels = d.channels || eeg.labels;
-    eeg.rate = d.rate || eeg.rate;
-    eeg.windowSeconds = d.window_seconds || eeg.windowSeconds;
-    eeg.units = d.units || "";
-
-    if (eeg.nextIndex === null || d.start_index > eeg.nextIndex) eeg.buf = [];
-    (d.samples || []).forEach(row => eeg.buf.push(row));
-    eeg.nextIndex = d.next_index;
-
-    const cap = eegCapacity();
-    if (eeg.buf.length > cap) eeg.buf.splice(0, eeg.buf.length - cap);
-
-    $("eegVeil").classList.add("hidden");
-    chip($("eegChip"), eeg.simulated ? "mock" : "ok",
-         eeg.simulated ? "SIMULATED — not real EEG" : "live display feed", true);
-
-    txt("eeg_span", eeg.windowSeconds.toFixed(0) + " s");
-    txt("eeg_rate", eeg.rate.toFixed(0) + " Hz (display)");
-    txt("eeg_n", fmt.int(eeg.buf.length) + " samples");
-    drawEeg();
-  } catch (e) {
-    /* transport handled by the link chip; leave the last trace on screen */
-  }
-}
-
-function drawEeg() {
-  const cv = $("eegCanvas");
-  const dpr = window.devicePixelRatio || 1;
-  const w = cv.clientWidth, h = cv.clientHeight;
-  if (!w || !h) return;
-  if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
-    cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
-  }
-  const g = cv.getContext("2d");
-  g.setTransform(dpr, 0, 0, dpr, 0, 0);
-  g.clearRect(0, 0, w, h);
-
-  const css = getComputedStyle(document.documentElement);
-  const cBorder = css.getPropertyValue("--border-soft").trim() || "#eee";
-  const cFaint = css.getPropertyValue("--text-faint").trim() || "#999";
-  const cTrace = eeg.simulated
-    ? (css.getPropertyValue("--mock").trim() || "#a8620b")
-    : (css.getPropertyValue("--accent-2").trim() || "#2f6fd0");
-
-  const n = eeg.labels.length || 8;
-  const padL = 44, padR = 10, padT = 8, padB = 18;
-  const plotW = Math.max(10, w - padL - padR);
-  const laneH = (h - padT - padB) / n;
-
-  /* time grid: one line per second */
-  g.strokeStyle = cBorder; g.lineWidth = 1;
-  g.font = '10px ' + (css.getPropertyValue("--font-mono").trim() || "monospace");
-  g.fillStyle = cFaint; g.textAlign = "center";
-  for (let sBack = 0; sBack <= eeg.windowSeconds; sBack++) {
-    const x = padL + plotW * (1 - sBack / eeg.windowSeconds);
-    g.beginPath(); g.moveTo(x + .5, padT); g.lineTo(x + .5, h - padB); g.stroke();
-    if (sBack % 2 === 0) g.fillText(sBack === 0 ? "now" : "-" + sBack + "s", x, h - 5);
-  }
-
-  /* per-channel scale from the visible buffer, so a flat channel stays flat */
-  const cap = eegCapacity();
-  const data = eeg.buf;
-  let peak = 1e-6;
-  for (let i = 0; i < data.length; i++)
-    for (let c = 0; c < n; c++) peak = Math.max(peak, Math.abs(data[i][c]));
-  const scale = (laneH * 0.40) / peak;
-  txt("eeg_scale", "±" + peak.toFixed(1) + " " + (eeg.units || "units"));
-
-  g.textAlign = "right";
-  for (let c = 0; c < n; c++) {
-    const mid = padT + laneH * (c + 0.5);
-
-    g.strokeStyle = cBorder;
-    g.beginPath(); g.moveTo(padL, mid + .5); g.lineTo(w - padR, mid + .5); g.stroke();
-
-    g.fillStyle = cFaint;
-    g.font = '11px ' + (css.getPropertyValue("--font-mono").trim() || "monospace");
-    g.fillText(eeg.labels[c] || "ch" + (c + 1), padL - 8, mid + 4);
-
-    if (data.length < 2) continue;
-    g.strokeStyle = cTrace; g.lineWidth = 1;
-    g.beginPath();
-    for (let i = 0; i < data.length; i++) {
-      const x = padL + plotW * (1 - (data.length - 1 - i) / (cap - 1));
-      const y = mid - data[i][c] * scale;
-      if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
-    }
-    g.stroke();
-  }
-
-  if (eeg.simulated) {
-    g.save();
-    g.font = '700 13px ' + (css.getPropertyValue("--font-ui").trim() || "sans-serif");
-    g.fillStyle = cTrace; g.globalAlpha = .55; g.textAlign = "right";
-    g.fillText("SIMULATED", w - padR - 4, padT + 14);
-    g.restore();
-  }
-}
-
-window.addEventListener("resize", () => { if (eeg.available) drawEeg(); });
 
 /* ============================================================================
    POLLING
@@ -1175,7 +1105,6 @@ document.querySelectorAll(".tabs button").forEach(b => {
     $("view-live").classList.toggle("hidden", !live);
     $("view-offline").classList.toggle("hidden", live);
     if (!live && !allSessions.length) loadSessions();
-    if (live && eeg.available) drawEeg();
   });
 });
 $("loadBtn").addEventListener("click", loadSession);
@@ -1183,7 +1112,6 @@ $("filter").addEventListener("input", fillSelect);
 $("sessionSel").addEventListener("change", loadSession);
 
 tickLive();  setInterval(tickLive, 1000);
-tickEeg();   setInterval(tickEeg, 400);
 </script>
 </body>
 </html>

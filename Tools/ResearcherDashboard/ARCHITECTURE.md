@@ -4,11 +4,20 @@ Two forward-looking questions were assessed on 2026-09-17. **Neither is implemen
 real data.** Both would touch a running participant session, so the decision is the
 researcher's, not the tool's.
 
+> **Status, 2026-09-25.** Question A is **closed and will not be built.** The waveform panel
+> was removed from the dashboard: AURA already displays raw live EEG and is the instrument's
+> own validated display, so a second lower-rate picture in the browser added risk rather than
+> information. `/api/eeg` and the `?since=N` protocol no longer exist. The assessment below is
+> kept as the record of how that decision was reached, not as pending work.
+>
+> Question B remains **open future work**, unchanged and unimplemented.
+
 ---
 
-## A. Live EEG waveform monitor
+## A. Live EEG waveform monitor — CLOSED, NOT BUILT
 
-**Goal.** Show the most recent 5–10 s of the 8 AURA channels, for visual monitoring only.
+**Goal (as originally posed).** Show the most recent 5–10 s of the 8 AURA channels, for
+visual monitoring only.
 
 **Hard constraint.** The scientific path — `AuraLslReceiver` → `RawEegRingBuffer` →
 `EegFeaturePipeline` — must be untouched. No display feature may become a source for
@@ -54,12 +63,26 @@ data. It is a poor basis for a *live* monitor.
    filtered would mean either re-filtering for display (a second filter path — avoid) or
    exposing `m_Filtered`, which is analysis state.
 
-**Implemented tonight:** the panel, the incremental wire protocol (`/api/eeg?since=N`) and the
-renderer, driven by **synthetic data only**. The live endpoint returns
-`available: false` with a reason rather than inventing a trace.
+**Outcome.** A prototype panel, the incremental wire protocol (`/api/eeg?since=N`) and a
+canvas renderer were built on 2026-09-17 driven by **synthetic data only** — the live endpoint
+always reported `available: false` rather than inventing a trace, so no real EEG was ever
+displayed. All of it was **removed on 2026-09-25**: the panel, the endpoint, the protocol and
+the synthetic generator.
 
-**Measured cost of the wire protocol** (mock): full 10 s window 31.7 KB; incremental poll at
-2.5 Hz **≈4 KB**, roughly 10 KB/s on loopback.
+The reasoning is the same one that made option C unacceptable, applied one step further. The
+value of a waveform here was never high — AURA shows the same signal, at full rate, in the
+instrument's own display — while the cost was a large panel presenting an unfiltered, decimated
+trace that could be mistaken for the analysed signal. Removing it costs nothing a researcher
+needs and eliminates that confusion.
+
+**For the record**, the wire protocol worked and was cheap: full 10 s window 31.7 KB;
+incremental poll at 2.5 Hz **≈4 KB**, roughly 10 KB/s on loopback. If a waveform is ever
+wanted again, option A plus that protocol is the design to return to — but the current decision
+is that AURA is where raw EEG is watched.
+
+**What the dashboard shows instead:** a descriptive session EEG summary — windows observed,
+how many passed `featureValidity`, how many were rejected, and the dominant cause. Counts only,
+no interpretation.
 
 ---
 

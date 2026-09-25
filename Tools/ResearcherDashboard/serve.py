@@ -59,16 +59,6 @@ KNOWN_FILES = [
 
 MOCK = False
 
-# ---- Display-only EEG monitor -------------------------------------------------------------
-# A VIEWING rate, not an analysis rate. The scientific path reads the ring buffer at the
-# stream's own nominal rate and is untouched by anything here; this exists so a researcher can
-# see that the electrodes are producing a trace. Nothing computed from this is ever a feature.
-EEG_DISPLAY_RATE = 50.0          # Hz, decimated for the browser
-EEG_WINDOW_SECONDS = 10.0        # visible span
-EEG_LABELS = ["Fp1", "F3", "Fz", "F4", "Cz", "P3", "Pz", "P4"]
-
-
-
 # ----------------------------------------------------------------------------- mock data
 
 class MockClock:
@@ -218,8 +208,14 @@ class MockClock:
                 # Kept internally consistent with the window above: before the simulated
                 # bridging starts, windows fail on channel health instead. A demo that
                 # contradicts itself teaches the reader to distrust the panel.
+                # The GATE NAME must match the verdict. The real controller reports the first
+                # unmet prerequisite, so a window that passes featureValidity is rejected at
+                # NoApprovedNormalization instead -- labelling it FeatureInvalid made the
+                # summary count passing windows as failures.
                 "rejections": [
-                    {"cause": f"FeatureInvalid :: cross_channel={not near_identical}; "
+                    {"cause": ("FeatureInvalid :: " if not feature_valid
+                               else "NoApprovedNormalization :: ") +
+                              f"cross_channel={not near_identical}; "
                               f"channel_health={not degraded}; degraded_in_roi={in_roi}; "
                               f"flags={flags}",
                      "count": max(0, windows - 1)},
@@ -231,79 +227,6 @@ class MockClock:
         }
 
 
-class MockEeg:
-    """
-    Deterministic synthetic EEG for UI development.
-
-    Every sample is a pure function of its absolute index, so a client can poll with
-    ?since=N and append only what is new without the trace ever jumping or duplicating --
-    the same incremental contract a real implementation would use.
-
-    This is NOT filtered, NOT analysed and NOT the scientific path. It is a picture.
-    """
-
-    def __init__(self):
-        self.t0 = time.time()
-
-    def current_index(self):
-        return int((time.time() - self.t0) * EEG_DISPLAY_RATE)
-
-    @staticmethod
-    def _noise(n, ch):
-        # Cheap deterministic hash -> [-0.5, 0.5). Reproducible across requests.
-        h = (n * 2654435761 + ch * 40503 + 12345) & 0xFFFFFFFF
-        h ^= (h >> 13)
-        h = (h * 1274126177) & 0xFFFFFFFF
-        return ((h >> 8) & 0xFFFF) / 65536.0 - 0.5
-
-    def sample(self, n, ch):
-        t = n / EEG_DISPLAY_RATE
-        posterior = ch >= 5          # P3, Pz, P4
-        frontocentral = 1 <= ch <= 4  # F3, Fz, F4, Cz
-
-        v = 3.0 * math.sin(2 * math.pi * 0.23 * t + ch)             # slow common drift
-        v += (11.0 if posterior else 3.0) * math.sin(
-            2 * math.pi * 10.1 * t + ch * 0.7)                       # alpha, posterior-weighted
-        v += (9.0 if frontocentral else 3.5) * math.sin(
-            2 * math.pi * 6.2 * t + ch * 1.3)                        # theta, frontocentral-weighted
-        v += 2.5 * math.sin(2 * math.pi * 21.0 * t + ch * 2.1)       # low beta
-        v += 6.0 * self._noise(n, ch)
-
-        # Fp1 carries blink-like transients, as the frontmost electrode does in practice.
-        if ch == 0:
-            blink = t % 7.0
-            if blink < 0.32:
-                v += 55.0 * math.sin(math.pi * blink / 0.32)
-
-        return round(v, 3)
-
-    def window(self, since):
-        latest = self.current_index()
-        first_possible = max(0, latest - int(EEG_WINDOW_SECONDS * EEG_DISPLAY_RATE))
-
-        if since is None or since < first_possible or since > latest:
-            start = first_possible
-        else:
-            start = since
-
-        rows = [[self.sample(n, ch) for ch in range(8)] for n in range(start, latest)]
-
-        return {
-            "simulated": True,
-            "available": True,
-            "rate": EEG_DISPLAY_RATE,
-            "window_seconds": EEG_WINDOW_SECONDS,
-            "channels": EEG_LABELS,
-            "start_index": start,
-            "next_index": latest,
-            "units": "arbitrary display units (SIMULATED)",
-            "note": "Synthetic trace for UI development. Not filtered, not analysed, "
-                    "not the scientific path.",
-            "samples": rows,
-        }
-
-
-MOCK_EEG = MockEeg()
 MOCK_CLOCK = MockClock()
 
 
@@ -573,34 +496,6 @@ def live_files():
     return {"session_id": sid, "files": []}
 
 
-def eeg_window(query):
-    """
-    Recent samples for the display-only EEG monitor.
-
-    MOCK ONLY. In live mode this reports that no display feed exists rather than inventing
-    one: wiring it to real acquisition is an architecture decision that has not been taken,
-    and a panel that silently fell back to synthetic data would be the worst possible
-    outcome in a scientific tool.
-    """
-    if not MOCK:
-        return {
-            "simulated": False,
-            "available": False,
-            "reason": "No live EEG display feed. The status writer does not yet publish "
-                      "waveform samples; see the architecture assessment before enabling one.",
-            "channels": EEG_LABELS,
-        }
-
-    since = None
-    for part in (query or "").split("&"):
-        if part.startswith("since="):
-            try:
-                since = int(part[6:])
-            except ValueError:
-                since = None
-    return MOCK_EEG.window(since)
-
-
 # -------------------------------------------------------------------------------- server
 
 class Handler(BaseHTTPRequestHandler):
@@ -636,8 +531,6 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(live_events())
         if route == "/api/files":
             return self._json(live_files())
-        if route == "/api/eeg":
-            return self._json(eeg_window(urlparse(self.path).query))
         if route == "/api/sessions":
             # Real folders even in mock mode. Mock replaces the LIVE panel, which has no
             # hardware behind it; recorded sessions on disk are real either way, and hiding
