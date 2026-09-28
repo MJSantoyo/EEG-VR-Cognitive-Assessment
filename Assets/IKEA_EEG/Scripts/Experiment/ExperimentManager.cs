@@ -4519,6 +4519,81 @@ namespace IkeaEeg.Experiment
         }
 
         /// <summary>
+        /// Set only by <see cref="DeveloperSkipRestBlock"/>. Read by the three waits inside
+        /// RunRestBlock so the block finishes through its NORMAL path -- same end marker, same
+        /// hand-back, same continuation -- rather than being short-circuited from outside.
+        /// </summary>
+        bool m_DeveloperRestSkip;
+
+        /// <summary>
+        /// True for exactly as long as RunRestBlock is executing, set by the block itself.
+        ///
+        /// The skip used to be gated on m_State being PreTaskRest or PostTaskRest. That
+        /// worked for the pre-task block and failed for the post-task one, so the guard
+        /// was reading something that is not reliably what it claims during the second
+        /// block. This records the fact directly instead of inferring it: if the block is
+        /// running, it can be skipped, whatever the state enum happens to say.
+        /// </summary>
+        bool m_RestBlockRunning;
+
+        /// <summary>Which block is running, for the skip event. Set alongside the flag.</summary>
+        string m_RestBlockLabel;
+
+        /// <summary>
+        /// DEMO ONLY. Ends the rest block that is currently running, early.
+        ///
+        /// It does NOT change the configured 180 s, does not assign a state, does not teleport
+        /// and does not start a coroutine. It raises one flag that the existing waits inside
+        /// RunRestBlock already poll, so the block runs to its own completion path: the end
+        /// marker is logged, the room is handed back, and whatever normally follows follows.
+        /// PRE_TASK_REST therefore continues into word encoding and POST_TASK_REST into the
+        /// results path, through the state machine rather than around it.
+        ///
+        /// The run is marked developer-interrupted and the end marker carries
+        /// developer_skipped=TRUE with completed=FALSE, so no analysis can mistake a skipped
+        /// block for 180 s of resting baseline.
+        ///
+        /// Returns false, and changes nothing, when no rest block is running.
+        /// </summary>
+        public bool DeveloperSkipRestBlock()
+        {
+            if (!m_RestBlockRunning)
+            {
+                Debug.LogWarning("[IKEA_EEG] Developer rest skip ignored: no rest block is " +
+                                 $"running (state={m_State}). Nothing changed.");
+                return false;
+            }
+
+            if (m_DeveloperRestSkip)
+                return true;   // already skipping; a second press is not a second skip
+
+            var block = string.IsNullOrEmpty(m_RestBlockLabel)
+                ? "REST"
+                : m_RestBlockLabel;
+
+            m_Logger?.MarkDeveloperInterrupted($"developer skipped {block} for a demo");
+
+            Log(EventTypes.DeveloperRestSkipped, e =>
+            {
+                e.correct = "FALSE";
+                e.notes = $"rest_block={block}; reason=DEMO; developer_interrupted=TRUE; " +
+                          "run_is_not_a_valid_participant_protocol_run=TRUE; " +
+                          "baseline_from_this_block_is_NOT_usable=TRUE; " +
+                          "configured_duration_unchanged=TRUE";
+            });
+
+            Debug.LogWarning($"[IKEA_EEG] DEVELOPER SKIP: {block} ended early for a demo. This " +
+                             "run is NOT a valid participant protocol run and the block is NOT " +
+                             "usable as baseline.");
+
+            // Satisfies the READY gate too, using the same field the button sets, so a
+            // post-task rest waiting on READY also proceeds.
+            m_RestReadyPressed = true;
+            m_DeveloperRestSkip = true;
+            return true;
+        }
+
+        /// <summary>
         /// ONE eyes-open resting EEG acquisition block, used by both the pre- and the post-task
         /// recordings.
         ///
@@ -4556,6 +4631,14 @@ namespace IkeaEeg.Experiment
             bool requireReadyPress, System.Action<string, string> setText)
         {
             SetState(state);
+
+            // Cleared per block, so a skip can never leak into the next rest.
+            m_DeveloperRestSkip = false;
+            m_RestBlockRunning = true;
+            m_RestBlockLabel = label;
+
+            Debug.Log($"[IKEA_EEG] Rest block {label} started (state={state}). " +
+                      "Developer skip is available.");
 
             // ---- A clear field of view -----------------------------------------------------
             // Everything that could be looked at, read or pressed comes down before the
@@ -4603,7 +4686,8 @@ namespace IkeaEeg.Experiment
 
                 // No timeout. The participant decides when they are settled; a resting recording
                 // started while somebody is still getting comfortable is not a resting recording.
-                while (!m_RestReadyPressed && m_State != ExperimentState.Aborted)
+                while (!m_RestReadyPressed && !m_DeveloperRestSkip &&
+                       m_State != ExperimentState.Aborted)
                     yield return null;
 
                 if (m_UI != null)
@@ -4624,12 +4708,16 @@ namespace IkeaEeg.Experiment
 
                 var deadline = Time.time + window;
 
-                while (Time.time < deadline && m_State != ExperimentState.Aborted)
+                while (Time.time < deadline && !m_DeveloperRestSkip &&
+                       m_State != ExperimentState.Aborted)
                     yield return null;
             }
 
             if (m_State == ExperimentState.Aborted)
+            {
+                m_RestBlockRunning = false;
                 yield break;
+            }
 
             // ---- The acquisition interval --------------------------------------------------
             // From here until the end marker the participant sees ONE stationary glyph and
@@ -4658,7 +4746,8 @@ namespace IkeaEeg.Experiment
             var elapsed = 0d;
             var nextReport = 30d;
 
-            while (elapsed < durationSeconds && m_State != ExperimentState.Aborted)
+            while (elapsed < durationSeconds && !m_DeveloperRestSkip &&
+                   m_State != ExperimentState.Aborted)
             {
                 yield return null;
                 elapsed = Time.realtimeSinceStartupAsDouble - startedRealtime;
@@ -4678,6 +4767,7 @@ namespace IkeaEeg.Experiment
 
             var achieved = Time.realtimeSinceStartupAsDouble - startedRealtime;
             var aborted = m_State == ExperimentState.Aborted;
+            var devSkipped = m_DeveloperRestSkip;
 
             Log(endEvent, e =>
             {
@@ -4687,7 +4777,11 @@ namespace IkeaEeg.Experiment
                           durationSeconds.ToString("F1", CultureInfo.InvariantCulture) + "; " +
                           "achieved_duration_s=" +
                           achieved.ToString("F3", CultureInfo.InvariantCulture) + "; " +
-                          "completed=" + (aborted ? "FALSE" : "TRUE") + "; " +
+                          "completed=" + (aborted || devSkipped ? "FALSE" : "TRUE") + "; " +
+                          "developer_skipped=" + (devSkipped ? "TRUE" : "FALSE") + "; " +
+                          (devSkipped
+                              ? "run_is_not_a_valid_participant_protocol_run=TRUE; "
+                              : string.Empty) +
                           "task=NONE; response=NONE; narration=NONE";
             });
 
@@ -4702,6 +4796,12 @@ namespace IkeaEeg.Experiment
             }
 
             setText?.Invoke(string.Empty, string.Empty);
+
+            m_RestBlockRunning = false;
+
+            Debug.Log($"[IKEA_EEG] Rest block {label} finished " +
+                      $"(developer_skipped={devSkipped}). Continuing through the normal " +
+                      "path.");
         }
 
         /// <summary>

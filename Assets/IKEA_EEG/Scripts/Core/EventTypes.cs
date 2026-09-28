@@ -98,6 +98,9 @@ namespace IkeaEeg.Core
         /// <summary>A developer jumped areas. Marks the run DEVELOPER_INTERRUPTED.</summary>
         public const string DeveloperAreaJump = "DEVELOPER_AREA_JUMP";
 
+        /// <summary>Editor-only demo aid: a rest block was ended early by the developer.</summary>
+        public const string DeveloperRestSkipped = "DEVELOPER_REST_SKIPPED";
+
         // ---- Resting EEG acquisition blocks ------------------------------------------------
         // Two dedicated eyes-open resting recordings that bracket the cognitive protocol. They
         // are ACQUISITION blocks and nothing more: no task, no stimulus, no response, no score.
