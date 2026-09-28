@@ -138,8 +138,26 @@ namespace IkeaEeg.Interaction
             m_SeenBefore = seenBefore;
             m_NotSeenBefore = notSeenBefore;
             m_Root = root;
-            m_AreaAAnchor = areaAAnchor;
-            m_AreaCAnchor = areaCAnchor;
+
+            SetAnchor(RecognitionPhase.Immediate, areaAAnchor);
+            SetAnchor(RecognitionPhase.Delayed, areaCAnchor);
+        }
+
+        /// <summary>
+        /// Sets ONE phase's anchor, leaving the other alone.
+        ///
+        /// THIS PANEL IS SHARED AND PERSISTENT. It is a single object relocated between the
+        /// Area A and Area C anchors, so it belongs to neither room and cannot be duplicated
+        /// into both: two panels would mean two sets of response buttons and two sources of a
+        /// recognition answer. Once the rooms live in separate scenes only one anchor exists
+        /// at a time, so each room supplies its own here as it loads.
+        /// </summary>
+        public void SetAnchor(RecognitionPhase phase, Transform anchor)
+        {
+            if (phase == RecognitionPhase.Immediate)
+                m_AreaAAnchor = anchor;
+            else
+                m_AreaCAnchor = anchor;
         }
     }
 }

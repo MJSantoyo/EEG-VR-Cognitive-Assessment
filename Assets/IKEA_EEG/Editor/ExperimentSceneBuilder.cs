@@ -42,7 +42,7 @@ namespace IkeaEeg.EditorTools
     /// The existing project is not touched: the XR Origin comes from the untouched XRI
     /// Starter Assets prefab, and no package, project setting or existing scene is modified.
     /// </summary>
-    public static class ExperimentSceneBuilder
+    public static partial class ExperimentSceneBuilder
     {
         public const string ScenePath = ExperimentAssetBuilder.ScenesFolder + "/IKEA_EEG_Experiment.unity";
 
@@ -1823,9 +1823,17 @@ namespace IkeaEeg.EditorTools
             var chairTaskGo = new GameObject("ChairSelectionTask");
             chairTaskGo.transform.SetParent(expRoot.transform);
             var chairTask = chairTaskGo.AddComponent<ChairSelectionTask>();
-            chairTask.SetChairs(chairs);
-            chairTask.SetSlots(chairSlots);
+
+            // The TARGET is configuration and is persistent. The chairs and slots are room
+            // objects: present when this builds the single combined scene, absent when it
+            // builds the bootstrap scene, and handed over by AreaBSceneContext on load.
             chairTask.SetTarget(config.targetChair);
+
+            if (chairs != null)
+                chairTask.SetChairs(chairs);
+
+            if (chairSlots != null)
+                chairTask.SetSlots(chairSlots);
 
             // One material per ChairColor, in enum order, so a generated trial can dress any
             // chair in any colour without the chair holding a palette of its own.
@@ -1835,7 +1843,7 @@ namespace IkeaEeg.EditorTools
 
             chairTask.SetColorMaterials(colorMaterials);
 
-            if (!chairTask.ValidateTargetIsUnique(out var matchCount))
+            if (chairs != null && !chairTask.ValidateTargetIsUnique(out var matchCount))
             {
                 Debug.LogError($"[IKEA_EEG] The authored layout's target chair {config.targetChair} " +
                                $"matches {matchCount} chairs (expected exactly 1). This affects " +
@@ -1848,61 +1856,22 @@ namespace IkeaEeg.EditorTools
             teleporterGo.transform.SetParent(expRoot.transform);
             var teleporter = teleporterGo.AddComponent<XRRigTeleporter>();
             teleporter.SetXROrigin(xrOrigin);
-            teleporter.SetSpawnPoints(spawnA, spawnB, spawnC, spawn0);
+
+            // Spawns are room objects. In the bootstrap scene they do not exist yet and each
+            // AreaSceneContext sets its own through SetSpawnPoint when its room loads.
+            if (spawnA != null || spawnB != null || spawnC != null || spawn0 != null)
+                teleporter.SetSpawnPoints(spawnA, spawnB, spawnC, spawn0);
 
             // ---- UI ---------------------------------------------------------------------
             var uiGo = new GameObject("ExperimentUIController");
             uiGo.transform.SetParent(expRoot.transform);
             var ui = uiGo.AddComponent<ExperimentUIController>();
 
-            ui.BindLanguagePanel(ui0.languagePanel, ui0.languageTitle, ui0.languageEnglishButton,
-                ui0.languageSpanishButton, ui0.languageJapaneseButton);
-            ui.BindFamiliarization(ui0.panel, ui0.instruction, ui0.status,
-                ui0.startExperimentButton, ui0.skipIntroButton,
-                ui0.researcherStatusPanel, ui0.researcherStatusText,
-                ui0.practicePrompt, ui0.readyLabel, ui0.startHighlight,
-                ui0.replayInstructionsButton);
-            ui.BindShapeLegend(uiB.shapeLegend);
-            ui.BindAreaA(uiA.panel, uiA.title, uiA.instruction, uiA.word, uiA.status,
-                uiA.startButton, uiA.enterButton, uiA.recognitionCounter,
-                uiA.developerCheatsheet, uiA.fixation);
-            ui.BindAreaB(uiB.instructionPanel, uiB.instruction, uiB.statusPanel, uiB.status,
-                uiB.feedback, uiB.exitButton, uiB.readyButton, uiB.instructionOverlay,
-                uiB.overlayText);
-            ui.BindAreaC(uiC.panel, uiC.instruction, uiC.status, uiC.results,
-                uiC.restartButton, uiC.endButton, uiC.newTrialButton, uiC.word,
-                uiC.recognitionCounter, uiC.developerCheatsheet, uiC.fixation,
-                uiC.restReadyButton);
-            ui.BindShared(uiA.recenterButton, uiB.recenterButton, uiC.recenterButton,
-                uiA.warning, uiB.warning, uiC.warning, uiA.recheckAudioButton,
-                ui0.recenterButton, ui0.warning);
-
-            // ---- Localized static captions -------------------------------------------------
-            // Every participant-facing button caption is bound to a key here, so the whole UI
-            // switches language in one assignment and no caption can be left in the previous
-            // language. The three language buttons are deliberately NOT bound: each always
-            // shows its own language's name.
-            LocalizeButton(ui0.startExperimentButton, LocKeys.StartExperiment);
-            LocalizeButton(ui0.skipIntroButton, LocKeys.SkipIntro);
-            LocalizeButton(ui0.replayInstructionsButton, LocKeys.ReplayInstructions);
-            LocalizeButton(ui0.recenterButton, LocKeys.Recenter);
-            LocalizeText(ui0.readyLabel, LocKeys.PracticeReady);
-
-            LocalizeButton(uiA.recheckAudioButton, LocKeys.RecheckAudio);
-            LocalizeButton(uiA.startButton, LocKeys.Start);
-            LocalizeButton(uiA.enterButton, LocKeys.EnterShowroom);
-            LocalizeButton(uiA.recenterButton, LocKeys.Recenter);
-            LocalizeText(uiA.title, LocKeys.AreaATitle);
-
-            LocalizeButton(uiB.readyButton, LocKeys.Ready);
-            LocalizeButton(uiB.exitButton, LocKeys.ExitShowroom);
-            LocalizeButton(uiB.recenterButton, LocKeys.Recenter);
-
-            LocalizeButton(uiC.newTrialButton, LocKeys.NewTrial, LocKeys.NewTrialSubtitle);
-            LocalizeButton(uiC.restartButton, LocKeys.Restart, LocKeys.RestartSubtitle);
-            LocalizeButton(uiC.endButton, LocKeys.End, LocKeys.EndSubtitle);
-            LocalizeButton(uiC.recenterButton, LocKeys.Recenter);
-            LocalizeButton(uiC.restReadyButton, LocKeys.Ready);
+            // Room UI and its localized captions. Present when this builds the single combined
+            // scene; absent when it builds the bootstrap scene, where each AreaSceneContext
+            // binds its own room through these SAME methods as the room loads.
+            if (ui0 != null && uiA != null && uiB != null && uiC != null)
+                BindRoomUi(ui, ui0, uiA, uiB, uiC);
 
             // ---- Developer navigation (NOT participant functionality) ----------------------
             var devNavGo = new GameObject("DeveloperNavigation");
@@ -1930,6 +1899,88 @@ namespace IkeaEeg.EditorTools
                        eegReceiver, eegRecorder, eegPipeline })
             {
                 EditorUtility.SetDirty(o);
+            }
+        }
+
+        /// <summary>
+        /// Binds all four rooms' UI, and their localized captions, into the controller.
+        ///
+        /// Only reachable when every area is in the SAME scene. Once the rooms are split each
+        /// AreaSceneContext calls the very same Bind methods for its own room as it loads, so
+        /// an authored bind and a runtime bind cannot produce different wiring.
+        /// </summary>
+        static void BindRoomUi(ExperimentUIController ui, Area0Ui ui0, AreaAUi uiA,
+            AreaBUi uiB, AreaCUi uiC)
+        {
+            ui.BindLanguagePanel(ui0.languagePanel, ui0.languageTitle, ui0.languageEnglishButton,
+                ui0.languageSpanishButton, ui0.languageJapaneseButton);
+            ui.BindFamiliarization(ui0.panel, ui0.instruction, ui0.status,
+                ui0.startExperimentButton, ui0.skipIntroButton,
+                ui0.researcherStatusPanel, ui0.researcherStatusText,
+                ui0.practicePrompt, ui0.readyLabel, ui0.startHighlight,
+                ui0.replayInstructionsButton);
+            ui.BindShapeLegend(uiB.shapeLegend);
+            ui.BindAreaA(uiA.panel, uiA.title, uiA.instruction, uiA.word, uiA.status,
+                uiA.startButton, uiA.enterButton, uiA.recognitionCounter,
+                uiA.developerCheatsheet, uiA.fixation);
+            ui.BindAreaB(uiB.instructionPanel, uiB.instruction, uiB.statusPanel, uiB.status,
+                uiB.feedback, uiB.exitButton, uiB.readyButton, uiB.instructionOverlay,
+                uiB.overlayText);
+            ui.BindAreaC(uiC.panel, uiC.instruction, uiC.status, uiC.results,
+                uiC.restartButton, uiC.endButton, uiC.newTrialButton, uiC.word,
+                uiC.recognitionCounter, uiC.developerCheatsheet, uiC.fixation,
+                uiC.restReadyButton);
+            ui.BindShared(uiA.recenterButton, uiB.recenterButton, uiC.recenterButton,
+                uiA.warning, uiB.warning, uiC.warning, uiA.recheckAudioButton,
+                ui0.recenterButton, ui0.warning);
+
+            LocalizeRoomCaptions(ui0, uiA, uiB, uiC);
+        }
+
+        /// <summary>
+        /// Every participant-facing button caption bound to a localization key.
+        ///
+        /// The whole UI then switches language in one assignment and no caption can be left in
+        /// the previous language. The three language buttons are deliberately NOT bound: each
+        /// always shows its own language's name.
+        ///
+        /// Split per area so a room scene can localize only its own captions. LocalizeButton
+        /// attaches a component to the button, so it MUST run in the scene that owns it.
+        /// </summary>
+        static void LocalizeRoomCaptions(Area0Ui ui0, AreaAUi uiA, AreaBUi uiB, AreaCUi uiC)
+        {
+            if (ui0 != null)
+            {
+                LocalizeButton(ui0.startExperimentButton, LocKeys.StartExperiment);
+                LocalizeButton(ui0.skipIntroButton, LocKeys.SkipIntro);
+                LocalizeButton(ui0.replayInstructionsButton, LocKeys.ReplayInstructions);
+                LocalizeButton(ui0.recenterButton, LocKeys.Recenter);
+                LocalizeText(ui0.readyLabel, LocKeys.PracticeReady);
+            }
+
+            if (uiA != null)
+            {
+                LocalizeButton(uiA.recheckAudioButton, LocKeys.RecheckAudio);
+                LocalizeButton(uiA.startButton, LocKeys.Start);
+                LocalizeButton(uiA.enterButton, LocKeys.EnterShowroom);
+                LocalizeButton(uiA.recenterButton, LocKeys.Recenter);
+                LocalizeText(uiA.title, LocKeys.AreaATitle);
+            }
+
+            if (uiB != null)
+            {
+                LocalizeButton(uiB.readyButton, LocKeys.Ready);
+                LocalizeButton(uiB.exitButton, LocKeys.ExitShowroom);
+                LocalizeButton(uiB.recenterButton, LocKeys.Recenter);
+            }
+
+            if (uiC != null)
+            {
+                LocalizeButton(uiC.newTrialButton, LocKeys.NewTrial, LocKeys.NewTrialSubtitle);
+                LocalizeButton(uiC.restartButton, LocKeys.Restart, LocKeys.RestartSubtitle);
+                LocalizeButton(uiC.endButton, LocKeys.End, LocKeys.EndSubtitle);
+                LocalizeButton(uiC.recenterButton, LocKeys.Recenter);
+                LocalizeButton(uiC.restReadyButton, LocKeys.Ready);
             }
         }
 
@@ -2665,6 +2716,7 @@ namespace IkeaEeg.EditorTools
             var colliderCount = Object.FindObjectsByType<Collider>(FindObjectsSortMode.None).Length;
             sb.AppendLine($"  info  {colliderCount} colliders in the scene (walls, floors, chairs)");
 
+            problems += CheckAreaRootTransforms(sb);
             problems += CheckInteractorReach(sb);
             problems += CheckFamiliarizationContainment(sb);
             problems += CheckChairSlots(sb);
@@ -2683,6 +2735,55 @@ namespace IkeaEeg.EditorTools
                 : $"[IKEA_EEG] VALIDATION FOUND {problems} PROBLEM(S).");
 
             return sb.ToString();
+        }
+
+        /// <summary>
+        /// The four room roots stand EXACTLY on their authored origins, unrotated and unscaled.
+        ///
+        /// WHY THIS EXISTS. On 2026-09-28 a batch run left Area_B_Showroom at x = 105.36 instead
+        /// of x = 100 and SAVED it. Every other check in this validator passed, and so did all
+        /// 2891 self-test assertions: nothing here looked at where a room actually stood, only
+        /// at what it contained. A 5.36 m displacement of an entire showroom was invisible to
+        /// the whole safety net and was caught only by diffing the scene file by hand.
+        ///
+        /// The room origins are the one number the areas' separation rests on. Area A's skyline
+        /// reaching into Area B was a 3 m overlap; a room drifting is the same class of fault
+        /// arriving from the other direction, and it silently invalidates every coordinate in
+        /// every capture, validator and prefab that assumes a room is where it says it is.
+        ///
+        /// Checked in WORLD space, because that is what the builder assigns and what actually
+        /// determines whether two rooms overlap. The Environment parent is checked first: if it
+        /// moves, every room moves with it and each individual root would still look correct
+        /// relative to its parent.
+        /// </summary>
+        static int CheckAreaRootTransforms(StringBuilder sb)
+        {
+            var environment = Object.FindObjectsByType<Transform>(FindObjectsSortMode.None)
+                .FirstOrDefault(t => t.name == "Environment" && t.parent == null);
+
+            if (environment == null)
+            {
+                sb.AppendLine("  FAIL  no root GameObject named 'Environment' — the area roots " +
+                              "cannot be located, so their origins were not checked.");
+                return 1;
+            }
+
+            // CheckRootAt is the ONE implementation of this guard, shared with the bootstrap
+            // and room-scene validators. See ExperimentSceneBuilder.AreaScenes.cs.
+            var problems = CheckRootAt(sb, environment, "Environment", Vector3.zero);
+
+            foreach (var (name, expected) in new[]
+                     {
+                         ("Area_0_Familiarization", k_Area0Origin),
+                         ("Area_A_Entrance", k_AreaAOrigin),
+                         ("Area_B_Showroom", k_AreaBOrigin),
+                         ("Area_C_Exit", k_AreaCOrigin),
+                     })
+            {
+                problems += CheckRootAt(sb, environment.Find(name), name, expected);
+            }
+
+            return problems;
         }
 
         /// <summary>

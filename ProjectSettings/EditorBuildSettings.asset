@@ -11,6 +11,18 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/IKEA_EEG/Scenes/IKEA_EEG_Experiment.unity
     guid: f1cfab3a70cdd8848ad76dd902ccf528
+  - enabled: 1
+    path: Assets/IKEA_EEG/Scenes/IKEA_EEG_Bootstrap.unity
+    guid: 49de311326a8e374f8cecf6427cf3c16
+  - enabled: 1
+    path: Assets/IKEA_EEG/Scenes/IKEA_EEG_AreaA.unity
+    guid: f753934dc90e39b44936061e7ae56a0f
+  - enabled: 1
+    path: Assets/IKEA_EEG/Scenes/IKEA_EEG_AreaB.unity
+    guid: 7ab8c9cc5b3bca84daa9acefb67fdc11
+  - enabled: 1
+    path: Assets/IKEA_EEG/Scenes/IKEA_EEG_AreaC.unity
+    guid: 9705630a7f2616240b7539235dc89214
   m_configObjects:
     Unity.XR.Oculus.Settings: {fileID: 11400000, guid: bfa1182bd221b4ca89619141f66f1260, type: 2}
     Unity.XR.WindowsMR.Settings: {fileID: 11400000, guid: dc5a169419fa04987b057f65238cf3ba, type: 2}

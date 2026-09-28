@@ -9,6 +9,7 @@ using IkeaEeg.Data;
 using IkeaEeg.Interaction;
 using IkeaEeg.Localization;
 using IkeaEeg.Memory;
+using IkeaEeg.SceneFlow;
 using IkeaEeg.UI;
 using IkeaEeg.XR;
 
@@ -410,11 +411,7 @@ namespace IkeaEeg.Experiment
             if (m_Voice != null)
                 m_Voice.recordingCompleted += OnRecordingCompleted;
 
-            foreach (var practice in m_PracticeObjects)
-            {
-                if (practice != null)
-                    practice.practiceSelected += OnPracticeObjectSelected;
-            }
+            SubscribePracticeObjects();
 
             if (m_DeveloperNavigation != null)
             {
@@ -559,11 +556,7 @@ namespace IkeaEeg.Experiment
             if (m_Voice != null)
                 m_Voice.recordingCompleted -= OnRecordingCompleted;
 
-            foreach (var practice in m_PracticeObjects)
-            {
-                if (practice != null)
-                    practice.practiceSelected -= OnPracticeObjectSelected;
-            }
+            UnsubscribePracticeObjects();
 
             if (m_DeveloperNavigation != null)
             {
@@ -602,6 +595,12 @@ namespace IkeaEeg.Experiment
                 yield return m_Voice.RunStartupMicrophoneTest();
 
             PrepareTrial();
+
+            // THE FIRST ROOM. Under the split architecture the bootstrap scene holds only the
+            // persistent systems: no room is loaded yet, so there is nowhere to stand and no
+            // Area 0 UI to bind. This waits for the Area A room (which carries Area 0) before
+            // anything is shown. In the combined scene it is the teleport it always was.
+            yield return EnterRoom(ExperimentArea.Familiarization);
 
             // LANGUAGE FIRST. Nothing cognitive — and nothing with words in it — is shown until
             // the participant has chosen the language every later instruction will be given in.
@@ -1180,7 +1179,98 @@ namespace IkeaEeg.Experiment
             if (m_ChairTask != null)
                 m_ChairTask.ResetTask();
 
-            PrepareChairBlock();
+            PrepareChairBlockWhenRoomIsAvailable();
+        }
+
+        /// <summary>
+        /// True once the chair block has been generated against real chairs.
+        ///
+        /// Not a config flag and not part of the protocol: purely a record of whether the
+        /// deferred preparation has happened yet, so entering Area B twice cannot regenerate
+        /// the block and hand the participant a different set of trials mid-session.
+        /// </summary>
+        bool m_ChairBlockPrepared;
+
+        /// <summary>
+        /// The six chairs and their slots are real, so a block can actually be generated.
+        ///
+        /// Under the single combined scene this is always true at PrepareTrial time. Under the
+        /// split it is false until Area B loads, because ChairSelectionTask has nothing to
+        /// describe yet.
+        /// </summary>
+        bool ChairIdentitiesAreBound()
+        {
+            if (m_ChairTask == null)
+                return false;
+
+            var ids = m_ChairTask.GetChairIds();
+
+            return ids != null && ids.Count >= 2 &&
+                   m_ChairTask.slots != null && m_ChairTask.slots.Count > 0;
+        }
+
+        /// <summary>
+        /// Generates the chair block now if the showroom is loaded, or defers it until it is.
+        ///
+        /// WHY DEFER. PrepareChairBlock reads the chair identities and the slot count out of
+        /// ChairSelectionTask. In the combined scene every chair existed before the session
+        /// began, so calling this from PrepareTrial during Start was correct. Under the split
+        /// architecture Area B is not loaded at Start -- deliberately -- so the generator was
+        /// being handed an EMPTY chair set and failing with "at least two chair identities are
+        /// required", leaving Area B with no trials at all.
+        ///
+        /// DEFERRING CHANGES NO OUTCOME. TryGenerateBlock is a pure function of the session
+        /// seed, the difficulty sequence, the difficulty profiles, the chair identities and the
+        /// slot count. The seed is fixed at BeginSession, long before either call site, and the
+        /// other four are properties of the configuration and the authored room. Running it
+        /// later therefore produces the identical block: same trial count, same LOW -> MEDIUM
+        /// -> HIGH order, same targets, same scoring, same logging.
+        ///
+        /// Nothing about the generator's validation is relaxed. The refusal to run an
+        /// unguaranteed block is left exactly as it was; it simply is no longer asked a
+        /// question it cannot answer yet.
+        /// </summary>
+        void PrepareChairBlockWhenRoomIsAvailable()
+        {
+            m_ChairBlockPrepared = false;
+
+            if (ChairIdentitiesAreBound())
+            {
+                PrepareChairBlock();
+                m_ChairBlockPrepared = true;
+                return;
+            }
+
+            // Keep the same reset PrepareChairBlock would have done, so nothing downstream
+            // reads a stale block from a previous run while we wait for the room.
+            m_ChairPlans.Clear();
+            m_SessionResults.chairTrials.Clear();
+            m_UsingGeneratedTrials = m_Config != null && m_Config.useGeneratedChairTrials;
+
+            Debug.Log("[IKEA_EEG] Chair block generation DEFERRED: the showroom is not loaded " +
+                      "yet, so there are no chair identities to generate against. It will run " +
+                      "from the same session seed the moment Area B is bound.");
+        }
+
+        /// <summary>
+        /// Generates the chair block on entry to Area B, if it has not been generated already.
+        ///
+        /// Called after the room is bound and before AREA_B_ENTER is logged, so the event's
+        /// chair_trials_planned count is the real one.
+        /// </summary>
+        void EnsureChairBlockPrepared()
+        {
+            if (m_ChairBlockPrepared)
+                return;
+
+            PrepareChairBlockWhenRoomIsAvailable();
+
+            if (!m_ChairBlockPrepared)
+            {
+                Debug.LogError("[IKEA_EEG] Area B was entered but the chair identities are " +
+                               "still not bound, so no chair block could be generated. This is " +
+                               "a room-binding fault, not a configuration one.");
+            }
         }
 
         /// <summary>
@@ -2303,10 +2393,24 @@ namespace IkeaEeg.Experiment
             if (m_UI != null)
                 m_UI.ShowEnterAreaBButton(false);
 
+            // A -> B is now a SCENE boundary, so the move has to be awaited. The body moved
+            // into a coroutine unchanged apart from that wait; the order of everything the
+            // participant and the CSV see is identical.
+            StopFlow();
+            m_Flow = StartCoroutine(EnterAreaBRoutine());
+        }
+
+        IEnumerator EnterAreaBRoutine()
+        {
             SetRoom(ExperimentArea.AreaB);
 
-            if (m_Teleporter != null)
-                m_Teleporter.TeleportTo(ExperimentArea.AreaB);
+            // Loads the Area B scene, binds its chairs and UI, places the participant, and
+            // unloads Area A. Nothing below runs until the showroom is really there.
+            yield return EnterRoom(ExperimentArea.AreaB);
+
+            // The chairs exist only now. Generated from the SAME session seed, so the block is
+            // identical to the one Start would have produced had the room been loaded then.
+            EnsureChairBlockPrepared();
 
             if (m_UI != null)
                 m_UI.ShowArea(ExperimentArea.AreaB);
@@ -2315,6 +2419,8 @@ namespace IkeaEeg.Experiment
                 ? m_ChairPlans.Count
                 : Mathf.Max(1, m_Config.chairTrialsPerRun);
 
+            // Logged AFTER the room is ready, so AREA_B_ENTER marks the participant actually
+            // being in the showroom rather than a load that might still fail.
             Log(EventTypes.AreaBEnter, e =>
             {
                 e.chairTrialCount = plannedTrials.ToString(CultureInfo.InvariantCulture);
@@ -2322,8 +2428,7 @@ namespace IkeaEeg.Experiment
                           $"generated={(m_UsingGeneratedTrials ? "TRUE" : "FALSE")}";
             });
 
-            StopFlow();
-            m_Flow = StartCoroutine(RunAreaB());
+            yield return RunAreaB();
         }
 
         void OnExitToAreaCPressed()
@@ -2334,18 +2439,25 @@ namespace IkeaEeg.Experiment
             if (m_UI != null)
                 m_UI.ShowExitToAreaCButton(false);
 
+            // B -> C is the second scene boundary. Same treatment as A -> B.
+            StopFlow();
+            m_Flow = StartCoroutine(EnterAreaCRoutine());
+        }
+
+        IEnumerator EnterAreaCRoutine()
+        {
             SetRoom(ExperimentArea.AreaC);
 
-            if (m_Teleporter != null)
-                m_Teleporter.TeleportTo(ExperimentArea.AreaC);
+            // Loads Area C, binds its UI and its recognition anchor, places the participant,
+            // and unloads the showroom.
+            yield return EnterRoom(ExperimentArea.AreaC);
 
             if (m_UI != null)
                 m_UI.ShowArea(ExperimentArea.AreaC);
 
             Log(EventTypes.AreaCEnter);
 
-            StopFlow();
-            m_Flow = StartCoroutine(RunAreaC());
+            yield return RunAreaC();
         }
 
         /// <summary>
@@ -2474,24 +2586,55 @@ namespace IkeaEeg.Experiment
                     EvaluateStimulusReadiness(logToConsole: false);
                     break;
 
+                // Both developer jumps now cross a scene boundary, so they go through the SAME
+                // EnterRoom the protocol uses. The keyboard shortcut and the developer panel
+                // therefore load the room exactly the way the experiment does -- no second
+                // placement path, and no manual moving of the rig.
                 case ExperimentArea.AreaB:
-                    SetRoom(ExperimentArea.AreaB);
-                    m_Teleporter?.TeleportTo(ExperimentArea.AreaB);
-                    m_UI?.ShowArea(ExperimentArea.AreaB);
-                    SetState(ExperimentState.ReadyForAreaB);
-                    m_Flow = StartCoroutine(RunAreaB());
+                    m_Flow = StartCoroutine(DeveloperEnterAreaB());
                     break;
 
                 case ExperimentArea.AreaC:
-                    SetRoom(ExperimentArea.AreaC);
-                    m_Teleporter?.TeleportTo(ExperimentArea.AreaC);
-                    m_UI?.ShowArea(ExperimentArea.AreaC);
-                    m_Flow = StartCoroutine(RunAreaC());
+                    m_Flow = StartCoroutine(DeveloperEnterAreaC());
                     break;
             }
 
             Debug.LogWarning($"[IKEA_EEG] DEVELOPER AREA JUMP -> {area}. This run is now marked " +
                              "DEVELOPER_INTERRUPTED and must not be reported as participant data.");
+        }
+
+        /// <summary>
+        /// The developer jump into Area B, awaiting the room load.
+        ///
+        /// Identical to what the switch used to do inline, with EnterRoom in place of the bare
+        /// teleport. It adds NO event of its own: OnDeveloperAreaJump has already marked the
+        /// run developer-interrupted and written DEVELOPER_AREA_JUMP before this starts, and
+        /// logging again here would misrepresent one jump as two.
+        /// </summary>
+        IEnumerator DeveloperEnterAreaB()
+        {
+            SetRoom(ExperimentArea.AreaB);
+            yield return EnterRoom(ExperimentArea.AreaB);
+
+            // The developer jump reaches Area B without passing through the protocol, so it
+            // needs the same deferred generation the normal path gets.
+            EnsureChairBlockPrepared();
+
+            m_UI?.ShowArea(ExperimentArea.AreaB);
+            SetState(ExperimentState.ReadyForAreaB);
+
+            yield return RunAreaB();
+        }
+
+        /// <summary>The developer jump into Area C. See <see cref="DeveloperEnterAreaB"/>.</summary>
+        IEnumerator DeveloperEnterAreaC()
+        {
+            SetRoom(ExperimentArea.AreaC);
+            yield return EnterRoom(ExperimentArea.AreaC);
+
+            m_UI?.ShowArea(ExperimentArea.AreaC);
+
+            yield return RunAreaC();
         }
 
         /// <summary>
@@ -5314,6 +5457,124 @@ namespace IkeaEeg.Experiment
         // Builder wiring
         // ---------------------------------------------------------------------------------
 
+        // =================================================================================
+        // Room changes
+        // =================================================================================
+
+        /// <summary>
+        /// Resolved at run time, never serialized: it exists only in the BOOTSTRAP scene, and
+        /// its presence is precisely what tells this manager which architecture it is running
+        /// under. No loader means the single combined scene, where every room is already
+        /// present and a room change has always been just a teleport.
+        /// </summary>
+        AreaSceneLoader m_SceneLoader;
+
+        AreaSceneLoader ResolveSceneLoader()
+        {
+            if (m_SceneLoader == null)
+                m_SceneLoader = FindAnyObjectByType<AreaSceneLoader>();
+
+            return m_SceneLoader;
+        }
+
+        /// <summary>
+        /// Puts the participant in a room, and does not return until they are actually in it.
+        ///
+        /// THE ONE PLACE A ROOM CHANGES. Every caller -- the protocol's own A -> B and B -> C
+        /// boundaries, the session's first entry into Area A, and the developer area jump --
+        /// comes through here, so there is exactly one answer to "what does entering a room
+        /// mean" and the split cannot be half-applied.
+        ///
+        /// SPLIT SCENES: hands off to AreaSceneLoader, which loads the destination additively,
+        /// rebinds that room's AreaSceneContext into these same persistent systems, places the
+        /// participant through the existing XRRigTeleporter, and only then unloads the room
+        /// being left. This yields until all of that is done, which is what stops the state
+        /// machine from running a task against a room that is not there yet.
+        ///
+        /// SINGLE COMBINED SCENE: falls back to the teleport this has always done. The check is
+        /// deliberately "is there a loader", NOT "do the room scenes exist on disk" -- the room
+        /// scenes exist as soon as they are built, and additively loading Area B on top of the
+        /// combined scene would produce a SECOND showroom with a second set of chairs.
+        ///
+        /// Either way nothing is created, nothing is destroyed but the room being left, and the
+        /// session, the logger and the EEG pipeline never learn that a scene changed.
+        /// </summary>
+        IEnumerator EnterRoom(ExperimentArea area)
+        {
+            var loader = ResolveSceneLoader();
+
+            if (loader != null && AreaSceneLoader.multiSceneAvailable)
+            {
+                yield return loader.SwitchTo(area);
+                yield break;
+            }
+
+            if (m_Teleporter != null)
+                m_Teleporter.TeleportTo(area);
+        }
+
+        /// <summary>
+        /// Replaces the familiarization practice objects.
+        ///
+        /// Separated from <see cref="Bind"/> because the practice objects live in the Area A
+        /// room scene: once the rooms load separately they do not exist when the persistent
+        /// systems are created, and have to be handed over when that room loads. Everything
+        /// else Bind does is persistent and happens exactly once.
+        ///
+        /// Replaces rather than appends, so re-entering Area A cannot accumulate duplicates.
+        /// </summary>
+        public void SetPracticeObjects(IEnumerable<PracticeObject> practiceObjects)
+        {
+            // Let go of the outgoing set BEFORE the list is replaced, or those objects keep a
+            // live delegate into this manager after their room has been unloaded.
+            UnsubscribePracticeObjects();
+
+            m_PracticeObjects.Clear();
+
+            if (practiceObjects != null)
+                m_PracticeObjects.AddRange(practiceObjects);
+
+            // AND SUBSCRIBE TO THE INCOMING SET. Binding a practice object is not the same as
+            // listening to it. OnEnable is what has always wired practiceSelected, and in the
+            // combined scene that was enough because the four objects were serialized into this
+            // manager before Play began. In the bootstrap scene OnEnable runs with the list
+            // EMPTY -- Bind is called with practiceObjects: null because no room is loaded --
+            // so the XR ray would hover a ball, the trigger would fire selectEntered, the
+            // PracticeObject would raise practiceSelected, and nobody would be listening.
+            //
+            // Guarded on isActiveAndEnabled so a set supplied while this manager is disabled is
+            // not subscribed twice: OnEnable will do it on the way back up.
+            if (isActiveAndEnabled)
+                SubscribePracticeObjects();
+        }
+
+        /// <summary>
+        /// Listens to whichever practice objects are bound right now.
+        ///
+        /// Each subscription is removed before it is added, so this is safe to call repeatedly:
+        /// re-entering Area A cannot end up reporting one practice selection twice.
+        /// </summary>
+        void SubscribePracticeObjects()
+        {
+            foreach (var practice in m_PracticeObjects)
+            {
+                if (practice == null)
+                    continue;
+
+                practice.practiceSelected -= OnPracticeObjectSelected;
+                practice.practiceSelected += OnPracticeObjectSelected;
+            }
+        }
+
+        void UnsubscribePracticeObjects()
+        {
+            foreach (var practice in m_PracticeObjects)
+            {
+                if (practice != null)
+                    practice.practiceSelected -= OnPracticeObjectSelected;
+            }
+        }
+
         public void Bind(ExperimentConfig config, EventLogger logger, ExperimentUIController ui,
             XRRigTeleporter teleporter, ChairSelectionTask chairTask, VoiceRecallManager voice,
             ExperimentAudio audio, LslMarkerSink lslSink = null,
@@ -5321,10 +5582,7 @@ namespace IkeaEeg.Experiment
             DeveloperNavigation developerNavigation = null)
         {
             if (practiceObjects != null)
-            {
-                m_PracticeObjects.Clear();
-                m_PracticeObjects.AddRange(practiceObjects);
-            }
+                SetPracticeObjects(practiceObjects);
 
             m_DeveloperNavigation = developerNavigation;
 

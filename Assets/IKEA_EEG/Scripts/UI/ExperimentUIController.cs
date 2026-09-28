@@ -224,7 +224,36 @@ namespace IkeaEeg.UI
             EnsureSessionControlLocks();
         }
 
-        void OnEnable()
+        void OnEnable() => HookButtons();
+
+        void OnDisable() => UnhookButtons();
+
+        /// <summary>
+        /// Re-subscribes to whatever buttons are bound RIGHT NOW.
+        ///
+        /// WHY THIS EXISTS. OnEnable is the only thing that has ever wired these 26 onClick
+        /// listeners, and in the single combined scene that was enough: every button already
+        /// existed and was already serialized into this controller before Play began.
+        ///
+        /// Under the split architecture it is not. This controller lives in the bootstrap
+        /// scene, so OnEnable runs while every button field is still NULL -- no room is loaded
+        /// yet -- and AddListener(null, ...) does nothing. The room then loads and its
+        /// AreaSceneContext calls the Bind* methods, which ASSIGN the fields but do not
+        /// subscribe. The result is a button that hit-tests correctly, reports
+        /// IsPointerOverGameObject() = true, is fully interactable, and has NO subscribers:
+        /// the click is delivered and lands on an empty UnityEvent.
+        ///
+        /// Unhook runs first so this is safe to call repeatedly. RemoveListener on a button
+        /// that was never subscribed, or on a null field, is a no-op, and without it
+        /// re-entering a room would subscribe a second time and fire every action twice.
+        /// </summary>
+        public void RewireBoundButtons()
+        {
+            UnhookButtons();
+            HookButtons();
+        }
+
+        void HookButtons()
         {
             AddListener(m_LanguageEnglishButton, RaiseLanguageEnglish);
             AddListener(m_LanguageSpanishButton, RaiseLanguageSpanish);
@@ -254,7 +283,7 @@ namespace IkeaEeg.UI
             AddListener(m_DevLanguageButton, RaiseDevLanguage);
         }
 
-        void OnDisable()
+        void UnhookButtons()
         {
             RemoveListener(m_LanguageEnglishButton, RaiseLanguageEnglish);
             RemoveListener(m_LanguageSpanishButton, RaiseLanguageSpanish);
@@ -906,19 +935,56 @@ namespace IkeaEeg.UI
             m_AreaADeveloperCheatsheet = developerCheatsheet;
         }
 
+        /// <summary>
+        /// Binds every area's Recenter control and warning line in one call.
+        ///
+        /// Kept for the single-scene scene builder, which has all four areas in front of it at
+        /// once. It now DELEGATES to the four per-area binders below rather than assigning the
+        /// fields itself, so each field has exactly one assignment site and an authored bind
+        /// and a per-room bind cannot drift apart.
+        /// </summary>
         public void BindShared(Button recenterA, Button recenterB, Button recenterC,
             TMP_Text warningA, TMP_Text warningB, TMP_Text warningC, Button recheckAudio,
             Button recenter0 = null, TMP_Text warning0 = null)
         {
-            m_RecenterButton0 = recenter0;
-            m_Warning0 = warning0;
-            m_RecenterButtonA = recenterA;
-            m_RecenterButtonB = recenterB;
-            m_RecenterButtonC = recenterC;
-            m_WarningA = warningA;
-            m_WarningB = warningB;
-            m_WarningC = warningC;
+            BindSharedArea0(recenter0, warning0);
+            BindSharedAreaA(recenterA, warningA, recheckAudio);
+            BindSharedAreaB(recenterB, warningB);
+            BindSharedAreaC(recenterC, warningC);
+        }
+
+        // ---- Per-area shared controls ---------------------------------------------------
+        // One room at a time, for when the areas live in separate scenes and only the room
+        // being entered is loaded. Each writes ONLY its own fields and leaves the other areas
+        // exactly as they were, so binding Area B cannot blank Area A's controls.
+
+        /// <summary>Area 0's Recenter control and warning line.</summary>
+        public void BindSharedArea0(Button recenter, TMP_Text warning)
+        {
+            m_RecenterButton0 = recenter;
+            m_Warning0 = warning;
+        }
+
+        /// <summary>Area A's Recenter control, warning line and audio re-check button.</summary>
+        public void BindSharedAreaA(Button recenter, TMP_Text warning, Button recheckAudio)
+        {
+            m_RecenterButtonA = recenter;
+            m_WarningA = warning;
             m_RecheckAudioButton = recheckAudio;
+        }
+
+        /// <summary>Area B's Recenter control and warning line.</summary>
+        public void BindSharedAreaB(Button recenter, TMP_Text warning)
+        {
+            m_RecenterButtonB = recenter;
+            m_WarningB = warning;
+        }
+
+        /// <summary>Area C's Recenter control and warning line.</summary>
+        public void BindSharedAreaC(Button recenter, TMP_Text warning)
+        {
+            m_RecenterButtonC = recenter;
+            m_WarningC = warning;
         }
 
         public void BindLanguagePanel(GameObject panel, TMP_Text title, Button english,

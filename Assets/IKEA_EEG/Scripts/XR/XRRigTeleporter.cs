@@ -50,13 +50,36 @@ namespace IkeaEeg.XR
 
         public void SetXROrigin(XROrigin origin) => m_XROrigin = origin;
 
+        /// <summary>
+        /// Sets all four spawn points at once, for the single-scene builder which has every
+        /// area in front of it. Delegates to <see cref="SetSpawnPoint"/> so each field keeps
+        /// exactly one assignment site.
+        /// </summary>
         public void SetSpawnPoints(SpawnPoint a, SpawnPoint b, SpawnPoint c,
             SpawnPoint familiarization = null)
         {
-            m_SpawnA = a;
-            m_SpawnB = b;
-            m_SpawnC = c;
-            m_SpawnFamiliarization = familiarization;
+            SetSpawnPoint(ExperimentArea.AreaA, a);
+            SetSpawnPoint(ExperimentArea.AreaB, b);
+            SetSpawnPoint(ExperimentArea.AreaC, c);
+            SetSpawnPoint(ExperimentArea.Familiarization, familiarization);
+        }
+
+        /// <summary>
+        /// Sets ONE area's spawn point, leaving the others alone.
+        ///
+        /// Needed once the rooms live in separate scenes: only the room being entered is
+        /// loaded, so only its spawn exists, and re-pointing all four would blank the rest.
+        /// The inverse of <see cref="GetSpawn"/>, and deliberately the only other writer.
+        /// </summary>
+        public void SetSpawnPoint(ExperimentArea area, SpawnPoint spawn)
+        {
+            switch (area)
+            {
+                case ExperimentArea.Familiarization: m_SpawnFamiliarization = spawn; break;
+                case ExperimentArea.AreaA: m_SpawnA = spawn; break;
+                case ExperimentArea.AreaB: m_SpawnB = spawn; break;
+                case ExperimentArea.AreaC: m_SpawnC = spawn; break;
+            }
         }
 
         public SpawnPoint GetSpawn(ExperimentArea area)
