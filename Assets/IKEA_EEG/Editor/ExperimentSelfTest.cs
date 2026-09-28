@@ -14012,6 +14012,71 @@ namespace IkeaEeg.EditorTools
                 "and it calls it BEFORE the scene is saved, so the restored instance is part " +
                 "of what gets written to disk");
 
+            // ---- Area B has the same protection ------------------------------------
+            var areaBCall = builderSource.IndexOf(
+                "AreaBEnvironmentBuilder.PreserveAfterSceneRebuild",
+                System.StringComparison.Ordinal);
+
+            Assert(areaBCall > 0,
+                "ExperimentSceneBuilder also calls AreaBEnvironmentBuilder." +
+                "PreserveAfterSceneRebuild — the showroom dressing is exposed to exactly " +
+                "the same rebuild hazard as the storefront");
+
+            Assert(areaBCall > 0 && saveIndex > areaBCall,
+                "and that call is also before the save");
+
+            var areaBPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(
+                AreaBEnvironmentBuilder.PrefabPath);
+
+            Assert(areaBPrefab != null,
+                $"the Area B prefab exists at {AreaBEnvironmentBuilder.PrefabPath}");
+
+            if (areaBPrefab != null)
+            {
+                var probeB = new GameObject("__AreaB_Preservation_Probe");
+
+                try
+                {
+                    AreaBEnvironmentBuilder.PreserveAfterSceneRebuild(probeB.transform);
+
+                    var dressing = probeB.transform.Find(
+                        AreaBEnvironmentBuilder.VisualRootName);
+
+                    Assert(dressing != null,
+                        $"{AreaBEnvironmentBuilder.VisualRootName} is re-instantiated into " +
+                        "an Area B that has lost it");
+
+                    Assert(dressing == null ||
+                           (dressing.localPosition == Vector3.zero &&
+                            dressing.localRotation == Quaternion.identity &&
+                            dressing.localScale == Vector3.one),
+                        "on the identity transform its validator requires");
+
+                    Assert(dressing == null ||
+                           dressing.GetComponentsInChildren<Collider>(true).Length == 0,
+                        "and it brings no colliders into the showroom");
+
+                    AreaBEnvironmentBuilder.PreserveAfterSceneRebuild(probeB.transform);
+
+                    var copiesB = 0;
+                    for (var i = 0; i < probeB.transform.childCount; i++)
+                    {
+                        if (probeB.transform.GetChild(i).name ==
+                            AreaBEnvironmentBuilder.VisualRootName)
+                        {
+                            copiesB++;
+                        }
+                    }
+
+                    Assert(copiesB == 1,
+                        $"and calling it twice leaves exactly one ({copiesB})");
+                }
+                finally
+                {
+                    Object.DestroyImmediate(probeB);
+                }
+            }
+
             // ---- the prefab it restores from must exist ------------------------------
             var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(
                 AreaAEnvironmentBuilder.PrefabPath);

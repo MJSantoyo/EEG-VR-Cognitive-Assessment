@@ -145,8 +145,21 @@ namespace IkeaEeg.EditorTools
             // z ~ 0, so the sightlines to them run almost straight along +/-X from Spawn_A.
             (new Vector3(-62f, 0f, -18f), new Vector3(-42f, 17f, 14f)),
             (new Vector3(42f, 0f, -18f), new Vector3(62f, 16f, 14f)),
-            (new Vector3(-96f, 0f, -30f), new Vector3(-66f, 22f, 6f)),
-            (new Vector3(66f, 0f, -30f), new Vector3(96f, 21f, 6f)),
+
+            // The FAR pair used to reach x = -/+96 and, at 22 m tall and 36 m deep, that put a
+            // solid slab INSIDE the other rooms: Area B spans world x 93..107, so x 93..96 of
+            // its floor, its left wall and its x = -4.6 ceiling light strip stood behind this
+            // mesh and could not be seen from Spawn_B. Area 0, mirrored at x = -100, had the
+            // same slab through it. That is the whole "negative-X does not render" anomaly --
+            // the geometry was never at fault, it was hidden by an Area A backdrop reaching
+            // across the world.
+            //
+            // 90 m stops ~2.9 m short of the outer face of each room (Area B's left wall
+            // starts at x = 92.88) while still standing between Spawn_A and every other area,
+            // which is the only job these volumes have. The Spawn_A sightline ray tests below
+            // are what actually hold that guarantee, and they still pass.
+            (new Vector3(-90f, 0f, -30f), new Vector3(-66f, 22f, 6f)),
+            (new Vector3(66f, 0f, -30f), new Vector3(90f, 21f, 6f)),
             (new Vector3(-40f, 0f, -58f), new Vector3(-14f, 13f, -34f)),
             (new Vector3(14f, 0f, -58f), new Vector3(40f, 14f, -34f)),
         };

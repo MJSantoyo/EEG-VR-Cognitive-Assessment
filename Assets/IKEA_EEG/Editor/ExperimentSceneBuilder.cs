@@ -220,6 +220,10 @@ namespace IkeaEeg.EditorTools
                 AreaAEnvironmentBuilder.PreserveAfterSceneRebuild(
                     environment.transform.Find("Area_A_Entrance"));
 
+                // Same hazard, same remedy, for the showroom dressing.
+                AreaBEnvironmentBuilder.PreserveAfterSceneRebuild(
+                    environment.transform.Find("Area_B_Showroom"));
+
                 EditorUtility.DisplayProgressBar("IKEA_EEG", "Saving…", 0.95f);
 
                 EditorSceneManager.MarkSceneDirty(scene);

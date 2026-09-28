@@ -206,13 +206,34 @@ namespace IkeaEeg.EditorTools
             {
                 name = "32_AreaB_PlanOverhead",
                 // y just UNDER Ceiling_B (3.6 m) -- above it you photograph the slab.
-                position = new Vector3(100f, 3.35f, 0.60f),
-                lookAt = new Vector3(100f, 0f, 0.61f),
+                // NOT straight down: a LookAt within a hair of vertical leaves the up
+                // vector degenerate and Unity picks an arbitrary roll, which framed the
+                // room off-centre and made the two sides look different when they are not.
+                position = new Vector3(100f, 3.40f, -3.20f),
+                lookAt = new Vector3(100f, 0.30f, 1.20f),
                 fieldOfView = 100f, width = 1920, height = 1080,
             };
 
             // The rightmost chair and the room corner behind it, from the participant
             // side: the exact pairing that reads as a cut in the old presentation shot.
+            // Symmetry check: the same framing on each lateral wall. If the two sides do
+            // not match, the dressing is wrong -- not the camera.
+            yield return new View
+            {
+                name = "34_AreaB_SideWall_Left",
+                position = new Vector3(100f, 1.60f, -2.20f),
+                lookAt = new Vector3(93.4f, 1.20f, 1.60f),
+                fieldOfView = 70f, width = 1920, height = 1080,
+            };
+
+            yield return new View
+            {
+                name = "35_AreaB_SideWall_Right",
+                position = new Vector3(100f, 1.60f, -2.20f),
+                lookAt = new Vector3(106.6f, 1.20f, 1.60f),
+                fieldOfView = 70f, width = 1920, height = 1080,
+            };
+
             yield return new View
             {
                 name = "33_AreaB_RightChair_CornerCheck",
