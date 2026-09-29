@@ -132,7 +132,7 @@ namespace IkeaEeg.EditorTools
             // so the retail density costs meshes and renderers but no new material or shader.
             BuildKitchenDepartmentRun(root.transform);
             BuildFrontWallDisplayRun(root.transform);
-            BuildHomeElectronicsCorner(root.transform);
+            BuildHomewareDepartment(root.transform);
             BuildMerchandise(root.transform);
 
             ReMaterialiseCeiling(areaB);
@@ -275,22 +275,60 @@ namespace IkeaEeg.EditorTools
         }
 
         /// <summary>
-        /// A home-electronics and homeware corner on the RIGHT wall, in front of the sofa.
+        /// A storage-and-homeware department on the RIGHT wall, in front of the sofa.
         ///
-        /// Uses a dining table as a DISPLAY TABLE, dressed with merchandise so it reads as a
-        /// product plinth rather than furniture to sit at. No chair goes near it: every
-        /// chair-shaped object in this room stays an experimental target.
+        /// WHAT THIS REPLACED. This stretch used to be two more televisions plus a standing
+        /// one. Screens turned out to be a poor way to fill a wall: they are large flat black
+        /// rectangles that read as an empty surface from across the room, and three of them
+        /// made the side look like an electronics aisle rather than a home-goods floor. Only
+        /// the wall TV above the sofa survives, where it belongs to the living-room vignette
+        /// instead of being the whole answer for this side.
+        ///
+        /// WHAT IT IS NOW. The same low-unit plus upper-unit module the kitchen department
+        /// uses, repeated down the wall as storage furniture and stocked with merchandise.
+        /// Repetition is what reads as retail, and reusing the module means this whole
+        /// department costs no new mesh and no new material.
+        ///
+        /// The dining table stays as a DISPLAY TABLE, dressed with product so it reads as a
+        /// plinth rather than furniture to sit at, and moved inboard to x = 5.55 so it clears
+        /// the new storage run behind it. No chair goes near it: every chair-shaped object in
+        /// this room is still an experimental target.
         /// </summary>
-        static void BuildHomeElectronicsCorner(Transform parent)
+        static void BuildHomewareDepartment(Transform parent)
         {
-            var group = Group("Retail_Electronics", parent);
+            var group = Group("Retail_Homeware", parent);
 
-            Place(group, "DEC_DiningTable", new Vector3(5.85f, 0f, -1.70f), 90f);
-            Place(group, "DEC_FlatTV_STANDING", new Vector3(6.35f, 0f, -3.60f), -90f);
-            Place(group, "DEC_FlatTVWall_MOUNTED", new Vector3(6.80f, 1.70f, -5.10f), -90f);
+            // Low storage units, backs to the wall (inner face x = 6.88).
+            Place(group, "DEC_KitchenCounterDouble", new Vector3(6.50f, 0f, -1.15f), -90f);
+            Place(group, "DEC_KitchenCounterSingle", new Vector3(6.50f, 0f, -2.10f), -90f);
+            Place(group, "DEC_KitchenCounterDouble", new Vector3(6.50f, 0f, -3.05f), -90f);
 
-            Place(group, "DEC_CardboardBox_CLOSED", new Vector3(6.10f, 0f, -5.90f), -24f);
-            Place(group, "DEC_CardboardBox_CLOSED", new Vector3(6.10f, 0.30f, -5.90f), 10f);
+            // Upper shelving above them, giving the wall two stocked levels.
+            Place(group, "DEC_KitchenCabinetDouble", new Vector3(6.66f, 1.55f, -1.15f), -90f);
+            Place(group, "DEC_KitchenCabinetSingle", new Vector3(6.66f, 1.55f, -2.10f), -90f);
+            Place(group, "DEC_KitchenCabinetDouble", new Vector3(6.66f, 1.55f, -3.05f), -90f);
+
+            // The run continues past the shelving as plain storage units, so the wall does not
+            // stop dead halfway down.
+            Place(group, "DEC_KitchenCounterSingle", new Vector3(6.50f, 0f, -4.00f), -90f);
+            Place(group, "DEC_KitchenCabinetSingle", new Vector3(6.66f, 1.55f, -4.00f), -90f);
+
+            // A storage product on the floor at the end of the run.
+            Place(group, "DEC_KitchenTrashCan", new Vector3(6.45f, 0f, -4.80f), -90f);
+
+            // The display table, clear of the run behind it.
+            Place(group, "DEC_DiningTable", new Vector3(5.55f, 0f, -1.70f), 90f);
+
+            // Packaged product in the corner, the flat-pack read.
+            //
+            // Kept to a TWO-high stack plus two boxes on the floor. A three-high tower of
+            // 0.30 m boxes at mixed rotations read as precarious rather than stacked -- the
+            // corners no longer lined up and it looked like clipping, which is worse than
+            // leaving the corner emptier.
+            Place(group, "DEC_CardboardBox_CLOSED", new Vector3(6.10f, 0f, -5.65f), -14f);
+            Place(group, "DEC_CardboardBox_CLOSED", new Vector3(6.10f, 0.30f, -5.65f), -8f);
+            Place(group, "DEC_CardboardBox_CLOSED", new Vector3(5.48f, 0f, -5.90f), 26f);
+            Place(group, "DEC_CardboardBox_OPENED", new Vector3(5.55f, 0f, -5.15f), -12f);
         }
 
         /// <summary>
@@ -317,11 +355,25 @@ namespace IkeaEeg.EditorTools
             Place(group, "DEC_NonStickPan", new Vector3(-6.45f, 0.90f, 4.95f), 90f);
             Place(group, "DEC_DryingRack", new Vector3(-6.45f, 0.90f, -2.05f), 90f);
 
-            // Display table in the electronics corner.
-            Place(group, "DEC_RegularDrinkingGlass_EMPTY", new Vector3(5.75f, 0.75f, -1.35f), 0f);
-            Place(group, "DEC_RegularDrinkingGlass_EMPTY", new Vector3(5.92f, 0.75f, -1.48f), 0f);
-            Place(group, "DEC_CeramicDinnerPlate", new Vector3(5.85f, 0.75f, -2.00f), 0f);
-            Place(group, "DEC_CeramicDinnerPlate", new Vector3(5.85f, 0.77f, -2.00f), 22f);
+            // Display table in the homeware department, at its new inboard position.
+            Place(group, "DEC_RegularDrinkingGlass_EMPTY", new Vector3(5.45f, 0.75f, -1.35f), 0f);
+            Place(group, "DEC_RegularDrinkingGlass_EMPTY", new Vector3(5.62f, 0.75f, -1.48f), 0f);
+            Place(group, "DEC_CeramicDinnerPlate", new Vector3(5.55f, 0.75f, -2.00f), 0f);
+            Place(group, "DEC_CeramicDinnerPlate", new Vector3(5.55f, 0.77f, -2.00f), 22f);
+
+            // Stock on the homeware storage run. Grouped in families, same as the kitchen: a
+            // surface with one object on it looks forgotten, a surface with a group looks
+            // stocked, and the group costs the same shared meshes and materials.
+            Place(group, "DEC_CookingPot", new Vector3(6.45f, 0.90f, -1.05f), 20f);
+            Place(group, "DEC_NonStickPan", new Vector3(6.45f, 0.90f, -1.45f), -90f);
+
+            Place(group, "DEC_CeramicDinnerPlate", new Vector3(6.45f, 0.90f, -2.10f), 0f);
+            Place(group, "DEC_CeramicDinnerPlate", new Vector3(6.45f, 0.92f, -2.10f), -15f);
+            Place(group, "DEC_CerealBowl", new Vector3(6.45f, 0.94f, -2.10f), 0f);
+
+            Place(group, "DEC_CoffeeMug", new Vector3(6.52f, 0.90f, -2.80f), 35f);
+            Place(group, "DEC_CoffeeMug", new Vector3(6.38f, 0.90f, -3.00f), -25f);
+            Place(group, "DEC_DryingRack", new Vector3(6.45f, 0.90f, -3.35f), -90f);
         }
 
         /// <summary>
