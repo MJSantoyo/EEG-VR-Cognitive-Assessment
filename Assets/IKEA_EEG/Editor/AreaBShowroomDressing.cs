@@ -124,6 +124,17 @@ namespace IkeaEeg.EditorTools
             BuildFlatPackDressing(root.transform);
             BuildPendantFixtures(root.transform);
 
+            // ---- retail density pass -------------------------------------------------------
+            // The vignettes above read as a furnished room. These turn it into a SHOP: the same
+            // cabinet and counter modules repeated along the free perimeter, merchandise grouped
+            // on the worktops, and the wall the participant faces given a display run of its
+            // own. Everything reuses the prefabs and the five materials already loaded above,
+            // so the retail density costs meshes and renderers but no new material or shader.
+            BuildKitchenDepartmentRun(root.transform);
+            BuildFrontWallDisplayRun(root.transform);
+            BuildHomeElectronicsCorner(root.transform);
+            BuildMerchandise(root.transform);
+
             ReMaterialiseCeiling(areaB);
 
             // One sweep over everything created: decoration carries no colliders, no physics
@@ -208,6 +219,109 @@ namespace IkeaEeg.EditorTools
 
             Place(group, "DEC_DiningPendantLight", new Vector3(-6.00f, 3.50f, 1.20f), 0f);
             Place(group, "DEC_DiningPendantLight", new Vector3(6.00f, 3.50f, 1.20f), 0f);
+        }
+
+        /// <summary>
+        /// Extends the kitchen into a full department run along the LEFT wall.
+        ///
+        /// A real showroom sells the same module over and over, so this repeats the counter and
+        /// wall-cabinet pair the vignette already uses rather than introducing new furniture
+        /// types. The left wall runs from z = -6.4 to 6.4 and the original vignette occupies
+        /// only z = -0.75..2.40; this fills the two remaining stretches, which is where most of
+        /// the room's emptiness was.
+        /// </summary>
+        static void BuildKitchenDepartmentRun(Transform parent)
+        {
+            var group = Group("Retail_KitchenRun", parent);
+
+            // Behind the vignette, running toward the front wall.
+            Place(group, "DEC_KitchenCounterSingle", new Vector3(-6.50f, 0f, 2.85f), 90f);
+            Place(group, "DEC_KitchenCounterDouble", new Vector3(-6.50f, 0f, 3.90f), 90f);
+            Place(group, "DEC_KitchenCounterSingle", new Vector3(-6.50f, 0f, 4.95f), 90f);
+
+            Place(group, "DEC_KitchenCabinetSingle", new Vector3(-6.66f, 1.55f, 2.85f), 90f);
+            Place(group, "DEC_KitchenCabinetDouble", new Vector3(-6.66f, 1.55f, 3.90f), 90f);
+            Place(group, "DEC_KitchenCabinetSingle", new Vector3(-6.66f, 1.55f, 4.95f), 90f);
+
+            // In front of the vignette, toward the back wall behind the participant.
+            Place(group, "DEC_KitchenCounterDouble", new Vector3(-6.50f, 0f, -2.05f), 90f);
+            Place(group, "DEC_KitchenCounterSingle", new Vector3(-6.50f, 0f, -3.00f), 90f);
+            Place(group, "DEC_KitchenCabinetDouble", new Vector3(-6.66f, 1.55f, -2.05f), 90f);
+
+            Place(group, "DEC_KitchenTrashCan", new Vector3(-6.45f, 0f, 5.70f), 90f);
+        }
+
+        /// <summary>
+        /// A display run across the FRONT wall — the one the participant is looking at.
+        ///
+        /// This is the single highest-value surface in the room and it was bare. Low display
+        /// cabinets with uppers above them give the far wall the layered, stocked look of a
+        /// store aisle and add real depth behind the chair arc.
+        ///
+        /// THE CENTRE IS LEFT ALONE. The instruction and status canvases sit at z = 5.60
+        /// spanning x = -1.90..1.90, and the chairs are read against this wall. Nothing here
+        /// comes inside |x| = 3.0, so the UI keeps a clear margin on both sides and no cabinet
+        /// ever sits directly behind a chair.
+        /// </summary>
+        static void BuildFrontWallDisplayRun(Transform parent)
+        {
+            var group = Group("Retail_FrontWallDisplay", parent);
+
+            foreach (var x in new[] { -5.90f, -4.50f, 4.50f, 5.90f })
+            {
+                Place(group, "DEC_KitchenCabinetDouble", new Vector3(x, 0f, 6.15f), 180f);
+                Place(group, "DEC_KitchenCabinetDouble", new Vector3(x, 1.55f, 6.15f), 180f);
+            }
+        }
+
+        /// <summary>
+        /// A home-electronics and homeware corner on the RIGHT wall, in front of the sofa.
+        ///
+        /// Uses a dining table as a DISPLAY TABLE, dressed with merchandise so it reads as a
+        /// product plinth rather than furniture to sit at. No chair goes near it: every
+        /// chair-shaped object in this room stays an experimental target.
+        /// </summary>
+        static void BuildHomeElectronicsCorner(Transform parent)
+        {
+            var group = Group("Retail_Electronics", parent);
+
+            Place(group, "DEC_DiningTable", new Vector3(5.85f, 0f, -1.70f), 90f);
+            Place(group, "DEC_FlatTV_STANDING", new Vector3(6.35f, 0f, -3.60f), -90f);
+            Place(group, "DEC_FlatTVWall_MOUNTED", new Vector3(6.80f, 1.70f, -5.10f), -90f);
+
+            Place(group, "DEC_CardboardBox_CLOSED", new Vector3(6.10f, 0f, -5.90f), -24f);
+            Place(group, "DEC_CardboardBox_CLOSED", new Vector3(6.10f, 0.30f, -5.90f), 10f);
+        }
+
+        /// <summary>
+        /// Grouped merchandise on the worktops and the display table.
+        ///
+        /// Deliberately arranged in small families -- a stack of plates, a pair of mugs, a
+        /// bowl -- rather than sprinkled one-per-surface. Grouping is what makes a surface read
+        /// as stocked; scattering just reads as mess, and on Quest 2 it would be paying renderer
+        /// cost for noise. Counters are 0.90 m high and the display table 0.75 m.
+        /// </summary>
+        static void BuildMerchandise(Transform parent)
+        {
+            var group = Group("Retail_Merchandise", parent);
+
+            // Kitchen run, behind the vignette.
+            Place(group, "DEC_CeramicDinnerPlate", new Vector3(-6.45f, 0.90f, 2.85f), 0f);
+            Place(group, "DEC_CeramicDinnerPlate", new Vector3(-6.45f, 0.92f, 2.85f), 18f);
+            Place(group, "DEC_CeramicDinnerPlate", new Vector3(-6.45f, 0.94f, 2.85f), -12f);
+            Place(group, "DEC_CerealBowl", new Vector3(-6.45f, 0.90f, 3.20f), 0f);
+
+            Place(group, "DEC_CoffeeMug", new Vector3(-6.50f, 0.90f, 3.70f), 24f);
+            Place(group, "DEC_CoffeeMug", new Vector3(-6.36f, 0.90f, 3.95f), -40f);
+
+            Place(group, "DEC_NonStickPan", new Vector3(-6.45f, 0.90f, 4.95f), 90f);
+            Place(group, "DEC_DryingRack", new Vector3(-6.45f, 0.90f, -2.05f), 90f);
+
+            // Display table in the electronics corner.
+            Place(group, "DEC_RegularDrinkingGlass_EMPTY", new Vector3(5.75f, 0.75f, -1.35f), 0f);
+            Place(group, "DEC_RegularDrinkingGlass_EMPTY", new Vector3(5.92f, 0.75f, -1.48f), 0f);
+            Place(group, "DEC_CeramicDinnerPlate", new Vector3(5.85f, 0.75f, -2.00f), 0f);
+            Place(group, "DEC_CeramicDinnerPlate", new Vector3(5.85f, 0.77f, -2.00f), 22f);
         }
 
         /// <summary>
