@@ -10,6 +10,7 @@ namespace IkeaEeg.XR
     ///
     ///     M   jump to Area B, the chair-task showroom.
     ///     P   end the rest block that is currently running (DEMO ONLY).
+    ///     N   open/close the developer navigation panel (same one as the two-thumbstick hold).
     ///
     /// EDITOR ONLY, TWICE OVER. The whole file is inside #if UNITY_EDITOR so it is not compiled
     /// into a player build at all, and the object is spawned by a RuntimeInitializeOnLoadMethod
@@ -66,6 +67,33 @@ namespace IkeaEeg.XR
 
             if (keyboard.pKey.wasPressedThisFrame)
                 SkipRestBlock();
+
+            if (keyboard.nKey.wasPressedThisFrame)
+                ToggleDeveloperNavigation();
+        }
+
+        /// <summary>
+        /// Opens/closes the EXISTING developer navigation panel, the one the two-thumbstick hold
+        /// opens in VR. Calls DeveloperNavigation.Toggle(), which uses the same Open()/Close()
+        /// (and so the same menuOpened/menuClosed events and DEVELOPER_NAVIGATION_* logging).
+        /// No area is jumped to from here; the developer picks one from the panel's own buttons.
+        /// </summary>
+        public static bool ToggleDeveloperNavigation()
+        {
+            var navigation = FindAnyObjectByType<DeveloperNavigation>();
+
+            if (navigation == null)
+            {
+                Debug.LogWarning("[IKEA_EEG] Developer keyboard: no DeveloperNavigation in the " +
+                                 "loaded scenes, so N did nothing.");
+                return false;
+            }
+
+            Debug.Log("[IKEA_EEG] Developer keyboard: N pressed — toggling the existing " +
+                      "developer navigation panel.");
+
+            navigation.Toggle();
+            return true;
         }
 
         /// <summary>

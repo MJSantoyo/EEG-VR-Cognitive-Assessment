@@ -1118,8 +1118,24 @@ namespace IkeaEeg.Experiment
                 m_Logger.Log(eventType, configure);
         }
 
+        /// <summary>
+        /// True from the moment RESTART / NEW TRIAL is accepted until Area A is loaded and bound.
+        /// Presses in that window are ignored. Cleared by StopFlow, so an abort or developer jump
+        /// that cancels the transition cannot leave the controls dead.
+        /// </summary>
+        bool m_RoomTransitionPending;
+
+        /// <summary>
+        /// Set by NEW TRIAL so the next trial start omits PRE_TASK_REST. Consumed by
+        /// BeginAreaATrial; cleared by StopFlow so no other path can inherit it.
+        /// </summary>
+        bool m_SkipPreTaskRestOnNextStart;
+
         void StopFlow()
         {
+            m_RoomTransitionPending = false;
+            m_SkipPreTaskRestOnNextStart = false;
+
             if (m_Flow != null)
             {
                 StopCoroutine(m_Flow);
@@ -2302,11 +2318,24 @@ namespace IkeaEeg.Experiment
             if (m_State != ExperimentState.Idle)
                 return;
 
+            BeginAreaATrial(skipPreTaskRest: false);
+        }
+
+        /// <summary>
+        /// The body of START, shared with NEW TRIAL. START always runs the pre-task rest first;
+        /// NEW TRIAL passes <paramref name="skipPreTaskRest"/> because the participant already
+        /// gave this sitting its resting reference in run 1. Returns false when nothing began.
+        /// </summary>
+        bool BeginAreaATrial(bool skipPreTaskRest)
+        {
+            // Read BEFORE StopFlow below, which clears the flag.
+            skipPreTaskRest |= m_SkipPreTaskRestOnNextStart;
+
             if (m_Config == null)
             {
                 Debug.LogError("[IKEA_EEG] Cannot start: no ExperimentConfig assigned to the " +
                                "ExperimentManager.");
-                return;
+                return false;
             }
 
             // Re-evaluate at the moment of pressing START, not just at scene load: the
@@ -2322,7 +2351,7 @@ namespace IkeaEeg.Experiment
                     e.notes = $"START pressed while blocked; {m_StimulusBlockReason}";
                 });
 
-                return;
+                return false;
             }
 
             if (m_Logger != null && !m_Logger.sessionActive)
@@ -2350,7 +2379,20 @@ namespace IkeaEeg.Experiment
             // THE RESTING REFERENCE COMES FIRST. RunAreaA is entered only after the pre-task
             // block has finished, so no cognitive content can begin during the recording.
             // RunAreaA itself is untouched — the rest is prepended around it, not woven into it.
+            if (skipPreTaskRest)
+            {
+                // NEW TRIAL: no PRE_TASK_REST events are written for this run. The sitting's
+                // resting reference is the one recorded in run 1.
+                Log(EventTypes.StateChanged, e => e.notes =
+                    "pre_task_rest_skipped=TRUE; reason=new trial in an existing session; " +
+                    $"run_index={(m_Logger != null ? m_Logger.runIndex : 0)}");
+
+                m_Flow = StartCoroutine(RunAreaA());
+                return true;
+            }
+
             m_Flow = StartCoroutine(RunPreTaskRestThenAreaA());
+            return true;
         }
 
         /// <summary>
@@ -5211,6 +5253,9 @@ namespace IkeaEeg.Experiment
         /// </summary>
         public void RestartTrial()
         {
+            if (IsRoomSwitchInFlight("RESTART"))
+                return;
+
             if (m_SessionEnded)
             {
                 Debug.Log("[IKEA_EEG] RESTART ignored: the session has ended.");
@@ -5231,10 +5276,16 @@ namespace IkeaEeg.Experiment
             if (m_Logger != null)
                 m_Logger.BeginExperimentSession();
 
-            // A RESTART means a NEW PARTICIPANT, who may not read the previous one's language.
-            // The language is therefore cleared and re-asked — unlike NEW TRIAL, which keeps it.
+            // RESTART = "start the experiment again from the initial pre-task rest". The language
+            // already chosen is kept and neither the language screen nor Area 0 is repeated; the
+            // new experiment session then takes its own PRE_TASK_REST baseline through the same
+            // START path as always. If no language is in force (not reachable from Results) the
+            // language screen is still shown, because nothing can be presented without one.
+            var keepLanguage = ExperimentLocalization.hasLanguage;
+
             RestartSession(ChooseSeed(), isReplay: false, reason: "restart pressed",
-                returnToFamiliarization: true, returnToLanguageSelection: true);
+                returnToFamiliarization: !keepLanguage, returnToLanguageSelection: !keepLanguage,
+                autoStartTrial: keepLanguage);
         }
 
         /// <summary>
@@ -5248,6 +5299,9 @@ namespace IkeaEeg.Experiment
         public void StartNewRun()
         {
             if (m_Logger == null)
+                return;
+
+            if (IsRoomSwitchInFlight("NEW TRIAL"))
                 return;
 
             if (m_SessionEnded)
@@ -5276,7 +5330,8 @@ namespace IkeaEeg.Experiment
             // and the participant has already answered that question. NEW TRIAL never returns
             // to the language screen.
             RestartSession(ChooseSeed(), isReplay: false, reason: "new trial",
-                returnToFamiliarization: false, returnToLanguageSelection: false);
+                returnToFamiliarization: false, returnToLanguageSelection: false,
+                beginEncodingDirectly: true);
 
             Log(EventTypes.NewRunStarted, e => e.notes =
                 $"previous_run_session_id={previousRunId}; previous_run_index={previousRunIndex}; " +
@@ -5387,7 +5442,8 @@ namespace IkeaEeg.Experiment
         }
 
         void RestartSession(long seed, bool isReplay, string reason,
-            bool returnToFamiliarization, bool returnToLanguageSelection)
+            bool returnToFamiliarization, bool returnToLanguageSelection,
+            bool beginEncodingDirectly = false, bool autoStartTrial = false)
         {
             StopFlow();
 
@@ -5438,6 +5494,110 @@ namespace IkeaEeg.Experiment
             // ---- Back to a clean pre-trial state ---------------------------------------------
             PrepareTrial();
 
+            // EVERYTHING BELOW TOUCHES AREA A's UI, SPAWN POINT AND PRACTICE OBJECTS. From the
+            // results screen only Area C is loaded, so Area A must be loaded and bound first.
+            // The data/session work above is room-independent and has already happened.
+            if (AreaAMustBeLoaded())
+            {
+                m_RoomTransitionPending = true;
+                HideRunManagementButtons();
+
+                m_Flow = StartCoroutine(FinishRestartAfterLoadingAreaA(reason, isReplay, seed,
+                    returnToFamiliarization, returnToLanguageSelection, beginEncodingDirectly,
+                    autoStartTrial));
+                return;
+            }
+
+            // Area A is already the open room (or this is the legacy combined scene): unchanged,
+            // fully synchronous behaviour.
+            FinishRestartInAreaA(reason, isReplay, seed, returnToFamiliarization,
+                returnToLanguageSelection, beginEncodingDirectly, autoStartTrial,
+                startNow: false);
+        }
+
+        /// <summary>
+        /// True when the split architecture is active and Area A is not the loaded room. False
+        /// in the legacy combined scene (no loader), where every room is always present.
+        /// </summary>
+        bool AreaAMustBeLoaded()
+        {
+            var loader = ResolveSceneLoader();
+
+            if (loader == null || !AreaSceneLoader.multiSceneAvailable)
+                return false;
+
+            var open = loader.current;
+
+            return open == null ||
+                   AreaSceneLoader.SceneNameFor(open.area) != AreaSceneLoader.AreaASceneName;
+        }
+
+        /// <summary>
+        /// Ignores a RESTART / NEW TRIAL press while Area A is still loading or a room switch is
+        /// running, so a double press cannot start a second restart or a second load.
+        /// </summary>
+        bool IsRoomSwitchInFlight(string control)
+        {
+            var loader = m_SceneLoader;
+
+            if (!m_RoomTransitionPending && (loader == null || !loader.isSwitching))
+                return false;
+
+            Debug.Log($"[IKEA_EEG] {control} ignored: a room switch is already in progress.");
+            return true;
+        }
+
+        void HideRunManagementButtons()
+        {
+            if (m_UI == null)
+                return;
+
+            m_UI.ShowRestartButton(false);
+            m_UI.ShowNewTrialButton(false);
+            m_UI.ShowEndButton(false);
+        }
+
+        /// <summary>
+        /// Loads Area A through the one EnterRoom path, waits until it is bound and occupied,
+        /// and only then runs the Area A half of the restart.
+        /// </summary>
+        IEnumerator FinishRestartAfterLoadingAreaA(string reason, bool isReplay, long seed,
+            bool returnToFamiliarization, bool returnToLanguageSelection,
+            bool beginEncodingDirectly, bool autoStartTrial)
+        {
+            var toFamiliarization = returnToLanguageSelection || (returnToFamiliarization &&
+                                    m_Config != null && m_Config.enableFamiliarization);
+
+            yield return EnterRoom(toFamiliarization
+                ? ExperimentArea.Familiarization
+                : ExperimentArea.AreaA);
+
+            // Release the transition BEFORE the finishing step: BeginAreaATrial calls StopFlow,
+            // which would otherwise stop this very coroutine part-way through.
+            m_Flow = null;
+            m_RoomTransitionPending = false;
+
+            if (AreaAMustBeLoaded())
+            {
+                // The load failed (loader already logged why). Nothing more is safe to call.
+                Debug.LogError($"[IKEA_EEG] {reason}: Area A did not load, so the restart could " +
+                               "not be completed. The new run's session is open but the " +
+                               "participant is not in a room.");
+                yield break;
+            }
+
+            FinishRestartInAreaA(reason, isReplay, seed, returnToFamiliarization,
+                returnToLanguageSelection, beginEncodingDirectly, autoStartTrial, startNow: true);
+        }
+
+        /// <summary>
+        /// The Area A half of a restart: language screen, Area 0 or the Area A idle screen.
+        /// Only ever called once Area A exists.
+        /// </summary>
+        void FinishRestartInAreaA(string reason, bool isReplay, long seed,
+            bool returnToFamiliarization, bool returnToLanguageSelection,
+            bool beginEncodingDirectly, bool autoStartTrial, bool startNow)
+        {
             if (returnToLanguageSelection)
             {
                 // New participant: ask for the language again before anything else.
@@ -5457,11 +5617,23 @@ namespace IkeaEeg.Experiment
             }
             else
             {
-                SkipFamiliarization(returnToFamiliarization
-                    ? "familiarization disabled in ExperimentConfig"
-                    : $"researcher fast path ({reason})");
+                SkipFamiliarization(autoStartTrial
+                    ? $"{reason}: language kept, Area 0 not repeated"
+                    : returnToFamiliarization
+                        ? "familiarization disabled in ExperimentConfig"
+                        : $"researcher fast path ({reason})");
 
                 EvaluateStimulusReadiness(logToConsole: false);
+
+                // NEW TRIAL: no PRE_TASK_REST, whichever way the trial then starts.
+                m_SkipPreTaskRestOnNextStart = beginEncodingDirectly;
+
+                // Multi-scene NEW TRIAL begins encoding itself. If the stimulus gate refuses, the
+                // participant is left on the Area A idle screen with the warning, as for START.
+                // RESTART (autoStartTrial) begins the same way but WITH its PRE_TASK_REST: the
+                // new session needs its own baseline, so the rest-skip flag stays false.
+                if ((beginEncodingDirectly || autoStartTrial) && startNow)
+                    BeginAreaATrial(skipPreTaskRest: beginEncodingDirectly);
             }
 
             Debug.Log($"[IKEA_EEG] RESTART complete — new session " +

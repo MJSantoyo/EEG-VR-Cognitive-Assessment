@@ -150,6 +150,20 @@ namespace IkeaEeg.XR
             menuOpened?.Invoke();
         }
 
+        /// <summary>
+        /// Opens the panel if closed, closes it if open. Both directions go through the same
+        /// Open() / Close() the thumbstick gesture and the manager already use, so the menuOpened
+        /// / menuClosed logging is identical whichever input raised it. Used by the Editor
+        /// keyboard shortcut.
+        /// </summary>
+        public void Toggle()
+        {
+            if (m_Open)
+                Close();
+            else
+                Open();
+        }
+
         public void Close()
         {
             if (!m_Open)
