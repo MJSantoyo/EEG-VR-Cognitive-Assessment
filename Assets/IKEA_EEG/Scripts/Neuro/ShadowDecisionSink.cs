@@ -36,14 +36,27 @@ namespace IkeaEeg.Neuro
         /// </summary>
         public const string DiagnosticsFileName = "shadow_diagnostics.txt";
 
+        /// <summary>
+        /// The neuroadaptive layer's rows: one per session baseline and one per chair trial. A
+        /// SIBLING file with its own schema (<see cref="NeuroTrialRecord.CsvHeader"/>), so the
+        /// frozen 15-column window file is untouched. Rows are buffered with the window rows and
+        /// written in the same <see cref="Flush"/>, never on the frame they are produced.
+        /// </summary>
+        public const string TrialFileName = "shadow_trial_decisions.csv";
+
         [Tooltip("Rows buffered before touching the disk. Shadow mode must never add a frame " +
                  "spike near a stimulus marker.")]
         [SerializeField] int m_FlushEveryRows = 32;
 
         readonly List<string> m_Pending = new List<string>();
+        readonly List<string> m_PendingTrialRows = new List<string>();
 
         string m_FilePath;
         bool m_HeaderWritten;
+        bool m_TrialHeaderWritten;
+
+        /// <summary>Trial-level rows handed to this sink this session.</summary>
+        public long trialRowsWritten { get; private set; }
 
         public string filePath => m_FilePath;
         public int pendingRowCount => m_Pending.Count;
@@ -66,6 +79,9 @@ namespace IkeaEeg.Neuro
                 m_FilePath = Path.Combine(context.sessionDirectory, FileName);
                 m_HeaderWritten = false;
                 m_Pending.Clear();
+                m_TrialHeaderWritten = false;
+                m_PendingTrialRows.Clear();
+                trialRowsWritten = 0;
             }
             catch (IOException e)
             {
@@ -94,8 +110,21 @@ namespace IkeaEeg.Neuro
                 Flush();
         }
 
+        /// <summary>Queues one pre-formatted neuroadaptive row for <see cref="TrialFileName"/>.</summary>
+        public void WriteTrialRecord(string csvRow)
+        {
+            trialRowsWritten++;
+
+            if (string.IsNullOrEmpty(m_FilePath) || string.IsNullOrEmpty(csvRow))
+                return;
+
+            m_PendingTrialRows.Add(csvRow);
+        }
+
         public void Flush()
         {
+            FlushTrialRows();
+
             if (string.IsNullOrEmpty(m_FilePath) || m_Pending.Count == 0 && m_HeaderWritten)
                 return;
 
@@ -116,6 +145,40 @@ namespace IkeaEeg.Neuro
             catch (IOException e)
             {
                 Debug.LogWarning($"[IKEA_EEG] Shadow decision sink could not write: {e.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Writes queued neuroadaptive rows. The header goes out only with the first row, so a run
+        /// that never reached a rest or a chair trial leaves no empty file behind.
+        /// </summary>
+        void FlushTrialRows()
+        {
+            if (string.IsNullOrEmpty(m_FilePath) || m_PendingTrialRows.Count == 0)
+                return;
+
+            var directory = Path.GetDirectoryName(m_FilePath);
+
+            if (string.IsNullOrEmpty(directory))
+                return;
+
+            try
+            {
+                var path = Path.Combine(directory, TrialFileName);
+
+                if (!m_TrialHeaderWritten)
+                {
+                    File.AppendAllText(path, NeuroTrialRecord.CsvHeader + "\n");
+                    m_TrialHeaderWritten = true;
+                }
+
+                File.AppendAllText(path, string.Join("\n", m_PendingTrialRows) + "\n");
+                m_PendingTrialRows.Clear();
+            }
+            catch (IOException e)
+            {
+                Debug.LogWarning($"[IKEA_EEG] Shadow trial decisions could not be written: " +
+                                 e.Message);
             }
         }
 
@@ -201,6 +264,9 @@ namespace IkeaEeg.Neuro
                                     : "unavailable (no controller on this object)"));
             text.AppendLine("rows_written           = " +
                 rowsWritten.ToString(CultureInfo.InvariantCulture));
+            text.AppendLine("trial_rows_written     = " +
+                trialRowsWritten.ToString(CultureInfo.InvariantCulture) +
+                " (" + TrialFileName + ")");
             text.AppendLine();
 
             text.AppendLine("## Grouped rejection breakdown");

@@ -1,6 +1,7 @@
 ﻿using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using IkeaEeg.Core;
 using IkeaEeg.Data;
 
 namespace IkeaEeg.Neuro
@@ -91,6 +92,17 @@ namespace IkeaEeg.Neuro
         /// </summary>
         readonly ShadowBaseline m_Baseline = new ShadowBaseline();
 
+        /// <summary>
+        /// The neuroadaptive coordinator, hosted here so it adds nothing to any scene. It runs
+        /// in shadow beside the per-window path and never feeds it: it does not touch
+        /// <see cref="m_Baseline"/>, the gates or <see cref="Evaluate"/>, so every
+        /// shadow_decisions.csv row is exactly what it would be without it. Its own rows go to a
+        /// sibling file through <see cref="ShadowDecisionSink.WriteTrialRecord"/>.
+        /// </summary>
+        readonly NeuroadaptiveController m_Neuro = new NeuroadaptiveController();
+
+        public NeuroadaptiveController neuroadaptive => m_Neuro;
+
         long m_WindowIndex;
         bool m_Subscribed;
 
@@ -117,6 +129,30 @@ namespace IkeaEeg.Neuro
                 m_Pipeline = FindAnyObjectByType<EegFeaturePipeline>();
 
             Subscribe();
+
+            m_Neuro.recordProduced -= OnNeuroRecord;
+            m_Neuro.recordProduced += OnNeuroRecord;
+            AttachNeuroToEventLog();
+        }
+
+        /// <summary>
+        /// Retried here because the EventLogger sets its Instance in its own Awake, which may run
+        /// after this component's OnEnable.
+        /// </summary>
+        void Start() => AttachNeuroToEventLog();
+
+        void AttachNeuroToEventLog()
+        {
+            var logger = EventLogger.Instance;
+
+            if (logger != null)
+                m_Neuro.Attach(logger.bus);
+        }
+
+        void OnNeuroRecord(NeuroTrialRecord record)
+        {
+            if (m_Sink != null)
+                m_Sink.WriteTrialRecord(record.ToCsvRow());
         }
 
         /// <summary>
@@ -211,6 +247,9 @@ namespace IkeaEeg.Neuro
 
         void OnDisable()
         {
+            m_Neuro.Detach();
+            m_Neuro.recordProduced -= OnNeuroRecord;
+
             if (!m_Subscribed)
                 return;
 
@@ -280,6 +319,19 @@ namespace IkeaEeg.Neuro
 
             if (m_Sink != null)
                 m_Sink.Write(decision);
+
+            // AFTER the shadow row, and contained: nothing the coordinator does can stop or alter
+            // this window's own decision.
+            try
+            {
+                AttachNeuroToEventLog();
+                m_Neuro.OfferWindow(features);
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[IKEA_EEG] Neuroadaptive shadow ignored an error on window " +
+                                 $"{windowsObserved}: {e.Message}");
+            }
         }
 
         /// <summary>

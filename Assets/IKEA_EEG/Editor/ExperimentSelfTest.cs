@@ -134,6 +134,8 @@ namespace IkeaEeg.EditorTools
             RunSection("SHADOW MODE — ISOLATION FROM THE EXPERIMENT", CheckShadowModeIsolation);
             RunSection("SHADOW MODE — DECISIONS, BASELINE AND REPRODUCIBILITY",
                 CheckShadowModeDecisions);
+            RunSection("NEUROADAPTIVE ARCHITECTURE — SHADOW ONLY, NO ADAPTATION",
+                CheckNeuroadaptiveArchitecture);
             RunSection("PARTICIPANT-FACING BLOCK RESULT", CheckParticipantBlockResult);
             RunSection("AREA 0 — VR FAMILIARIZATION", CheckFamiliarization);
             RunSection("DUAL-TRIGGER SELECTION", CheckDualTriggerInput);
@@ -257,6 +259,27 @@ namespace IkeaEeg.EditorTools
 
             return string.Join("\n", lines);
         }
+
+        /// <summary>
+        /// One member's text, from its signature to its closing brace at member indent. Empty
+        /// when the signature is absent, so a check on a missing method fails rather than passing
+        /// on whatever happens to follow it.
+        /// </summary>
+        static string MemberBody(string source, string signature)
+        {
+            var start = source.IndexOf(signature, System.StringComparison.Ordinal);
+
+            if (start < 0)
+                return string.Empty;
+
+            var end = source.IndexOf("\n        }", start, System.StringComparison.Ordinal);
+
+            return end > start ? source.Substring(start, end - start) : source.Substring(start);
+        }
+
+        static int Occurrences(string source, string text) =>
+            System.Text.RegularExpressions.Regex.Matches(source,
+                System.Text.RegularExpressions.Regex.Escape(text)).Count;
 
         /// <summary>One-line preview of a label's text, for a readable failure message.</summary>
         static string Shorten(string text)
@@ -7253,23 +7276,76 @@ namespace IkeaEeg.EditorTools
             Assert(endHandler >= 0, "the END handler exists");
 
             // ---- D: the pre-task block gates the cognitive task -----------------------------
-            var startHandler = managerSource.IndexOf("void OnStartPressed()",
-                System.StringComparison.Ordinal);
+            // START, NEW TRIAL and RESTART share one trial start, BeginAreaATrial. Every caller
+            // gets the rest in front of RunAreaA except NEW TRIAL — a later run of a session that
+            // already has its resting reference — and that branch is the ONLY direct way in.
+            var startHandler = MemberBody(managerSource, "void OnStartPressed()");
 
-            Assert(startHandler >= 0, "the START handler exists");
+            Assert(startHandler.Length > 0, "the START handler exists");
 
-            if (startHandler >= 0)
+            Assert(startHandler.Contains("m_State != ExperimentState.Idle") &&
+                   startHandler.Contains("BeginAreaATrial(skipPreTaskRest: false)"),
+                "START (from Idle only) enters the shared trial start WITH the pre-task rest");
+
+            Assert(!startHandler.Contains("StartCoroutine("),
+                "the START handler begins no flow of its own — the flow starts in one place");
+
+            var trialStart = MemberBody(managerSource, "bool BeginAreaATrial(bool skipPreTaskRest)");
+
+            Assert(trialStart.Length > 0, "the shared trial start exists");
+
+            if (trialStart.Length > 0)
             {
-                var handlerBody = managerSource.Substring(startHandler,
-                    Mathf.Min(2500, managerSource.Length - startHandler));
+                var skipBranch = trialStart.IndexOf("if (skipPreTaskRest)",
+                    System.StringComparison.Ordinal);
+                var skipReturn = skipBranch >= 0
+                    ? trialStart.IndexOf("return true;", skipBranch, System.StringComparison.Ordinal)
+                    : -1;
+                var directCall = trialStart.IndexOf("StartCoroutine(RunAreaA())",
+                    System.StringComparison.Ordinal);
+                var wrapperCall = trialStart.IndexOf("StartCoroutine(RunPreTaskRestThenAreaA())",
+                    System.StringComparison.Ordinal);
 
-                Assert(handlerBody.Contains("RunPreTaskRestThenAreaA()"),
-                    "START enters the pre-task rest wrapper, not RunAreaA directly");
+                Assert(skipBranch >= 0 && directCall > skipBranch && directCall < skipReturn,
+                    "RunAreaA is started directly ONLY inside the rest-skip branch");
 
-                Assert(!handlerBody.Contains("StartCoroutine(RunAreaA())"),
-                    "nothing starts RunAreaA directly any more — the cognitive task has exactly " +
-                    "one entry point and the rest block is in front of it");
+                Assert(skipReturn > 0 && wrapperCall > skipReturn,
+                    "every other start enters the pre-task rest wrapper");
+
+                var flagRead = trialStart.IndexOf("skipPreTaskRest |= m_SkipPreTaskRestOnNextStart",
+                    System.StringComparison.Ordinal);
+                var stopFlow = trialStart.IndexOf("StopFlow()", System.StringComparison.Ordinal);
+
+                Assert(flagRead >= 0 && stopFlow > flagRead,
+                    "NEW TRIAL's skip flag is read before StopFlow clears it");
             }
+
+            Assert(Occurrences(managerSource, "StartCoroutine(RunAreaA())") == 1,
+                "nothing else starts RunAreaA directly — the cognitive task has one bypass of " +
+                "the rest block, and it is NEW TRIAL's");
+
+            // Who may skip the rest: NEW TRIAL, and nothing else.
+            Assert(!managerSource.Contains("m_SkipPreTaskRestOnNextStart = true"),
+                "the skip flag is never set unconditionally");
+
+            Assert(Occurrences(managerSource, "beginEncodingDirectly: true") == 1 &&
+                   MemberBody(managerSource, "public void StartNewRun()")
+                       .Contains("beginEncodingDirectly: true"),
+                "only NEW TRIAL asks to begin Encoding without a PRE_TASK_REST");
+
+            var restart = MemberBody(managerSource, "public void RestartTrial()");
+
+            Assert(restart.Contains("BeginExperimentSession()") &&
+                   restart.Contains("autoStartTrial:") &&
+                   !restart.Contains("beginEncodingDirectly"),
+                "RESTART opens a new experiment session and starts it WITH a fresh PRE_TASK_REST");
+
+            var finishRestart = MemberBody(managerSource, "void FinishRestartInAreaA(");
+
+            Assert(finishRestart.Contains("m_SkipPreTaskRestOnNextStart = beginEncodingDirectly") &&
+                   finishRestart.Contains("BeginAreaATrial(skipPreTaskRest: beginEncodingDirectly)"),
+                "the restart path skips the rest only by NEW TRIAL's beginEncodingDirectly, which " +
+                "RESTART never sets");
 
             var wrapperStart = managerSource.IndexOf("IEnumerator RunPreTaskRestThenAreaA()",
                 System.StringComparison.Ordinal);
@@ -10955,6 +11031,335 @@ namespace IkeaEeg.EditorTools
             }
         }
 
+        /// <summary>
+        /// The neuroadaptive plumbing, driven with synthetic events and windows.
+        ///
+        /// What this proves is STRUCTURE: the chain is wired, the baseline follows the experiment
+        /// session (kept by NEW TRIAL, cleared by RESTART), trial N only ever informs trial N+1,
+        /// and nothing produces a workload label, a proposal or a difficulty change. It proves
+        /// nothing about EEG: every number here is synthetic.
+        /// </summary>
+        static void CheckNeuroadaptiveArchitecture()
+        {
+            // ---- A: the gates -----------------------------------------------------------
+            Assert(!Neuro.AdaptivePolicy.ActiveAdaptationEnabled,
+                "active adaptation is OFF, as a compile-time constant");
+
+            // No parallel difficulty history: while adaptation is inactive the only difficulty
+            // recorded for a trial is the one the experiment ran.
+            Assert(typeof(Neuro.AdaptivePolicy).GetField("InitialDifficulty",
+                       BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static) == null,
+                "no adaptive starting difficulty is defined while adaptation is inactive");
+
+            Assert(!Neuro.NeuroTrialRecord.CsvHeader.Contains("design_difficulty") &&
+                   Neuro.NeuroTrialRecord.CsvHeader.Split(',').Count(c => c.Contains("difficulty")) == 2,
+                "the trial file carries exactly two difficulty columns: chair_difficulty (what " +
+                "ran) and proposed_next_difficulty (always empty) — no design-difficulty column");
+
+            Assert(!Neuro.ShadowModeController.NormalizationApproved &&
+                   !Neuro.ShadowModeController.DecisionRuleApproved,
+                "normalization and the decision rule are still unapproved");
+
+            // ---- B: window screening is the shadow controller's own gates 1-3 -----------
+            var host = new GameObject("__IKEA_EEG_SelfTest_Neuro");
+
+            try
+            {
+                var shadow = host.AddComponent<Neuro.ShadowModeController>();
+
+                var contaminated = Window(40d, 12d);
+                contaminated.roiContamination = "Fz";
+
+                var missing = Window(40d, 12d);
+                missing.frontalThetaValid = false;
+
+                var invalid = Window(40d, 12d);
+                invalid.featureValidity = false;
+
+                foreach (var (window, label) in new[]
+                         {
+                             (Window(40d, 12d), "valid"), (contaminated, "contaminated ROI"),
+                             (missing, "missing theta"), (invalid, "pipeline-invalid"),
+                             ((LatestEegFeatures)null, "null"),
+                         })
+                {
+                    var shadowReason = shadow.Evaluate(window).rejectedReason;
+                    var expected = shadowReason == Neuro.ShadowRejection.FeatureInvalid ||
+                                   shadowReason == Neuro.ShadowRejection.RoiContaminated ||
+                                   shadowReason == Neuro.ShadowRejection.RoiValueMissing
+                        ? shadowReason
+                        : Neuro.ShadowRejection.None;
+
+                    Assert(Neuro.EegWindowScreen.Screen(window) == expected,
+                        $"window screening agrees with shadow gates 1-3 on a {label} window " +
+                        $"({Neuro.EegWindowScreen.Screen(window)} vs {expected})");
+                }
+
+                // ---- C: the hosted coordinator never feeds the per-window path ----------
+                var hosted = shadow.neuroadaptive;
+
+                Assert(hosted != null, "ShadowModeController hosts exactly one coordinator");
+
+                hosted.HandlePhaseEvent(Ev("SESSION_START", "E_HOST", 1, 10d));
+                hosted.HandlePhaseEvent(Ev("PRE_TASK_REST_START", "E_HOST", 1, 100d));
+                hosted.OfferWindow(TimedWindow(101d, 105d));
+                hosted.HandlePhaseEvent(Ev("PRE_TASK_REST_END", "E_HOST", 1, 110d));
+                hosted.OfferWindow(TimedWindow(108d, 112d));
+
+                Assert(hosted.sessionBaseline.collected,
+                    "the hosted coordinator collected a session baseline from the rest");
+
+                var after = shadow.Evaluate(Window(40d, 12d));
+
+                Assert(!after.baselineValid && !shadow.baseline.isValid &&
+                       after.rejectedReason == Neuro.ShadowRejection.NoApprovedNormalization &&
+                       after.level == Neuro.WorkloadLevel.Indeterminate,
+                    "and the shadow_decisions.csv row is unchanged by it — baseline_valid stays " +
+                    "FALSE and ShadowBaseline is never supplied");
+            }
+            finally
+            {
+                Object.DestroyImmediate(host);
+            }
+
+            // ---- D: the estimator is INDETERMINATE for every input ----------------------
+            var noBaseline = Neuro.SessionBaselineSummary.None;
+            var baseline = new Neuro.SessionBaselineSummary("E", 1, 0d, 180d, true,
+                new Neuro.FeatureWindowSummary(40, 40, 1d, 1d,
+                    Neuro.FeatureWindowSummary.PlaceholderAggregation));
+
+            var estimator = new Neuro.IndeterminateWorkloadEstimator();
+            var allIndeterminate = true;
+
+            foreach (var completed in new[] { false, true })
+            foreach (var valid in new[] { 0, 5 })
+            foreach (var b in new[] { noBaseline, baseline })
+            {
+                var trial = new Neuro.TrialFeatureSummary(1, 3, Neuro.NeuroDifficulty.Medium,
+                    0d, 10d, completed, new Neuro.FeatureWindowSummary(valid, valid, 1d, 1d,
+                        Neuro.FeatureWindowSummary.PlaceholderAggregation));
+
+                var estimate = estimator.Estimate(b, trial);
+
+                allIndeterminate &= estimate.level == Neuro.WorkloadLevel.Indeterminate &&
+                                    estimate.reason != Neuro.WorkloadIndeterminateReason.None;
+
+                allIndeterminate &= Neuro.IndeterminateWorkloadEstimator.FirstUnmetPrerequisite(
+                    b, trial, normalizationApproved: true) !=
+                    Neuro.WorkloadIndeterminateReason.None;
+            }
+
+            Assert(allIndeterminate,
+                "every baseline/trial combination yields INDETERMINATE with a reason — even " +
+                "with normalization hypothetically approved there is no rule to reach a label");
+
+            // ---- E: the policy never proposes ------------------------------------------
+            var policy = new Neuro.NoEegChangePolicy();
+            var anyProposal = false;
+
+            foreach (Neuro.WorkloadLevel level in System.Enum.GetValues(typeof(Neuro.WorkloadLevel)))
+            foreach (Neuro.NeuroDifficulty current in System.Enum.GetValues(typeof(Neuro.NeuroDifficulty)))
+            {
+                anyProposal |= policy.Propose(
+                    new Neuro.WorkloadEstimate(level, Neuro.WorkloadIndeterminateReason.None, "test"),
+                    current).hasProposal;
+            }
+
+            Assert(!anyProposal,
+                "the policy proposes no difficulty for ANY workload level — no mapping, not even " +
+                "a direction, has been approved");
+
+            // ---- F: lifecycle — run 1, NEW TRIAL, RESTART --------------------------------
+            var neuro = new Neuro.NeuroadaptiveController();
+            var rows = new List<Neuro.NeuroTrialRecord>();
+            neuro.recordProduced += rows.Add;
+
+            // Run 1 of session E1: rest, then three chair trials on the LOW/MEDIUM/HIGH schedule.
+            neuro.HandlePhaseEvent(Ev("SESSION_START", "E1", 1, 10d));
+            neuro.HandlePhaseEvent(Ev("PRE_TASK_REST_START", "E1", 1, 100d));
+            neuro.OfferWindow(TimedWindow(101d, 105d));
+            neuro.OfferWindow(TimedWindow(105d, 109d));
+            neuro.HandlePhaseEvent(Ev("PRE_TASK_REST_END", "E1", 1, 110d));
+            neuro.OfferWindow(TimedWindow(108d, 112d));      // straddles the end: excluded
+
+            var baselineRow = rows.LastOrDefault();
+
+            Assert(baselineRow != null && baselineRow.recordType == "BASELINE" &&
+                   baselineRow.windows.windowsValid == 2 && neuro.sessionBaseline.collected,
+                $"PRE_TASK_REST yields one BASELINE row from the 2 windows wholly inside it " +
+                $"({baselineRow?.recordType}, {baselineRow?.windows.windowsValid})");
+
+            RunTrial(neuro, "E1", 1, 1, "LOW", 200d, withWindow: true);
+            var t1 = rows.LastOrDefault();
+
+            Assert(t1 != null && t1.recordType == "TRIAL" && t1.trialNumber == 1 &&
+                   t1.chairDifficulty == Neuro.NeuroDifficulty.Low &&
+                   t1.windows.windowsValid == 1 &&
+                   t1.workloadLevel == "INDETERMINATE" &&
+                   t1.indeterminateReason == "NO_APPROVED_NORMALIZATION" &&
+                   t1.proposedNextDifficulty == Neuro.NeuroDifficulty.Unknown,
+                "trial 1: recorded at LOW, the difficulty the experiment ran; 1 valid window, " +
+                "INDETERMINATE (NO_APPROVED_NORMALIZATION), no proposal for trial 2");
+
+            Assert(t1 != null && t1.ToCsvRow().Split(',')[5] == "LOW",
+                "the row's chair_difficulty field says LOW — the actual schedule, not a design value");
+
+            Assert(!neuro.lastProposal.hasProposal && neuro.lastProposalForTrial == 2,
+                "trial 1's (empty) proposal is addressed to trial 2 only");
+
+            // Trial 2 without EEG: nothing settles it, so trial 3's start finalises it.
+            RunTrial(neuro, "E1", 1, 2, "MEDIUM", 300d, withWindow: false);
+            neuro.HandlePhaseEvent(Ev("CHAIR_TRIAL_START", "E1", 1, 399d, 3, 3, "HIGH"));
+            var t2 = rows.LastOrDefault();
+
+            Assert(t2 != null && t2.trialNumber == 2 &&
+                   t2.chairDifficulty == Neuro.NeuroDifficulty.Medium &&
+                   t2.indeterminateReason == "NO_VALID_TRIAL_WINDOWS" &&
+                   t2.proposedNextDifficulty == Neuro.NeuroDifficulty.Unknown,
+                "trial 2: recorded at MEDIUM as run; no windows -> NO_VALID_TRIAL_WINDOWS; " +
+                "no proposal for trial 3");
+
+            RunTrial(neuro, "E1", 1, 3, "HIGH", 400d, withWindow: true);
+            neuro.HandlePhaseEvent(Ev("CHAIR_BLOCK_COMPLETE", "E1", 1, 420d));
+            var t3 = rows.LastOrDefault();
+
+            Assert(t3 != null && t3.trialNumber == 3 &&
+                   t3.chairDifficulty == Neuro.NeuroDifficulty.High &&
+                   t3.proposedNextDifficulty == Neuro.NeuroDifficulty.Unknown &&
+                   t3.proposalReason.StartsWith("LAST_TRIAL"),
+                "trial 3 is recorded at HIGH as run and logged only — LAST_TRIAL, nothing to inform");
+
+            neuro.HandlePhaseEvent(Ev("SESSION_END", "E1", 1, 500d));
+
+            // NEW TRIAL: same experiment session, run 2, no rest.
+            var rowsBeforeRun2 = rows.Count;
+            neuro.HandlePhaseEvent(Ev("SESSION_START", "E1", 2, 600d));
+            RunTrial(neuro, "E1", 2, 1, "LOW", 700d, withWindow: true);
+            var run2t1 = rows.LastOrDefault();
+
+            Assert(neuro.sessionBaseline.collected &&
+                   neuro.sessionBaseline.sourceRunIndex == 1 &&
+                   run2t1 != null && run2t1.runIndex == 2 &&
+                   run2t1.baseline.collected && run2t1.baseline.sourceRunIndex == 1 &&
+                   run2t1.chairDifficulty == Neuro.NeuroDifficulty.Low &&
+                   rows.Skip(rowsBeforeRun2).All(r => !r.recordType.StartsWith("BASELINE")),
+                "NEW TRIAL reuses run 1's session baseline, writes no new baseline, and its " +
+                "trial 1 is recorded at the difficulty the experiment ran (LOW)");
+
+            // HEAD behaviour, where NEW TRIAL re-runs the rest: recorded, not used.
+            neuro.HandlePhaseEvent(Ev("PRE_TASK_REST_START", "E1", 2, 800d));
+            neuro.HandlePhaseEvent(Ev("PRE_TASK_REST_END", "E1", 2, 980d));
+
+            Assert(rows.LastOrDefault()?.recordType == "BASELINE_REPEAT_IGNORED" &&
+                   neuro.sessionBaseline.sourceRunIndex == 1,
+                "a second rest in the same session cannot replace the session baseline");
+
+            // An aborted trial, then RESTART: new experiment session.
+            neuro.HandlePhaseEvent(Ev("CHAIR_TARGET_ONSET", "E1", 2, 1000d, 2, 3, "MEDIUM"));
+            neuro.OfferWindow(TimedWindow(1001d, 1005d));
+            neuro.HandlePhaseEvent(Ev("SESSION_START", "E2", 1, 1100d));
+
+            Assert(rows.Any(r => r.recordType == "TRIAL_INCOMPLETE" && r.experimentSessionId == "E1"),
+                "a trial cut off by RESTART is logged TRIAL_INCOMPLETE under the OLD session");
+
+            Assert(!neuro.sessionBaseline.collected && neuro.experimentSessionId == "E2",
+                "RESTART clears the session baseline");
+
+            RunTrial(neuro, "E2", 1, 1, "LOW", 1200d, withWindow: true);
+
+            Assert(rows.LastOrDefault()?.indeterminateReason == "BASELINE_UNAVAILABLE",
+                "before the new session's rest, a trial reports BASELINE_UNAVAILABLE");
+
+            neuro.HandlePhaseEvent(Ev("PRE_TASK_REST_START", "E2", 1, 1300d));
+            neuro.OfferWindow(TimedWindow(1301d, 1305d));
+            neuro.HandlePhaseEvent(Ev("PRE_TASK_REST_END", "E2", 1, 1310d));
+            neuro.OfferWindow(TimedWindow(1308d, 1312d));
+
+            Assert(neuro.sessionBaseline.collected &&
+                   neuro.sessionBaseline.experimentSessionId == "E2",
+                "the new session's PRE_TASK_REST rebuilds the baseline");
+
+            // ---- G: rows are well-formed and never claim an applied change --------------
+            var columns = Neuro.NeuroTrialRecord.CsvHeader.Split(',').Length;
+
+            Assert(rows.All(r => r.ToCsvRow().Split(',').Length == columns),
+                $"every row has the header's {columns} columns");
+
+            Assert(rows.All(r => r.ToCsvRow().Contains(",FALSE,SHADOW_ONLY,")),
+                "every row records proposal_applied=FALSE and adaptation_mode=SHADOW_ONLY");
+
+            Assert(rows.All(r => r.workloadLevel == string.Empty || r.workloadLevel == "INDETERMINATE"),
+                "no row carries a workload label");
+
+            Assert(Neuro.ShadowDecisionSink.TrialFileName != Neuro.ShadowDecisionSink.FileName,
+                "trial rows go to a sibling file; shadow_decisions.csv keeps its frozen schema");
+
+            // ---- H: isolation by source -------------------------------------------------
+            foreach (var file in new[]
+                     {
+                         "NeuroadaptiveController.cs", "BaselineAggregator.cs",
+                         "TrialFeatureAggregator.cs", "IntervalWindowCollector.cs",
+                         "WorkloadEstimator.cs", "AdaptivePolicy.cs", "EegWindowScreen.cs",
+                         "NeuroDifficulty.cs", "NeuroTrialRecord.cs",
+                     })
+            {
+                var path = "Assets/IKEA_EEG/Scripts/Neuro/" + file;
+
+                Assert(File.Exists(path), $"{file} exists");
+
+                if (!File.Exists(path))
+                    continue;
+
+                var source = StripCommentsAndAttributes(File.ReadAllText(path));
+
+                foreach (var forbidden in new[]
+                         {
+                             "ExperimentManager", "ExperimentUIController", "ExperimentState",
+                             "ChairSelectionTask", "ChairTarget", "XRRigTeleporter",
+                             "DifficultyLevel", "ExperimentConfig", "SetState", "Teleport",
+                             "ApplyTrialPlan", "SupplyApprovedBaseline", "CaptureBaseline",
+                             "WorkloadLevel.Low", "WorkloadLevel.Moderate", "WorkloadLevel.High",
+                         })
+                {
+                    // Whole identifiers only: EventTypes.ChairTargetOnset is an event name the
+                    // coordinator must read, not the ChairTarget component.
+                    Assert(!Regex.IsMatch(source, $@"\b{Regex.Escape(forbidden)}\b"),
+                        $"{file} contains no {forbidden}");
+                }
+            }
+        }
+
+        /// <summary>One completed chair trial as the event log records it.</summary>
+        static void RunTrial(Neuro.NeuroadaptiveController neuro, string session, int run,
+            int trial, string difficulty, double onset, bool withWindow)
+        {
+            neuro.HandlePhaseEvent(Ev("CHAIR_TRIAL_START", session, run, onset - 1d, trial, 3, difficulty));
+            neuro.HandlePhaseEvent(Ev("CHAIR_TARGET_ONSET", session, run, onset, trial, 3, difficulty));
+
+            if (withWindow)
+                neuro.OfferWindow(TimedWindow(onset + 1d, onset + 5d));
+
+            neuro.HandlePhaseEvent(Ev("CHAIR_SELECTION_END", session, run, onset + 6d, trial, 3, difficulty));
+            neuro.HandlePhaseEvent(Ev("CHAIR_TRIAL_END", session, run, onset + 8d, trial, 3, difficulty));
+
+            if (withWindow)
+                neuro.OfferWindow(TimedWindow(onset + 4d, onset + 8d));   // settles the trial
+        }
+
+        static Neuro.NeuroPhaseEvent Ev(string type, string session, int run, double lsl,
+            int trial = 0, int count = 0, string difficulty = "") =>
+            new Neuro.NeuroPhaseEvent(type, session, run, trial, count,
+                Neuro.NeuroDifficultyLabels.Parse(difficulty), lsl);
+
+        static LatestEegFeatures TimedWindow(double start, double end)
+        {
+            var w = Window(40d, 12d);
+            w.windowStart = start;
+            w.windowEnd = end;
+            w.analysisTimestamp = end;
+            w.windowSeconds = end - start;
+            return w;
+        }
 
         /// <summary>A minimal, valid synthetic feature window.</summary>
         static LatestEegFeatures Window(double theta, double alpha)
@@ -13580,13 +13985,28 @@ namespace IkeaEeg.EditorTools
                 "session-clock elapsed time");
 
             // ---- The clock starts at Area A, not before -------------------------------------
-            var start = source.Substring(
-                source.IndexOf("void OnStartPressed()", System.StringComparison.Ordinal));
-            start = start.Substring(0,
-                start.IndexOf("\n        }", System.StringComparison.Ordinal));
+            // START's body is BeginAreaATrial, shared with NEW TRIAL and RESTART. The run clock is
+            // started there, before the rest wrapper or RunAreaA is begun, so the run is timed
+            // from its Area A start on every path, and PRE_TASK_REST (when run) is inside it.
+            var code = StripCommentsAndAttributes(source);
+            var start = MemberBody(code, "void OnStartPressed()");
 
-            Assert(start.Contains("BeginTrial()"),
-                "the run clock is started by START in Area A — the cognitive run's beginning");
+            Assert(start.Contains("BeginAreaATrial(skipPreTaskRest: false)"),
+                "START in Area A begins the run through the shared trial start");
+
+            var trialStart = MemberBody(code, "bool BeginAreaATrial(bool skipPreTaskRest)");
+            var clockAt = trialStart.IndexOf("BeginTrial()", System.StringComparison.Ordinal);
+            var restFlowAt = trialStart.IndexOf("StartCoroutine(RunPreTaskRestThenAreaA())",
+                System.StringComparison.Ordinal);
+            var directFlowAt = trialStart.IndexOf("StartCoroutine(RunAreaA())",
+                System.StringComparison.Ordinal);
+
+            Assert(clockAt >= 0 && restFlowAt > clockAt && directFlowAt > clockAt,
+                "the run clock is started by START in Area A — the cognitive run's beginning — " +
+                "before either the pre-task rest or RunAreaA is entered");
+
+            Assert(Regex.Matches(code, @"\bBeginTrial\(\)").Count == 1,
+                "nothing else starts the run clock");
 
             foreach (var (method, label) in new[]
                      {
