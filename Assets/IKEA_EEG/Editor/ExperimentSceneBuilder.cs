@@ -1991,6 +1991,7 @@ namespace IkeaEeg.EditorTools
                 LocalizeButton(ui0.skipIntroButton, LocKeys.SkipIntro);
                 LocalizeButton(ui0.replayInstructionsButton, LocKeys.ReplayInstructions);
                 LocalizeButton(ui0.recenterButton, LocKeys.Recenter);
+                FitRecenterLabel(ui0.recenterButton);
                 LocalizeText(ui0.readyLabel, LocKeys.PracticeReady);
             }
 
@@ -2000,6 +2001,7 @@ namespace IkeaEeg.EditorTools
                 LocalizeButton(uiA.startButton, LocKeys.Start);
                 LocalizeButton(uiA.enterButton, LocKeys.EnterShowroom);
                 LocalizeButton(uiA.recenterButton, LocKeys.Recenter);
+                FitRecenterLabel(uiA.recenterButton);
                 LocalizeText(uiA.title, LocKeys.AreaATitle);
             }
 
@@ -2008,6 +2010,7 @@ namespace IkeaEeg.EditorTools
                 LocalizeButton(uiB.readyButton, LocKeys.Ready);
                 LocalizeButton(uiB.exitButton, LocKeys.ExitShowroom);
                 LocalizeButton(uiB.recenterButton, LocKeys.Recenter);
+                FitRecenterLabel(uiB.recenterButton);
             }
 
             if (uiC != null)
@@ -2016,6 +2019,7 @@ namespace IkeaEeg.EditorTools
                 LocalizeButton(uiC.restartButton, LocKeys.Restart, LocKeys.RestartSubtitle);
                 LocalizeButton(uiC.endButton, LocKeys.End, LocKeys.EndSubtitle);
                 LocalizeButton(uiC.recenterButton, LocKeys.Recenter);
+                FitRecenterLabel(uiC.recenterButton);
                 LocalizeButton(uiC.restReadyButton, LocKeys.Ready);
             }
         }
@@ -2617,6 +2621,34 @@ namespace IkeaEeg.EditorTools
             var localized = label.gameObject.AddComponent<LocalizedText>();
             localized.SetKey(key, subtitleKey);
             EditorUtility.SetDirty(localized);
+        }
+
+        /// <summary>
+        /// Smallest size a RECENTER caption may shrink to. Kept well above the 18 pt TMP default
+        /// so the control stays readable in the headset.
+        /// </summary>
+        const float RecenterLabelMinFontSize = 24f;
+
+        /// <summary>
+        /// RECENTER keeps its caption on ONE line in every language. The Japanese caption
+        /// (位置をリセット) is wider than RECENTER at the authored size and wrapped inside the
+        /// button, so the label auto-sizes DOWN from its authored size — never above it — with
+        /// wrapping off. Button sizes and the translation are unchanged.
+        /// </summary>
+        static void FitRecenterLabel(Button button)
+        {
+            if (button == null)
+                return;
+
+            var label = button.GetComponentInChildren<TextMeshProUGUI>(true);
+            if (label == null)
+                return;
+
+            label.textWrappingMode = TextWrappingModes.NoWrap;
+            label.enableAutoSizing = true;
+            label.fontSizeMax = label.fontSize;
+            label.fontSizeMin = Mathf.Min(RecenterLabelMinFontSize, label.fontSize);
+            EditorUtility.SetDirty(label);
         }
 
         /// <summary>

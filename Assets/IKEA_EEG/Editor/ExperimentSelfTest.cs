@@ -707,6 +707,7 @@ namespace IkeaEeg.EditorTools
             RunSection("LANGUAGE SELECTION FLOW", CheckLanguageSelectionFlow);
             RunSection("LANGUAGE-SPECIFIC WORD SETS", CheckWordSetLanguageSafety);
             RunSection("FINAL STATISTICS + END STATE", CheckFinalStatisticsAndEndState);
+            RunSection("RECENTER CAPTION FITS ONE LINE", CheckRecenterCaptionFit);
             RunSection("NEW TRIAL RUN TRACKING", CheckNewTrialRunTracking);
 
             // Deliberately AFTER the run-lifecycle sections: ABORT closes the run's files, and a
@@ -16096,6 +16097,47 @@ namespace IkeaEeg.EditorTools
 
                 if (logger.sessionActive)
                     logger.EndSession("self test cleanup");
+            }
+        }
+
+        /// <summary>
+        /// RECENTER's caption auto-sizes DOWN from its authored size on one line, so the
+        /// Japanese caption (位置をリセット) no longer wraps inside the button. Static check of the
+        /// authored settings only: laying out Japanese here would add glyphs to the bundled
+        /// dynamic font asset, so the actual fit is a Play Mode check.
+        /// </summary>
+        static void CheckRecenterCaptionFit()
+        {
+            var authoredMax = new Dictionary<string, float>
+            {
+                { "Btn_Recenter_0", 32f },
+                { "Btn_Recenter_A", 54f },
+                { "Btn_Recenter_B", 50f },
+                { "Btn_Recenter_C", 36f },
+            };
+
+            var buttons = Object.FindObjectsByType<Button>(FindObjectsInactive.Include,
+                FindObjectsSortMode.None);
+
+            foreach (var pair in authoredMax)
+            {
+                var button = buttons.FirstOrDefault(b => b.name == pair.Key);
+                var label = button != null
+                    ? button.GetComponentInChildren<TextMeshProUGUI>(true)
+                    : null;
+
+                Assert(label != null, $"{pair.Key}: the button and its caption exist");
+
+                if (label == null)
+                    continue;
+
+                Assert(label.enableAutoSizing, $"{pair.Key}: the caption auto-sizes");
+                Assert(label.textWrappingMode == TextWrappingModes.NoWrap,
+                    $"{pair.Key}: the caption stays on one line (wrapping off)");
+                Assert(Mathf.Approximately(label.fontSizeMax, pair.Value),
+                    $"{pair.Key}: it never grows past its authored size ({label.fontSizeMax} vs {pair.Value})");
+                Assert(label.fontSizeMin >= 24f && label.fontSizeMin <= label.fontSizeMax,
+                    $"{pair.Key}: it never shrinks below a readable 24 ({label.fontSizeMin})");
             }
         }
 
