@@ -15484,32 +15484,70 @@ namespace IkeaEeg.EditorTools
                 Assert(fallbackList.Count(f => f != null && f == projectFont) == 1,
                     "a repeated EnsureJapaneseFontFallback adds no duplicate entry");
 
-                if (projectFont != null)
+                if (projectFont != null && projectFont.sourceFontFile != null)
                 {
                     // EVERY CJK character the localization table uses, not a sample.
                     // tryAddCharacter:true because a DYNAMIC font asset rasterises on demand —
                     // the question is whether the font FILE can supply the glyph, not whether
-                    // it happens to be in the atlas already. The atlas is emptied afterwards
-                    // so the test leaves the committed asset as it found it.
+                    // it happens to be in the atlas already.
+                    //
+                    // NON-DESTRUCTIVE: the probe is a temporary in-memory font asset built from
+                    // the SAME bundled source file, never saved and destroyed afterwards. The
+                    // committed asset is only read: adding glyphs to it (and clearing them
+                    // again with ClearFontAssetData, which also wipes its OpenType feature
+                    // table) would rewrite a committed file on every self-test run.
                     var japaneseText = string.Join("", LocalizationTable.entries.Values
                         .Select(e => e.japanese));
 
                     var cjk = japaneseText.Where(c => c >= '⺀').Distinct().ToArray();
 
-                    var missingCjk = cjk.Where(c => !projectFont.HasCharacter(c, false, true))
-                        .ToArray();
+                    var probe = TMP_FontAsset.CreateFontAsset(projectFont.sourceFontFile, 48, 5,
+                        UnityEngine.TextCore.LowLevel.GlyphRenderMode.SDFAA, 1024, 1024,
+                        AtlasPopulationMode.Dynamic, enableMultiAtlasSupport: true);
 
-                    Assert(missingCjk.Length == 0,
-                        $"the Japanese font supplies all {cjk.Length} CJK characters used " +
-                        $"({(missingCjk.Length == 0 ? "none missing" : new string(missingCjk))})");
+                    Assert(probe != null && !EditorUtility.IsPersistent(probe),
+                        "a temporary, non-persistent probe font asset was built from the " +
+                        "bundled NotoSansJP-Regular.otf");
 
-                    foreach (var glyph in new[] { '日', '本', '語', '言', 'を', '選', 'ん', 'で', 'く', 'だ', 'さ', 'い' })
+                    if (probe != null)
                     {
-                        Assert(projectFont.HasCharacter(glyph, false, true),
-                            $"the Japanese font can supply '{glyph}'");
+                        try
+                        {
+                            probe.hideFlags = HideFlags.HideAndDontSave;
+
+                            var missingCjk = cjk.Where(c => !probe.HasCharacter(c, false, true))
+                                .ToArray();
+
+                            Assert(missingCjk.Length == 0,
+                                $"the Japanese font supplies all {cjk.Length} CJK characters used " +
+                                $"({(missingCjk.Length == 0 ? "none missing" : new string(missingCjk))})");
+
+                            foreach (var glyph in new[] { '日', '本', '語', '言', 'を', '選', 'ん', 'で', 'く', 'だ', 'さ', 'い' })
+                            {
+                                Assert(probe.HasCharacter(glyph, false, true),
+                                    $"the Japanese font can supply '{glyph}'");
+                            }
+                        }
+                        finally
+                        {
+                            if (probe.atlasTextures != null)
+                            {
+                                foreach (var atlas in probe.atlasTextures)
+                                {
+                                    if (atlas != null)
+                                        Object.DestroyImmediate(atlas);
+                                }
+                            }
+
+                            if (probe.material != null)
+                                Object.DestroyImmediate(probe.material);
+
+                            Object.DestroyImmediate(probe);
+                        }
                     }
 
-                    JapaneseFontAssetSetup.ClearDynamicData();
+                    Assert(!EditorUtility.IsDirty(projectFont),
+                        "the committed Japanese font asset was not modified by the glyph probe");
                 }
             }
 
