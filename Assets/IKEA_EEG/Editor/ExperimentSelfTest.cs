@@ -15450,23 +15450,66 @@ namespace IkeaEeg.EditorTools
 
             if (japaneseReady)
             {
-                var jpFallback = TMP_Settings.fallbackFontAssets?
-                    .FirstOrDefault(f => f != null && f.name.StartsWith("IKEA_EEG_JP_"));
+                // The PROJECT-OWNED asset must be the one in force, serialized into TMP Settings
+                // (so it exists before the first frame), exactly once, with no OS-built copy:
+                // a fresh clone on another machine must not depend on installed fonts.
+                var projectFont = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(
+                    JapaneseFontAssetSetup.FontAssetPath);
 
-                Assert(jpFallback != null,
-                    $"a Japanese fallback font asset is registered ({jpFallback?.name})");
+                Assert(projectFont != null,
+                    $"the project Japanese font asset exists at {JapaneseFontAssetSetup.FontAssetPath}");
 
-                if (jpFallback != null)
+                var fallbackList = TMP_Settings.fallbackFontAssets ?? new List<TMP_FontAsset>();
+
+                var registrations = fallbackList.Count(f => f != null && f == projectFont);
+                Assert(registrations == 1,
+                    $"the project Japanese font is registered exactly once as a TMP global " +
+                    $"fallback ({registrations})");
+
+                var osBuilt = fallbackList.Count(f => f != null && f.name.StartsWith("IKEA_EEG_JP_"));
+                Assert(osBuilt == 0,
+                    $"no OS-font Japanese fallback was built ({osBuilt}) — " +
+                    ExperimentLocalization.fontFallbackDetail);
+
+                Assert(projectFont != null &&
+                       projectFont.atlasPopulationMode == AtlasPopulationMode.Dynamic &&
+                       projectFont.sourceFontFile != null &&
+                       AssetDatabase.GetAssetPath(projectFont.sourceFontFile) ==
+                           JapaneseFontAssetSetup.SourceFontPath,
+                    "the Japanese font asset is dynamic and sourced from the bundled " +
+                    "NotoSansJP-Regular.otf");
+
+                // Second call must not add another entry.
+                ExperimentLocalization.EnsureJapaneseFontFallback();
+                Assert(fallbackList.Count(f => f != null && f == projectFont) == 1,
+                    "a repeated EnsureJapaneseFontFallback adds no duplicate entry");
+
+                if (projectFont != null)
                 {
-                    // Sample glyphs actually used by the localized strings: kanji, hiragana and
-                    // katakana. tryAddCharacter:true because a DYNAMIC font asset rasterises on
-                    // demand — the question is whether the font FILE can supply the glyph, not
-                    // whether it happens to be in the atlas already.
-                    foreach (var glyph in new[] { '言', '語', '実', '験', 'を', 'ア' })
+                    // EVERY CJK character the localization table uses, not a sample.
+                    // tryAddCharacter:true because a DYNAMIC font asset rasterises on demand —
+                    // the question is whether the font FILE can supply the glyph, not whether
+                    // it happens to be in the atlas already. The atlas is emptied afterwards
+                    // so the test leaves the committed asset as it found it.
+                    var japaneseText = string.Join("", LocalizationTable.entries.Values
+                        .Select(e => e.japanese));
+
+                    var cjk = japaneseText.Where(c => c >= '⺀').Distinct().ToArray();
+
+                    var missingCjk = cjk.Where(c => !projectFont.HasCharacter(c, false, true))
+                        .ToArray();
+
+                    Assert(missingCjk.Length == 0,
+                        $"the Japanese font supplies all {cjk.Length} CJK characters used " +
+                        $"({(missingCjk.Length == 0 ? "none missing" : new string(missingCjk))})");
+
+                    foreach (var glyph in new[] { '日', '本', '語', '言', 'を', '選', 'ん', 'で', 'く', 'だ', 'さ', 'い' })
                     {
-                        Assert(jpFallback.HasCharacter(glyph, false, true),
+                        Assert(projectFont.HasCharacter(glyph, false, true),
                             $"the Japanese font can supply '{glyph}'");
                     }
+
+                    JapaneseFontAssetSetup.ClearDynamicData();
                 }
             }
 
@@ -15598,8 +15641,50 @@ namespace IkeaEeg.EditorTools
             Assert(ui.languagePanelVisible,
                 "the language panel is shown and the familiarization panel is not");
 
+            // ---- Practice visuals are gated on the language choice ----------------------------
+            var practiceRoot = Object.FindObjectsByType<Transform>(FindObjectsInactive.Include,
+                    FindObjectsSortMode.None)
+                .FirstOrDefault(t => t.name == "PracticeObjects");
+            var helpRoot = Object.FindObjectsByType<Transform>(FindObjectsInactive.Include,
+                    FindObjectsSortMode.None)
+                .FirstOrDefault(t => t.name == "ControllerDiagram");
+            var gated = ui.practiceContentCount > 0 && practiceRoot != null && helpRoot != null;
+
+            if (gated)
+            {
+                Assert(ui.practiceContentCount == 2,
+                    $"exactly two practice-visual roots are bound ({ui.practiceContentCount})");
+                Assert(!practiceRoot.gameObject.activeSelf && !helpRoot.gameObject.activeSelf,
+                    "during language selection PracticeObjects and ControllerDiagram are hidden");
+            }
+            else
+            {
+                Info("practice visuals are not bound in this scene — language gating not " +
+                     "exercised (expected for the legacy combined scene until it is rebuilt)");
+            }
+
             // ---- Choosing a language reaches Area 0 -------------------------------------------
             onLanguageSelected.Invoke(manager, new object[] { ExperimentLanguage.Spanish });
+
+            if (gated)
+            {
+                Assert(practiceRoot.gameObject.activeSelf && helpRoot.gameObject.activeSelf,
+                    "after a language is chosen PracticeObjects and ControllerDiagram are shown");
+
+                var spheres = practiceRoot.GetComponentsInChildren<PracticeObject>(true);
+                Assert(spheres.Length == 4 && spheres.All(p => p.gameObject.activeInHierarchy),
+                    $"all four practice spheres are visible after the choice ({spheres.Length})");
+
+                // NEW TRIAL re-enters Area 0 WITHOUT the language screen: the visuals must still
+                // come back even if something hid them in between.
+                practiceRoot.gameObject.SetActive(false);
+                helpRoot.gameObject.SetActive(false);
+                type.GetMethod("EnterFamiliarization", BindingFlags.Instance | BindingFlags.NonPublic)
+                    ?.Invoke(manager, null);
+                Assert(practiceRoot.gameObject.activeSelf && helpRoot.gameObject.activeSelf,
+                    "re-entering familiarization without the language screen (NEW TRIAL) shows " +
+                    "the practice visuals");
+            }
 
             Assert(ExperimentLocalization.language == ExperimentLanguage.Spanish,
                 "choosing Español sets the platform language");

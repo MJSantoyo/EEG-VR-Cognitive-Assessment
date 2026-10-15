@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -36,6 +37,9 @@ namespace IkeaEeg.UI
         [SerializeField] TMP_Text m_PracticePrompt;
 
         [SerializeField] Button m_StartExperimentButton;
+
+        [Tooltip("Area 0 practice visuals hidden during language selection.")]
+        [SerializeField] List<GameObject> m_PracticeContent = new List<GameObject>();
 
         [Tooltip("Label under START EXPERIMENT that appears once practice succeeds.")]
         [SerializeField] TMP_Text m_StartExperimentReadyLabel;
@@ -481,6 +485,18 @@ namespace IkeaEeg.UI
 
         public void ShowFamiliarizationPanel(bool visible) =>
             SetActive(m_FamiliarizationPanel, visible);
+
+        /// <summary>
+        /// Shows or hides the Area 0 practice visuals (the practice spheres with their labels
+        /// and posts, and the controller help). Hidden while the language screen is up so the
+        /// participant sees only the language choice; shown when familiarization begins.
+        /// Visibility only: nothing is created, destroyed or moved.
+        /// </summary>
+        public void ShowPracticeContent(bool visible)
+        {
+            foreach (var root in m_PracticeContent)
+                SetActive(root, visible);
+        }
 
         /// <summary>True while the language screen is up.</summary>
         public bool languagePanelVisible =>
@@ -1014,6 +1030,24 @@ namespace IkeaEeg.UI
             m_ReplayInstructionsButton = replayButton;
             m_ResearcherStatusPanel = researcherStatusPanel;
             m_ResearcherStatusText = researcherStatusText;
+        }
+
+        /// <summary>How many practice-visual roots are bound (0 in the legacy combined scene
+        /// until it is rebuilt, in which case the gating is a no-op).</summary>
+        public int practiceContentCount => m_PracticeContent.Count;
+
+        public void BindPracticeContent(IEnumerable<GameObject> practiceContent)
+        {
+            m_PracticeContent.Clear();
+
+            if (practiceContent == null)
+                return;
+
+            foreach (var root in practiceContent)
+            {
+                if (root != null)
+                    m_PracticeContent.Add(root);
+            }
         }
 
         public void BindShapeLegend(GameObject legend)

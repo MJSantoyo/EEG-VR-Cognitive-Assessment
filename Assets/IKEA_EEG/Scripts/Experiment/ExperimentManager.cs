@@ -1411,6 +1411,7 @@ namespace IkeaEeg.Experiment
                 m_UI.ShowArea(ExperimentArea.Familiarization);
                 m_UI.ShowLanguagePanel(true);
                 m_UI.ShowFamiliarizationPanel(false);
+                m_UI.ShowPracticeContent(false);
                 m_UI.ShowStartButton(false);
             }
 
@@ -1621,6 +1622,12 @@ namespace IkeaEeg.Experiment
             m_PracticeSecondSelectionDone = false;
             m_FamiliarizationOutcome = string.Empty;
             m_FamiliarizationStartSeconds = m_Logger != null ? m_Logger.clock.RelativeSeconds() : 0d;
+
+            // Practice visuals were hidden for the language screen. Shown BEFORE the reset so
+            // each PracticeObject is active (XRI listeners attached) when it is reset. Also
+            // covers NEW TRIAL, which re-enters here without the language screen.
+            if (m_UI != null)
+                m_UI.ShowPracticeContent(true);
 
             foreach (var practice in m_PracticeObjects)
             {

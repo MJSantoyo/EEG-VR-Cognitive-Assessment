@@ -53,6 +53,10 @@ namespace IkeaEeg.SceneFlow
         [SerializeField] TextMeshProUGUI m_ResearcherStatusText;
         [SerializeField] List<PracticeObject> m_PracticeObjects = new List<PracticeObject>();
 
+        [Tooltip("Area 0 practice visuals (PracticeObjects, ControllerDiagram). Hidden while " +
+                 "the language screen is up; shown when familiarization begins.")]
+        [SerializeField] List<GameObject> m_PracticeContent = new List<GameObject>();
+
         [Header("Area A - entrance")]
         [SerializeField] GameObject m_PanelA;
         [SerializeField] TextMeshProUGUI m_TitleA;
@@ -95,6 +99,8 @@ namespace IkeaEeg.SceneFlow
                 m_ResearcherStatusPanel, m_ResearcherStatusText,
                 m_PracticePrompt, m_ReadyLabel, m_StartHighlight,
                 m_ReplayInstructionsButton);
+
+            ui.BindPracticeContent(m_PracticeContent);
 
             ui.BindAreaA(m_PanelA, m_TitleA, m_InstructionA, m_WordA, m_StatusA,
                 m_StartButton, m_EnterButton, m_RecognitionCounterA,
@@ -163,6 +169,14 @@ namespace IkeaEeg.SceneFlow
 
             if (practiceObjects != null)
                 m_PracticeObjects.AddRange(practiceObjects);
+        }
+
+        public void AuthorPracticeContent(IEnumerable<GameObject> practiceContent)
+        {
+            m_PracticeContent.Clear();
+
+            if (practiceContent != null)
+                m_PracticeContent.AddRange(practiceContent);
         }
 
         public void AuthorAreaAUi(GameObject panel, TextMeshProUGUI title,

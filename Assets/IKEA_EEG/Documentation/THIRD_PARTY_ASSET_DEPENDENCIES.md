@@ -278,6 +278,14 @@ backdrop images are tracked and stay.
 scene contexts, walls), TextMesh Pro (tracked) and the Unity packages (restored from
 `Packages/manifest.json`).
 
+**Area 0 (familiarization room) is not affected.** `Area0_Visuals.prefab` and the room's shell
+finish (built by `Area0EnvironmentBuilder`, 2026-10-15) use Unity primitives and nine
+project-owned `M_Area0_*` URP/Lit materials only: 0 references into any pack. The
+`VNB - Office Set` pack is present locally but deliberately not used here. The Yughues wood
+textures were evaluated for the desk and shelves and rejected (LaminatedWood is a near-white
+speckle, Plywood is OSB chipboard, WoodFlooring is a parquet weave), so Area 0 does not use
+that pack either.
+
 ### What the builders do if a pack is missing
 
 The editor builders load pack assets **by path or folder**, not by GUID. When a pack is absent,
@@ -400,6 +408,48 @@ every scene and prefab reference would have to be rewired.
 
 ---
 
+## 7b. Committed redistributable dependency — Noto Sans JP (Japanese UI glyphs)
+
+Unlike the packs above, this font **is committed to Git on purpose**. LiberationSans SDF (the
+TMP default) has no kana or kanji, and the language screen shows 日本語 before any language is
+chosen, so the Japanese glyphs must exist on a fresh clone on any machine, without depending on
+fonts installed in the OS. Added 2026-10-15.
+
+| Item | Value |
+|---|---|
+| Font | Noto Sans JP Regular, static OpenType (CFF), Japanese subset (`SubsetOTF/JP`) — not the variable font |
+| Version | 2.004 (name table: `Version 2.004;hotconv 1.0.118;makeotfexe 2.5.65603`; noto-cjk release tag `Sans2.004`, 2022-01-27) |
+| Copyright | © 2014-2021 Adobe (http://www.adobe.com/) — from the font's name table |
+| Source | https://github.com/notofonts/noto-cjk — `Sans/SubsetOTF/JP/NotoSansJP-Regular.otf`, downloaded 2026-10-15 from `https://raw.githubusercontent.com/notofonts/noto-cjk/main/Sans/SubsetOTF/JP/NotoSansJP-Regular.otf` |
+| File | 4,533,028 bytes; SHA-256 `dff723ba59d57d136764a04b9b2d03205544f7cd785a711442d6d2d085ac5073`; Git blob `4af556abb9cc42e585aab777b01857246a110746` (matches the repository's listing) |
+| License | SIL Open Font License 1.1 — `OFL.txt` is the unmodified `Sans/LICENSE` from the same repository (SHA-256 `6a73f9541c2de74158c0e7cf6b0a58ef774f5a780bf191f2d7ec9cc53efe2bf2`) |
+
+**Project files** (all under `Assets/IKEA_EEG/Fonts/NotoSansJP/`):
+- `NotoSansJP-Regular.otf` — the source font (importer: Include Font Data on)
+- `OFL.txt` — the license; it must stay next to the font (OFL condition 2)
+- `Resources/NotoSansJP-Regular SDF.asset` — TMP font asset, **Dynamic**, 1024² atlas, 48 pt
+  sampling, 5 px padding, SDFAA, multi-atlas on, Mobile Distance Field material. The atlas and
+  material are sub-assets of this file.
+
+**Why it may be committed.** The OFL permits bundling and redistributing the font with software,
+as long as the license travels with it and the font is not sold by itself. The file is
+unmodified, so the Reserved Font Name clause does not apply. A TMP atlas rasterised from it is
+not a modified font.
+
+**How it is wired.** `Assets/TextMesh Pro/Resources/TMP Settings.asset` lists it as the only
+global fallback font, so it is in force before any script runs. LiberationSans SDF stays the
+primary font for every label. `ExperimentLocalization.EnsureJapaneseFontFallback()` runs before
+the first scene loads. It confirms the asset is registered, re-registers it from `Resources` if
+TMP Settings lost it, and only as a logged **backup** builds a fallback from an installed OS
+font. Re-create or re-register with `IKEA_EEG/Fonts/Set Up Japanese Font Fallback` (safe to rerun).
+
+**Dynamic atlas housekeeping.** TMP writes rendered glyphs into the asset while the Editor shows
+Japanese. Run `IKEA_EEG/Fonts/Clear Japanese Font Dynamic Data` before committing, so the asset
+stays small (the self test also clears it). Player builds clear it anyway
+(`m_ClearDynamicDataOnBuild: 1`) and rasterise from the bundled `.otf` at run time.
+
+---
+
 ## 8. Summary
 
 | Pack | Area A | Area B | Required files | Git tracked? | Fresh clone safe? |
@@ -411,4 +461,5 @@ every scene and prefab reference would have to be rewired.
 | Realistic Metal Texture 1.0 | No | No | 0 of 115 | No (gitignored) | Not needed |
 | VNB Low-Poly Office Set 1.1.0 | No | No | 0 | No (gitignored) | Not needed |
 | TextMesh Pro essentials (`Assets/TextMesh Pro`) | Yes | Yes | 4 | Yes | Yes |
+| Noto Sans JP 2.004 Regular (SIL OFL 1.1, §7b) | Yes (Japanese UI, all rooms) | Yes | 3 (`.otf`, `OFL.txt`, TMP asset) | **Yes (committed on purpose)** | Yes |
 | Unity packages (URP, uGUI, XR Interaction Toolkit, Shader Graph) | Yes | Yes | via `Packages/manifest.json` | Yes (manifest) | Yes |

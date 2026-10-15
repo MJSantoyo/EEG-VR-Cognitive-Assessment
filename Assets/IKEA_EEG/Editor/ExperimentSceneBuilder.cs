@@ -224,6 +224,10 @@ namespace IkeaEeg.EditorTools
                 AreaBEnvironmentBuilder.PreserveAfterSceneRebuild(
                     environment.transform.Find("Area_B_Showroom"));
 
+                // And for the familiarization room's dressing and shell finish.
+                Area0EnvironmentBuilder.PreserveAfterSceneRebuild(
+                    environment.transform.Find("Area_0_Familiarization"));
+
                 EditorUtility.DisplayProgressBar("IKEA_EEG", "Saving…", 0.95f);
 
                 EditorSceneManager.MarkSceneDirty(scene);
@@ -620,10 +624,13 @@ namespace IkeaEeg.EditorTools
             }
 
             // ---- Controller help -----------------------------------------------------------
-            // Well to the LEFT of the instruction panel (which spans x -0.88..0.88) with its
-            // callouts stacked underneath the models rather than beside them, so the whole help
-            // occupies its own column and cannot reach the panel.
-            BuildControllerHelp(root.transform, new Vector3(-2.05f, 1.60f, spawnZ + 1.9f),
+            // To the LEFT of the instruction panel (which spans x -0.88..0.88), in the panel's
+            // own plane, so the participant reads both while looking forward. Its callouts are
+            // stacked underneath the models, so the help occupies its own column (about
+            // x -2.1..-1.1) and cannot reach the panel. Raised so its callouts sit above the
+            // red practice object and its label as seen from Spawn_0. (Was x -2.05, y 1.60,
+            // z spawnZ + 1.9 until 2026-10-15: that made the participant turn their head.)
+            BuildControllerHelp(root.transform, new Vector3(-1.62f, 2.50f, spawnZ + 2.95f),
                 spawnZ, mats);
 
             // ---- UI --------------------------------------------------------------------------
@@ -757,6 +764,12 @@ namespace IkeaEeg.EditorTools
 
             researcherCanvas.gameObject.SetActive(false);
 
+            // Hidden while the language screen is up, shown when familiarization begins.
+            ui.practiceContent = new List<GameObject>
+            {
+                practiceRoot, root.transform.Find("ControllerDiagram").gameObject
+            };
+
             return spawn;
         }
 
@@ -883,8 +896,10 @@ namespace IkeaEeg.EditorTools
             // actually holding whichever hand they look at.
             BuildControllerHelpUnit(root.transform, model, "Left", new Vector3(-0.30f, 0f, 0f),
                 mats);
+            BuildControllerHand(root.transform, "Left", -0.30f, mats);
             BuildControllerHelpUnit(root.transform, model, "Right", new Vector3(0.30f, 0f, 0f),
                 mats);
+            BuildControllerHand(root.transform, "Right", 0.30f, mats);
 
             // ---- Callout labels -------------------------------------------------------------
             // BELOW the models, not beside them. Sideways labels pushed the help's footprint
@@ -899,7 +914,10 @@ namespace IkeaEeg.EditorTools
                 Vector3.zero, new Vector2(1000f, 800f), mats, viewerZ, 0.0011f);
 
             labelCanvas.transform.localRotation = Quaternion.identity;
-            labelCanvas.transform.localPosition = new Vector3(0f, -0.72f, 0f);
+            // Just under the LEFT / RIGHT row, so models, hand labels and callouts read
+            // top-to-bottom as one block. (Was y -0.72 while the hand labels hung off the
+            // tilted controllers.)
+            labelCanvas.transform.localPosition = new Vector3(0f, k_ControllerHelpLabelsY, 0f);
 
             // ALL FOUR captions are localized. They were the last participant-facing English
             // literals left in Area 0: the diagram itself is language-neutral, but everything
@@ -934,9 +952,38 @@ namespace IkeaEeg.EditorTools
                 LocKeys.ControllerFooter);
         }
 
+        // Controller help layout, in ControllerDiagram's local space (which already faces the
+        // participant). The hand labels sit in the diagram's own plane under each model.
+        const float k_ControllerHandLabelY = -0.27f;
+        const float k_ControllerHelpLabelsY = -0.78f;
+
         /// <summary>
-        /// One hand's controller display: the model (or a placeholder), three coloured markers
-        /// on its inputs, and a hand label.
+        /// LEFT / RIGHT under one controller model.
+        ///
+        /// Parented to the DIAGRAM ROOT, not to the tilted controller unit: as a child of the
+        /// unit it inherited the 25° pitch and yaw that shows the controller's faces, which
+        /// left the word skewed and visually detached from the callouts below it.
+        /// </summary>
+        static void BuildControllerHand(Transform diagramRoot, string hand, float x,
+            ExperimentAssetBuilder.MaterialSet mats)
+        {
+            var handCanvas = CreateWorldCanvas($"UI_ControllerHand_{hand}", diagramRoot,
+                new Vector3(x, k_ControllerHandLabelY, 0f), new Vector2(400f, 120f), mats,
+                -1.6f, 0.0009f);
+
+            handCanvas.transform.localRotation = Quaternion.identity;
+
+            // LEFT / RIGHT is participant-facing too — IZQUIERDA / DERECHA / 左 / 右.
+            LocalizeText(
+                CreateText($"Txt_Hand_{hand}", handCanvas.transform, Vector2.zero,
+                    new Vector2(380f, 100f), string.Empty, 60f,
+                    TextAlignmentOptions.Center, new Color(0.8f, 0.85f, 0.9f)),
+                hand == "Left" ? LocKeys.HandLeft : LocKeys.HandRight);
+        }
+
+        /// <summary>
+        /// One hand's controller display: the model (or a placeholder) and the coloured markers
+        /// on its inputs. Its hand label is built by <see cref="BuildControllerHand"/>.
         /// </summary>
         static void BuildControllerHelpUnit(Transform parent, GameObject model, string hand,
             Vector3 localPosition, ExperimentAssetBuilder.MaterialSet mats)
@@ -983,18 +1030,6 @@ namespace IkeaEeg.EditorTools
             CreateSphereMarker($"Marker_GripTrigger_{hand}", unit.transform,
                 new Vector3(hand == "Left" ? 0.068f : -0.068f, -0.072f, 0f), 0.038f,
                 mats.markerGripTrigger);
-
-            var handCanvas = CreateWorldCanvas($"UI_ControllerHand_{hand}", unit.transform,
-                new Vector3(0f, -0.30f, 0f), new Vector2(400f, 120f), mats, -1.6f, 0.0009f);
-
-            handCanvas.transform.localRotation = Quaternion.identity;
-
-            // LEFT / RIGHT is participant-facing too — IZQUIERDA / DERECHA / 左 / 右.
-            LocalizeText(
-                CreateText($"Txt_Hand_{hand}", handCanvas.transform, Vector2.zero,
-                    new Vector2(380f, 100f), string.Empty, 60f,
-                    TextAlignmentOptions.Center, new Color(0.8f, 0.85f, 0.9f)),
-                hand == "Left" ? LocKeys.HandLeft : LocKeys.HandRight);
         }
 
         static void CreateSphereMarker(string name, Transform parent, Vector3 localPosition,
@@ -1919,6 +1954,7 @@ namespace IkeaEeg.EditorTools
                 ui0.researcherStatusPanel, ui0.researcherStatusText,
                 ui0.practicePrompt, ui0.readyLabel, ui0.startHighlight,
                 ui0.replayInstructionsButton);
+            ui.BindPracticeContent(ui0.practiceContent);
             ui.BindShapeLegend(uiB.shapeLegend);
             ui.BindAreaA(uiA.panel, uiA.title, uiA.instruction, uiA.word, uiA.status,
                 uiA.startButton, uiA.enterButton, uiA.recognitionCounter,
@@ -3415,6 +3451,9 @@ namespace IkeaEeg.EditorTools
             public Button recenterButton;
             public GameObject researcherStatusPanel;
             public TextMeshProUGUI researcherStatusText;
+
+            /// <summary>PracticeObjects and ControllerDiagram: hidden until a language is chosen.</summary>
+            public List<GameObject> practiceContent;
         }
 
         class AreaAUi

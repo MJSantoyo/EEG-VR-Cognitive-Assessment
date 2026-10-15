@@ -315,6 +315,10 @@ namespace IkeaEeg.EditorTools
             AreaAEnvironmentBuilder.PreserveAfterSceneRebuild(
                 environment.transform.Find("Area_A_Entrance"));
 
+            // The familiarization room's dressing and shell finish, the same way.
+            Area0EnvironmentBuilder.PreserveAfterSceneRebuild(
+                environment.transform.Find("Area_0_Familiarization"));
+
             var context = NewContextObject<AreaASceneContext>();
             context.AuthorSpawns(spawn0, spawnA, anchorA.transform);
             context.AuthorArea0Ui(ui0.languagePanel, ui0.languageTitle, ui0.languageEnglishButton,
@@ -323,6 +327,7 @@ namespace IkeaEeg.EditorTools
                 ui0.readyLabel, ui0.startHighlight, ui0.startExperimentButton,
                 ui0.skipIntroButton, ui0.replayInstructionsButton, ui0.recenterButton,
                 ui0.researcherStatusPanel, ui0.researcherStatusText, practiceObjects);
+            context.AuthorPracticeContent(ui0.practiceContent);
             context.AuthorAreaAUi(uiA.panel, uiA.title, uiA.instruction, uiA.word,
                 uiA.recognitionCounter, uiA.developerCheatsheet, uiA.fixation, uiA.status,
                 uiA.warning, uiA.startButton, uiA.enterButton, uiA.recheckAudioButton,

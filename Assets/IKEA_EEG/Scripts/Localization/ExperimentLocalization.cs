@@ -45,8 +45,9 @@ namespace IkeaEeg.Localization
 
             s_Language = newLanguage;
 
-            // Japanese needs glyphs the default Latin font does not contain. Set up the
-            // fallback BEFORE anything renders, so no participant ever sees tofu boxes.
+            // Japanese needs glyphs the default Latin font does not contain. The fallback is
+            // normally in force from startup (see InitializeJapaneseFontFallback); this call is
+            // idempotent and only confirms it.
             if (newLanguage == ExperimentLanguage.Japanese)
                 EnsureJapaneseFontFallback();
 
@@ -151,11 +152,21 @@ namespace IkeaEeg.Localization
         // ---------------------------------------------------------------------------------
 
         /// <summary>
-        /// Japanese-capable fonts to try, in order of preference. All ship with Windows.
-        ///
-        /// Noto Sans JP first: it is SIL Open Font License, so a project-local font asset made
-        /// from it carries no redistribution problem. The others are fallbacks used only if it
-        /// is absent.
+        /// Resources name of the PROJECT-OWNED Japanese TMP font asset:
+        /// Assets/IKEA_EEG/Fonts/NotoSansJP/Resources/NotoSansJP-Regular SDF.asset, built by
+        /// IKEA_EEG/Fonts/Set Up Japanese Font Fallback from the bundled NotoSansJP-Regular.otf
+        /// (SIL OFL 1.1). It is also serialized into TMP Settings' global fallback list, so it
+        /// is in force before any script runs; the Resources copy guarantees that a lost TMP
+        /// Settings entry is restored rather than silently falling back to an OS font.
+        /// </summary>
+        public const string ProjectJapaneseFontResource = "NotoSansJP-Regular SDF";
+
+        /// <summary>Name prefix of a font asset built from an OS font (backup path only).</summary>
+        const string k_OsFallbackPrefix = "IKEA_EEG_JP_";
+
+        /// <summary>
+        /// BACKUP ONLY: installed Japanese-capable fonts, tried in order if the project-owned
+        /// asset is missing. A fresh machine is not guaranteed to have any of them.
         /// </summary>
         static readonly string[] k_JapaneseFontFamilies =
         {
@@ -167,23 +178,70 @@ namespace IkeaEeg.Localization
         };
 
         /// <summary>
-        /// Adds a Japanese font to TMP's global fallback list, so every existing label can
-        /// render kana and kanji without any of them being re-authored.
+        /// Runs before the first scene loads, so the language-selection screen — which shows
+        /// 日本語 before any language is chosen — can render it on its first frame. Normally
+        /// only a confirmation: TMP Settings already carries the fallback.
+        /// </summary>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        static void InitializeJapaneseFontFallback()
+        {
+            s_FontFallbackReady = false;
+            EnsureJapaneseFontFallback();
+        }
+
+        /// <summary>
+        /// Makes sure exactly one Japanese font is in TMP's global fallback list, so every
+        /// existing label can render kana and kanji without any of them being re-authored.
+        /// Labels keep their own (Latin) font and only fall through for glyphs it lacks.
         ///
-        /// The font asset is created from an INSTALLED SYSTEM FONT at run time
-        /// (TMP_FontAsset.CreateFontAsset(family, style)) in dynamic mode: no font file is
-        /// copied into the project, nothing is downloaded, and no font is redistributed. The
-        /// atlas is rasterised on demand for exactly the glyphs the localized strings use.
+        /// Order of preference:
+        ///   1. the project-owned Noto Sans JP asset, already in TMP Settings (normal case);
+        ///   2. the same asset loaded from Resources and registered (TMP Settings lost it);
+        ///   3. BACKUP: a dynamic asset built from an installed OS font, logged as a warning.
         ///
-        /// NOTE FOR A STANDALONE QUEST BUILD: this relies on OS-installed fonts, which exist on
-        /// the PC (the experiment runs over Quest Link). An on-device build would need a font
-        /// asset committed to the project instead — recorded here so the limitation is not
-        /// discovered in a headset.
+        /// Idempotent: an asset already in the list is never added again, and the OS path
+        /// reuses an earlier OS-built asset instead of creating another.
         /// </summary>
         public static bool EnsureJapaneseFontFallback()
         {
-            if (s_FontFallbackReady)
+            var fallbacks = TMP_Settings.fallbackFontAssets;
+
+            if (fallbacks == null)
+            {
+                s_FontFallbackDetail = "TMP Settings has no fallback list — Japanese text " +
+                                       "would render as empty boxes";
+                Debug.LogError($"[IKEA_EEG] {s_FontFallbackDetail}.");
+                return s_FontFallbackReady = false;
+            }
+
+            // 1 + 2. The project-owned asset.
+            var projectFont = Resources.Load<TMP_FontAsset>(ProjectJapaneseFontResource);
+
+            if (projectFont != null)
+            {
+                var registered = fallbacks.Contains(projectFont);
+
+                if (!registered)
+                    fallbacks.Insert(0, projectFont);
+
+                s_FontFallbackReady = true;
+                s_FontFallbackDetail = $"using project font asset '{projectFont.name}' " +
+                                       (registered
+                                           ? "(registered in TMP Settings)"
+                                           : "(missing from TMP Settings, registered at run time)");
+
+                if (!registered)
+                    Debug.LogWarning($"[IKEA_EEG] Japanese glyph fallback: {s_FontFallbackDetail}. " +
+                                     "Run IKEA_EEG/Fonts/Set Up Japanese Font Fallback.");
                 return true;
+            }
+
+            // 3. BACKUP: an installed OS font. Reuse one built earlier rather than another copy.
+            foreach (var existing in fallbacks)
+            {
+                if (existing != null && existing.name.StartsWith(k_OsFallbackPrefix))
+                    return s_FontFallbackReady = true;
+            }
 
             var installed = new HashSet<string>(Font.GetOSInstalledFontNames() ?? Array.Empty<string>());
 
@@ -217,28 +275,26 @@ namespace IkeaEeg.Localization
                 if (fontAsset == null)
                     continue;
 
-                fontAsset.name = $"IKEA_EEG_JP_{family}";
-
-                // Registered globally, so every TMP label in the scene inherits it. Existing
-                // labels keep their own font for Latin text and only fall through for glyphs
-                // they lack.
-                TMP_Settings.fallbackFontAssets?.Insert(0, fontAsset);
+                fontAsset.name = $"{k_OsFallbackPrefix}{family}";
+                fallbacks.Add(fontAsset);
 
                 s_FontFallbackReady = true;
-                s_FontFallbackDetail = $"using installed system font '{family}' (dynamic, " +
-                                       "no file copied, nothing downloaded)";
+                s_FontFallbackDetail = $"BACKUP: project font asset missing, using installed " +
+                                       $"system font '{family}'";
 
-                Debug.Log($"[IKEA_EEG] Japanese glyph fallback ready: {s_FontFallbackDetail}");
+                Debug.LogWarning($"[IKEA_EEG] Japanese glyph fallback: {s_FontFallbackDetail}. " +
+                                 "Another machine may not have this font.");
                 return true;
             }
 
-            s_FontFallbackDetail = "NO Japanese-capable font found among " +
-                                   string.Join(", ", k_JapaneseFontFamilies) +
+            s_FontFallbackDetail = $"NO Japanese-capable font: project asset " +
+                                   $"'{ProjectJapaneseFontResource}' missing and none of " +
+                                   string.Join(", ", k_JapaneseFontFamilies) + " installed" +
                                    " — Japanese text would render as empty boxes";
 
             Debug.LogError($"[IKEA_EEG] {s_FontFallbackDetail}. Japanese must not be offered " +
                            "until a Japanese font is available.");
-            return false;
+            return s_FontFallbackReady = false;
         }
 
         /// <summary>True when Japanese can actually be rendered on this machine.</summary>
