@@ -119,8 +119,10 @@ decision summary, and the persisted `shadow_diagnostics.txt`.
 live path has been exercised with a real Unity Play Mode session; **it has not been validated
 with AURA hardware attached**, and no panel has yet displayed real EEG features.
 
-`theta_fc` is `mean(F3, Fz, F4, Cz)` as of 2026-09-16. Sessions recorded before that carry a
-purely frontal value under the same name and are not comparable on that feature.
+`theta_fc` is frontal theta, `mean(F3, Fz, F4)`, as of 2026-10-15 (the column keeps its name
+because the CSV schema is frozen). Sessions recorded between 2026-09-16 and 2026-10-15 carry
+`mean(F3, Fz, F4, Cz)` under the same name and are not comparable on that feature; sessions
+before 2026-09-16 carry `mean(F3, Fz, F4)`.
 
 Sessions recorded before `shadow_diagnostics.txt` was introduced will not have one; the
 offline panel says so rather than showing an empty box.

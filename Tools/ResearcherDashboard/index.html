@@ -466,7 +466,7 @@ footer .path{font-family:var(--font-mono)}
       <div class="metric-row" style="margin-bottom:var(--s4)">
         <div>
           <div class="metric" id="w_theta">—</div>
-          <div class="metric-label">theta_fc — mean(F3, Fz, F4, Cz), 4–8 Hz</div>
+          <div class="metric-label">theta_fc — frontal theta, mean(F3, Fz, F4), 4–8 Hz</div>
         </div>
         <div>
           <div class="metric" id="w_alpha">—</div>
@@ -856,7 +856,7 @@ function renderStatus(s) {
     txt("w_alpha", fmt.f(w.alpha_post, 2));
     txt("w_span", fmt.f(w.lsl_start, 2) + " → " + fmt.f(w.lsl_end, 2));
     txt("w_samples", fmt.int(w.sample_count) + " over " + fmt.int(w.channel_count) + " ch");
-    txt("w_roi", "frontocentral " + (w.fc_roi_valid ? "valid" : "INVALID") +
+    txt("w_roi", "frontal " + (w.fc_roi_valid ? "valid" : "INVALID") +
                  " · posterior " + (w.post_roi_valid ? "valid" : "INVALID"));
     txt("w_units", w.power_units || "—");
 

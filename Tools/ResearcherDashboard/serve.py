@@ -108,7 +108,7 @@ class MockClock:
         labels = ["Fp1", "F3", "Fz", "F4", "Cz", "P3", "Pz", "P4"]
         rois = {
             "Fp1": "", "F3": "FRONTAL_THETA", "Fz": "FRONTAL_THETA",
-            "F4": "FRONTAL_THETA", "Cz": "FRONTAL_THETA",
+            "F4": "FRONTAL_THETA", "Cz": "",
             "P3": "POSTERIOR_ALPHA", "Pz": "POSTERIOR_ALPHA", "P4": "POSTERIOR_ALPHA",
         }
         channels = [
