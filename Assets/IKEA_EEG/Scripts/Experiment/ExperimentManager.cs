@@ -2576,15 +2576,31 @@ namespace IkeaEeg.Experiment
         /// </summary>
         void OnDeveloperAreaJump(ExperimentArea area)
         {
-            if (m_RunAborted || m_SessionEnded)
+            if (m_RunAborted)
             {
                 // The run's files are closed. Jumping into an area would restart participant
                 // coroutines with nowhere to write, and would break the promise that an aborted
                 // run is terminal. The recovery path is RETURN TO LANGUAGE SELECTION, which
                 // opens a fresh session first.
                 Debug.LogWarning("[IKEA_EEG] Developer area jump refused: this run is " +
-                                 (m_RunAborted ? "ABORTED" : "ENDED") + ". Use RETURN TO " +
-                                 "LANGUAGE SELECTION to begin a new session.");
+                                 "ABORTED. Use RETURN TO LANGUAGE SELECTION to begin a new " +
+                                 "session.");
+
+                m_DeveloperNavigation?.Close();
+                return;
+            }
+
+            // A room is mid-load. StopFlow below would stop the coroutine that owns that load
+            // part-way through SwitchTo, and a second SwitchTo would be ignored anyway. Refused
+            // before anything is marked or stopped, so the load in flight finishes normally and
+            // the loader stays usable; the developer simply jumps again once it has.
+            var loader = ResolveSceneLoader();
+
+            if (m_RoomTransitionPending || (loader != null && loader.isSwitching))
+            {
+                Debug.LogWarning($"[IKEA_EEG] Developer area jump to {area} refused: a room " +
+                                 "switch is already in progress. Nothing changed; jump again " +
+                                 "once the room has loaded.");
 
                 m_DeveloperNavigation?.Close();
                 return;
@@ -2593,6 +2609,10 @@ namespace IkeaEeg.Experiment
             var fromState = m_State;
             var fromRoom = m_Logger != null ? m_Logger.currentRoom : "unknown";
 
+            // After END the completed run is closed and stays closed. The jump goes into a NEW
+            // developer run of a NEW experiment session; the language is kept.
+            var endedRunId = m_SessionEnded ? OpenDeveloperRunAfterEnd(area) : null;
+
             m_Logger?.MarkDeveloperInterrupted($"developer jumped to {area} from {fromState}");
 
             Log(EventTypes.DeveloperAreaJump, e =>
@@ -2600,7 +2620,11 @@ namespace IkeaEeg.Experiment
                 e.correct = "FALSE";
                 e.notes = $"from_state={fromState}; from_room={fromRoom}; to_area={area}; " +
                           "developer_interrupted=TRUE; " +
-                          "run_is_not_a_valid_participant_protocol_run=TRUE";
+                          "run_is_not_a_valid_participant_protocol_run=TRUE" +
+                          (endedRunId != null
+                              ? $"; opened_after_end=TRUE; ended_run_session_id={endedRunId}; " +
+                                "ended_run_untouched=TRUE"
+                              : string.Empty);
             });
 
             m_DeveloperNavigation?.Close();
@@ -2622,17 +2646,25 @@ namespace IkeaEeg.Experiment
             m_CurrentChairTrial = null;
             m_ChairSelectionReceived = false;
 
+            // Leaving Results (or any screen) by a jump: NEW TRIAL / RESTART / END must not stay
+            // visible in a room where they no longer mean anything.
+            HideRunManagementButtons();
+
             switch (area)
             {
+                // Area 0 and Area A share the Area A scene. From Area B / Area C (Results
+                // included) that scene has been unloaded, so it is loaded first through EnterRoom,
+                // exactly as RESTART does. When it is already open (or in the legacy combined
+                // scene) the jump stays the synchronous teleport it has always been.
                 case ExperimentArea.Familiarization:
-                    ResetAreaBBlock();
-                    EnterFamiliarization();
-                    break;
-
                 case ExperimentArea.AreaA:
-                    ResetAreaBBlock();
-                    EnterIdleAtAreaA();
-                    EvaluateStimulusReadiness(logToConsole: false);
+                    if (AreaAMustBeLoaded())
+                    {
+                        m_Flow = StartCoroutine(DeveloperEnterAreaA(area));
+                        break;
+                    }
+
+                    EnterAreaAForDeveloper(area);
                     break;
 
                 // Both developer jumps now cross a scene boundary, so they go through the SAME
@@ -2650,6 +2682,92 @@ namespace IkeaEeg.Experiment
 
             Debug.LogWarning($"[IKEA_EEG] DEVELOPER AREA JUMP -> {area}. This run is now marked " +
                              "DEVELOPER_INTERRUPTED and must not be reported as participant data.");
+        }
+
+        /// <summary>
+        /// A developer area jump requested after END: opens a fresh developer run so the jump
+        /// has somewhere to write, without reopening the ended run.
+        ///
+        /// Same recovery as RETURN TO LANGUAGE SELECTION — new experiment session, new run, new
+        /// folder — except the selected language is KEPT and no participant flow is started:
+        /// the caller marks the run DEVELOPER_INTERRUPTED and enters the requested area.
+        /// Returns the ended run's id, for the jump's event row.
+        /// </summary>
+        string OpenDeveloperRunAfterEnd(ExperimentArea area)
+        {
+            var endedRunId = m_Logger != null ? m_Logger.sessionId : "unknown";
+
+            StopFlow();
+            StopParticipantNarration($"developer jump to {area} after END");
+
+            m_SessionEnded = false;
+            m_ChairPlans.Clear();
+
+            // END already finalised and closed the run; this only guards against a logger
+            // that is somehow still open, and never writes into the ended run.
+            if (m_Logger != null)
+            {
+                if (m_Logger.sessionActive)
+                    m_Logger.EndSession("developer jump after END");
+
+                m_Logger.BeginExperimentSession();
+                BeginSession(ChooseSeed(), isReplay: false);
+
+                // Marked before the first row of the new run is anything but session setup.
+                m_Logger.MarkDeveloperInterrupted(
+                    $"developer run opened after END to jump to {area}");
+            }
+
+            PrepareTrial();
+            m_UI?.ResetUI();
+
+            Debug.LogWarning($"[IKEA_EEG] Developer area jump after END: the ended run " +
+                             $"{endedRunId} stays closed and untouched. A NEW developer run " +
+                             $"{(m_Logger != null ? m_Logger.sessionId : "n/a")} was opened " +
+                             $"(language kept: {ExperimentLocalization.languageCode}).");
+
+            return endedRunId;
+        }
+
+        /// <summary>
+        /// The developer jump into Area 0 or Area A when the Area A scene is not the open room.
+        ///
+        /// Loads it through the one EnterRoom path and only then enters the area. Like
+        /// <see cref="DeveloperEnterAreaB"/> it adds NO event of its own. If the load failed
+        /// the loader has already logged why, and nothing that touches Area A is called.
+        /// </summary>
+        IEnumerator DeveloperEnterAreaA(ExperimentArea area)
+        {
+            SetRoom(area);
+            yield return EnterRoom(area);
+
+            // The coroutine's work is done; the entry below is synchronous and owns nothing.
+            m_Flow = null;
+
+            if (AreaAMustBeLoaded())
+            {
+                Debug.LogError($"[IKEA_EEG] Developer area jump to {area}: the Area A scene did " +
+                               "not load, so the area was not entered. The run stays marked " +
+                               "DEVELOPER_INTERRUPTED.");
+                yield break;
+            }
+
+            EnterAreaAForDeveloper(area);
+        }
+
+        /// <summary>The Area 0 / Area A entry of a developer jump, once the Area A scene exists.</summary>
+        void EnterAreaAForDeveloper(ExperimentArea area)
+        {
+            ResetAreaBBlock();
+
+            if (area == ExperimentArea.Familiarization)
+            {
+                EnterFamiliarization();
+                return;
+            }
+
+            EnterIdleAtAreaA();
+            EvaluateStimulusReadiness(logToConsole: false);
         }
 
         /// <summary>

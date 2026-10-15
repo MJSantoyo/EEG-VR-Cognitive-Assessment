@@ -707,6 +707,8 @@ namespace IkeaEeg.EditorTools
             RunSection("LANGUAGE SELECTION FLOW", CheckLanguageSelectionFlow);
             RunSection("LANGUAGE-SPECIFIC WORD SETS", CheckWordSetLanguageSafety);
             RunSection("FINAL STATISTICS + END STATE", CheckFinalStatisticsAndEndState);
+            RunSection("DEVELOPER AREA JUMP AFTER END", CheckDeveloperJumpAfterEnd);
+            RunSection("DEVELOPER JUMP TO AREA 0 / A FROM ANOTHER ROOM", CheckDeveloperJumpLoadsAreaA);
             RunSection("RECENTER CAPTION FITS ONE LINE", CheckRecenterCaptionFit);
             RunSection("NEW TRIAL RUN TRACKING", CheckNewTrialRunTracking);
 
@@ -16098,6 +16100,417 @@ namespace IkeaEeg.EditorTools
                 if (logger.sessionActive)
                     logger.EndSession("self test cleanup");
             }
+        }
+
+        /// <summary>
+        /// Developer Navigation stays usable after END. The jump opens a NEW developer run in a
+        /// NEW experiment session, keeps the language, and leaves the ended run's files exactly
+        /// as END wrote them. ABORT stays terminal: a jump after it is still refused.
+        ///
+        /// Uses Spanish rather than Japanese so no Japanese glyphs are requested from the
+        /// bundled dynamic font asset.
+        /// </summary>
+        static void CheckDeveloperJumpAfterEnd()
+        {
+            var manager = Object.FindAnyObjectByType<ExperimentManager>();
+            var logger = Object.FindAnyObjectByType<EventLogger>();
+
+            if (manager == null || logger == null)
+            {
+                Info("no manager/logger in the open scene — developer jump after END not exercised");
+                return;
+            }
+
+            const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+            var type = typeof(ExperimentManager);
+            var endedField = type.GetField("m_SessionEnded", flags);
+            var abortedField = type.GetField("m_RunAborted", flags);
+            var beginSession = type.GetMethod("BeginSession", flags, null,
+                new[] { typeof(long), typeof(bool) }, null);
+            var jump = type.GetMethod("OnDeveloperAreaJump", flags);
+
+            Assert(endedField != null && abortedField != null && beginSession != null && jump != null,
+                "the ended/aborted flags, the session entry point and the developer jump exist");
+
+            if (endedField == null || abortedField == null || beginSession == null || jump == null)
+                return;
+
+            var previousLanguage = ExperimentLocalization.language;
+
+            // Edit Mode registers no CSV sink, so the jump's row is read off the bus.
+            var jumpNotes = new List<string>();
+            System.Action<ExperimentEvent> capture = e =>
+            {
+                if (e.eventType == EventTypes.DeveloperAreaJump)
+                    jumpNotes.Add(e.notes);
+            };
+
+            logger.bus.eventPublished += capture;
+
+            try
+            {
+                ExperimentLocalization.SetLanguage(ExperimentLanguage.Spanish);
+
+                endedField.SetValue(manager, false);
+                abortedField.SetValue(manager, false);
+                logger.BeginExperimentSession();
+                beginSession.Invoke(manager, new object[] { 4242L, false });
+
+                manager.EndSession();
+
+                Assert(manager.sessionEnded && !logger.sessionActive,
+                    "precondition: END finalised and closed the participant run");
+
+                var endedRunId = logger.sessionId;
+                var endedExperimentId = logger.experimentSessionId;
+                var endedDirectory = logger.sessionDirectory;
+                var endedFiles = SnapshotDirectory(endedDirectory);
+
+                jump.Invoke(manager, new object[] { ExperimentArea.AreaA });
+
+                Assert(!manager.sessionEnded, "a developer area jump after END is no longer refused");
+                Assert(logger.sessionActive, "the jump opened a new run to log into");
+                Assert(logger.sessionId != endedRunId && logger.sessionDirectory != endedDirectory,
+                    $"the new run has its own id and folder ({logger.sessionId} vs ended {endedRunId})");
+                Assert(logger.experimentSessionId != endedExperimentId && logger.runIndex == 1,
+                    $"the developer run opens a NEW experiment session (run_index {logger.runIndex}), " +
+                    "so it is never counted as another run of the participant's sitting");
+                Assert(logger.developerInterrupted,
+                    "the new run is marked DEVELOPER_INTERRUPTED (non-participant)");
+                Assert(ExperimentLocalization.language == ExperimentLanguage.Spanish,
+                    $"the selected language is kept ({ExperimentLocalization.languageCode})");
+                Assert(SnapshotDirectory(endedDirectory) == endedFiles,
+                    "the ended run's files are byte-for-byte untouched by the jump");
+
+                logger.EndSession("self test: developer run after END");
+
+                var jumpRow = jumpNotes.FirstOrDefault();
+
+                Assert(jumpNotes.Count == 1 && jumpRow.Contains("opened_after_end=TRUE") &&
+                       jumpRow.Contains($"ended_run_session_id={endedRunId}"),
+                    "the new run's DEVELOPER_AREA_JUMP row records that it was opened after END " +
+                    "and names the ended run");
+
+                Assert(SnapshotDirectory(endedDirectory) == endedFiles,
+                    "the ended run's files are still untouched after the developer run closed");
+
+                // ---- ABORT stays terminal ---------------------------------------------------
+                endedField.SetValue(manager, false);
+                abortedField.SetValue(manager, true);
+
+                var runBefore = logger.runIndex;
+                var experimentBefore = logger.experimentSessionId;
+
+                jump.Invoke(manager, new object[] { ExperimentArea.AreaA });
+
+                Assert(!logger.sessionActive && logger.runIndex == runBefore &&
+                       logger.experimentSessionId == experimentBefore,
+                    "a developer jump after ABORT is still refused and opens no run");
+            }
+            catch (TargetInvocationException e)
+            {
+                Assert(false, $"the developer jump after END threw: {e.InnerException}");
+            }
+            finally
+            {
+                logger.bus.eventPublished -= capture;
+                endedField.SetValue(manager, false);
+                abortedField.SetValue(manager, false);
+
+                if (logger.sessionActive)
+                    logger.EndSession("self test cleanup");
+
+                ExperimentLocalization.SetLanguage(previousLanguage == ExperimentLanguage.None
+                    ? ExperimentLanguage.English
+                    : previousLanguage);
+            }
+        }
+
+        /// <summary>
+        /// A developer jump to Area 0 / Area A from Area B or Area C (Results included) LOADS the
+        /// Area A scene instead of teleporting to a spawn point that was unloaded with it; a jump
+        /// while a room is mid-load is refused without touching the loader; NEW TRIAL / RESTART /
+        /// END are hidden by every jump; the Area B / Area C jumps are unchanged.
+        ///
+        /// Edit Mode cannot load a scene, so the split-fixture half proves the ROUTING only: with
+        /// Area C as the open room the jump takes the load path and does not enter Area A without
+        /// it. The load itself, and the entry after it, need Play Mode.
+        /// </summary>
+        static void CheckDeveloperJumpLoadsAreaA()
+        {
+            // ---- Static: the routing in the source -------------------------------------------
+            var source = ManagerSource();
+
+            string Body(string signature)
+            {
+                var start = source.IndexOf(signature, System.StringComparison.Ordinal);
+
+                if (start < 0)
+                    return null;
+
+                var end = source.IndexOf("\n        }", start, System.StringComparison.Ordinal);
+                return source.Substring(start, end - start);
+            }
+
+            var jumpBody = Body("void OnDeveloperAreaJump(");
+            var enterA = Body("IEnumerator DeveloperEnterAreaA(");
+
+            Assert(jumpBody != null && enterA != null,
+                "OnDeveloperAreaJump and DeveloperEnterAreaA exist");
+
+            if (jumpBody == null || enterA == null)
+                return;
+
+            int At(string body, string text) => body.IndexOf(text, System.StringComparison.Ordinal);
+
+            Assert(At(jumpBody, "AreaAMustBeLoaded()") >= 0 &&
+                   At(jumpBody, "StartCoroutine(DeveloperEnterAreaA(area))") >= 0,
+                "an Area 0 / Area A jump loads Area A first when it is not the open room");
+            Assert(At(jumpBody, "StartCoroutine(DeveloperEnterAreaB())") >= 0 &&
+                   At(jumpBody, "StartCoroutine(DeveloperEnterAreaC())") >= 0,
+                "the Area B / Area C jumps still go through their own EnterRoom coroutines");
+            Assert(At(jumpBody, "isSwitching") >= 0 &&
+                   At(jumpBody, "isSwitching") < At(jumpBody, "MarkDeveloperInterrupted") &&
+                   At(jumpBody, "isSwitching") < At(jumpBody, "StopFlow()"),
+                "a jump during a room switch is refused BEFORE the run is marked or the flow " +
+                "that owns the load is stopped");
+            Assert(At(jumpBody, "HideRunManagementButtons()") >= 0,
+                "every developer jump hides NEW TRIAL / RESTART / END");
+            Assert(At(enterA, "yield return EnterRoom(area)") >= 0 &&
+                   At(enterA, "yield return EnterRoom(area)") < At(enterA, "AreaAMustBeLoaded()") &&
+                   At(enterA, "AreaAMustBeLoaded()") < At(enterA, "EnterAreaAForDeveloper(area)"),
+                "DeveloperEnterAreaA awaits the load, checks Area A exists, and only then enters it");
+
+            // ---- Behaviour against the open fixture ------------------------------------------
+            var manager = Object.FindAnyObjectByType<ExperimentManager>();
+            var logger = Object.FindAnyObjectByType<EventLogger>();
+            var ui = Object.FindAnyObjectByType<ExperimentUIController>();
+
+            if (manager == null || logger == null || ui == null)
+            {
+                Info("no manager/logger/UI in the open scene — developer jump behaviour not exercised");
+                return;
+            }
+
+            const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+            var type = typeof(ExperimentManager);
+            var stateField = type.GetField("m_State", flags);
+            var endedField = type.GetField("m_SessionEnded", flags);
+            var abortedField = type.GetField("m_RunAborted", flags);
+            var beginSession = type.GetMethod("BeginSession", flags, null,
+                new[] { typeof(long), typeof(bool) }, null);
+            var jump = type.GetMethod("OnDeveloperAreaJump", flags);
+            var stopFlow = type.GetMethod("StopFlow", flags);
+            var uiType = typeof(ExperimentUIController);
+            var runButtons = new[] { "m_RestartButton", "m_NewTrialButton", "m_EndButton" }
+                .Select(n => uiType.GetField(n, flags)?.GetValue(ui) as Button)
+                .Where(b => b != null)
+                .ToList();
+
+            Assert(stateField != null && endedField != null && abortedField != null &&
+                   beginSession != null && jump != null && stopFlow != null,
+                "the state, ended/aborted flags, session entry point, jump and StopFlow exist");
+
+            if (stateField == null || endedField == null || abortedField == null ||
+                beginSession == null || jump == null || stopFlow == null)
+                return;
+
+            var loader = Object.FindAnyObjectByType<AreaSceneLoader>();
+            var currentProperty = typeof(AreaSceneLoader).GetProperty(nameof(AreaSceneLoader.current));
+            var switchingProperty = typeof(AreaSceneLoader).GetProperty(nameof(AreaSceneLoader.isSwitching));
+            var originalCurrent = loader != null ? loader.current : null;
+            var originalState = manager.state;
+
+            var jumpRows = 0;
+            System.Action<ExperimentEvent> capture = e =>
+            {
+                if (e.eventType == EventTypes.DeveloperAreaJump)
+                    jumpRows++;
+            };
+
+            void SetCurrent(AreaSceneContext context) =>
+                currentProperty?.GetSetMethod(true)?.Invoke(loader, new object[] { context });
+
+            void SetSwitching(bool value) =>
+                switchingProperty?.GetSetMethod(true)?.Invoke(loader, new object[] { value });
+
+            void AtResults()
+            {
+                stopFlow.Invoke(manager, null);
+                stateField.SetValue(manager, ExperimentState.Results);
+                ui.ShowRestartButton(true);
+                ui.ShowNewTrialButton(true);
+                ui.ShowEndButton(true);
+            }
+
+            bool ButtonsHidden() => runButtons.All(b => !b.gameObject.activeSelf);
+
+            void OpenRun()
+            {
+                if (logger.sessionActive)
+                    logger.EndSession("self test: next case");
+
+                endedField.SetValue(manager, false);
+                abortedField.SetValue(manager, false);
+                logger.BeginExperimentSession();
+                beginSession.Invoke(manager, new object[] { 4343L, false });
+            }
+
+            logger.bus.eventPublished += capture;
+
+            try
+            {
+                var areaA = Object.FindAnyObjectByType<AreaASceneContext>(FindObjectsInactive.Include);
+                var areaC = Object.FindAnyObjectByType<AreaCSceneContext>(FindObjectsInactive.Include);
+                var split = loader != null && AreaSceneLoader.multiSceneAvailable &&
+                            areaA != null && areaC != null;
+
+                Info($"running against the {(split ? "SPLIT fixture (loader present)" : "LEGACY scene (no room loading)")}; " +
+                     $"{runButtons.Count}/3 run-management buttons bound");
+
+                // ---- Area A already open (or legacy): synchronous behaviour unchanged ------
+                if (split)
+                    SetCurrent(areaA);
+
+                foreach (var (target, expected) in new[]
+                         {
+                             (ExperimentArea.AreaA, ExperimentState.Idle),
+                             (ExperimentArea.Familiarization, ExperimentState.Familiarization),
+                         })
+                {
+                    OpenRun();
+                    AtResults();
+                    jumpRows = 0;
+
+                    jump.Invoke(manager, new object[] { target });
+
+                    Assert(manager.state == expected,
+                        $"Area A open: a jump to {target} from Results enters {expected} " +
+                        $"immediately (state {manager.state})");
+                    Assert(logger.developerInterrupted && jumpRows == 1,
+                        $"jump to {target}: run marked DEVELOPER_INTERRUPTED, one DEVELOPER_AREA_JUMP row");
+                    Assert(runButtons.Count > 0 && ButtonsHidden(),
+                        $"jump to {target}: NEW TRIAL / RESTART / END are hidden after leaving Results");
+                }
+
+                if (!split)
+                {
+                    Info("legacy scene: no Area A loading exists, so the load path, the switch " +
+                         "guard and the after-END load case are covered by the split fixture only");
+                    return;
+                }
+
+                // ---- Area C open (as on Results): the jump must take the LOAD path -----------
+                foreach (var target in new[] { ExperimentArea.AreaA, ExperimentArea.Familiarization })
+                {
+                    OpenRun();
+                    SetCurrent(areaC);
+                    AtResults();
+                    jumpRows = 0;
+
+                    jump.Invoke(manager, new object[] { target });
+
+                    // In Edit Mode SwitchTo loads nothing, so Area A stays unloaded and the
+                    // coroutine must refuse to enter it. Before the fix the bare teleport path
+                    // entered Idle / Familiarization here regardless.
+                    Assert(manager.state != ExperimentState.Idle &&
+                           manager.state != ExperimentState.Familiarization,
+                        $"Area C open: a jump to {target} does NOT enter Area A without loading " +
+                        $"it (state {manager.state}; the load and entry need Play Mode)");
+                    Assert(logger.developerInterrupted && jumpRows == 1,
+                        $"jump to {target} with Area A unloaded: run marked DEVELOPER_INTERRUPTED, " +
+                        "one DEVELOPER_AREA_JUMP row");
+                    Assert(ButtonsHidden(),
+                        $"jump to {target} with Area A unloaded: NEW TRIAL / RESTART / END hidden");
+                }
+
+                // ---- After END, with Area A unloaded: new developer run still opens ---------
+                OpenRun();
+                SetCurrent(areaC);
+                AtResults();
+                manager.EndSession();
+
+                var endedRunId = logger.sessionId;
+
+                jump.Invoke(manager, new object[] { ExperimentArea.AreaA });
+
+                Assert(!manager.sessionEnded && logger.sessionActive &&
+                       logger.sessionId != endedRunId && logger.developerInterrupted,
+                    "after END with Area A unloaded: the jump still opens a NEW developer-" +
+                    "interrupted run");
+
+                // ---- A room switch in flight: refused, loader left recoverable --------------
+                OpenRun();
+                SetCurrent(areaC);
+                AtResults();
+                jumpRows = 0;
+
+                var interruptedBefore = logger.developerInterrupted;
+                SetSwitching(true);
+
+                foreach (var target in new[]
+                         {
+                             ExperimentArea.Familiarization, ExperimentArea.AreaA,
+                             ExperimentArea.AreaB, ExperimentArea.AreaC,
+                         })
+                    jump.Invoke(manager, new object[] { target });
+
+                Assert(jumpRows == 0 && manager.state == ExperimentState.Results &&
+                       logger.developerInterrupted == interruptedBefore,
+                    "while a room switch is running every developer jump is refused: no row, " +
+                    "no state change, the run is not marked");
+                Assert(loader.isSwitching,
+                    "the refused jump did not touch the loader's in-flight switch");
+
+                SetSwitching(false);
+
+                Assert(!loader.isSwitching,
+                    "once the switch ends the loader accepts switches again");
+            }
+            catch (TargetInvocationException e)
+            {
+                Assert(false, $"a developer jump threw: {e.InnerException}");
+            }
+            finally
+            {
+                logger.bus.eventPublished -= capture;
+
+                if (loader != null)
+                {
+                    SetSwitching(false);
+                    SetCurrent(originalCurrent);
+                }
+
+                stopFlow.Invoke(manager, null);
+                stateField.SetValue(manager, originalState);
+                endedField.SetValue(manager, false);
+                abortedField.SetValue(manager, false);
+
+                if (logger.sessionActive)
+                    logger.EndSession("self test cleanup");
+            }
+        }
+
+        /// <summary>Every file in a folder with its length and content hash, for an untouched check.</summary>
+        static string SnapshotDirectory(string directory)
+        {
+            if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory))
+                return "<missing>";
+
+            var sb = new StringBuilder();
+
+            using (var md5 = System.Security.Cryptography.MD5.Create())
+            {
+                foreach (var file in Directory.GetFiles(directory, "*", SearchOption.AllDirectories)
+                             .OrderBy(f => f, System.StringComparer.Ordinal))
+                {
+                    var bytes = File.ReadAllBytes(file);
+                    sb.Append(file).Append('|').Append(bytes.Length).Append('|')
+                        .Append(System.BitConverter.ToString(md5.ComputeHash(bytes))).Append('\n');
+                }
+            }
+
+            return sb.ToString();
         }
 
         /// <summary>
