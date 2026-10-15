@@ -102,3 +102,11 @@ crashlytics-build.properties
 /Assets/YughuesFreeArchitecturalMaterials.meta
 /Assets/Realistic Metal Texture/
 /Assets/Realistic Metal Texture.meta
+
+# Locally imported third-party Unity Asset Store packages (third batch).
+# ZRNAssets = ZENRIN "Japanese Otaku City"; required by the Area A Japanese city surround.
+# VNB - Office Set = unused. See Assets/IKEA_EEG/Documentation/THIRD_PARTY_ASSET_DEPENDENCIES.md.
+/Assets/ZRNAssets/
+/Assets/ZRNAssets.meta
+/Assets/VNB - Office Set/
+/Assets/VNB - Office Set.meta
