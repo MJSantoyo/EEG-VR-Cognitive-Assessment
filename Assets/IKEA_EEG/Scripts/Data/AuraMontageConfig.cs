@@ -147,13 +147,13 @@ namespace IkeaEeg.Data
             {
                 roiName = FrontalThetaRoi,
 
-                // Frontocentral theta: the frontal ring PLUS the vertex. Cz was absent here
-                // until 2026-09-16 while every statement of intent included it, which made the
-                // logged theta_fc a purely frontal average under a frontocentral name. Corrected
-                // deliberately and before any baseline was computed, because a baseline and a
-                // live window must be averaged over the SAME electrodes or their ratio carries a
-                // fixed bias from the composition change alone.
-                labels = new List<string> { "F3", "Fz", "F4", "Cz" },
+                // Frontal theta: F3, Fz, F4 only. Researcher decision 2026-10-15: Cz is NOT part
+                // of this ROI. History: F3/Fz/F4 until 2026-09-16, F3/Fz/F4/Cz from 2026-09-16 to
+                // 2026-10-15, F3/Fz/F4 again since. theta_fc (column name kept; the schema is
+                // frozen) from runs in the middle period is mean(F3,Fz,F4,Cz) and is NOT
+                // comparable with later runs. A baseline and a live window must be averaged over
+                // the SAME electrodes or their ratio carries a fixed bias from composition alone.
+                labels = new List<string> { "F3", "Fz", "F4" },
             },
             new EegRoi
             {

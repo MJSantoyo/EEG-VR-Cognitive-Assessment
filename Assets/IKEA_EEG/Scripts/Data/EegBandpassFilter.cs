@@ -36,6 +36,31 @@ namespace IkeaEeg.Data
             m_X1 = m_X2 = m_Y1 = m_Y2 = 0d;
         }
 
+        /// <summary>
+        /// Gain at 0 Hz, H(z = 1). 0 for a high-pass, 1 for a low-pass or a notch.
+        /// </summary>
+        public double DcGain
+        {
+            get
+            {
+                var den = 1.0 + a1 + a2;
+                return den != 0d ? (b0 + b1 + b2) / den : 0d;
+            }
+        }
+
+        /// <summary>
+        /// Sets the state to the steady state for a CONSTANT input <paramref name="x"/>: as if
+        /// that value had been arriving forever. Returns the section's steady output, which is
+        /// the next section's steady input.
+        /// </summary>
+        public double PrimeSteadyState(double x)
+        {
+            var y = DcGain * x;
+            m_X1 = m_X2 = x;
+            m_Y1 = m_Y2 = y;
+            return y;
+        }
+
         /// <summary>Magnitude response at one frequency, for validation and reporting.</summary>
         public double MagnitudeAt(double frequencyHz, double sampleRateHz)
         {
@@ -92,6 +117,26 @@ namespace IkeaEeg.Data
     ///
     /// FREQUENCIES ARE DERIVED FROM THE ACTUAL SAMPLE RATE passed in. There is no 250 anywhere
     /// in this file.
+    ///
+    /// NON-FINITE INPUT IS QUARANTINED, PER CHANNEL. A recursive filter carries its past in its
+    /// state, so a single NaN or infinity fed through it would sit in that state and make every
+    /// later output of that channel NaN for the rest of the session. Instead:
+    ///   1. a non-finite input returns NaN and does NOT touch the state;
+    ///   2. the next <see cref="PrimingSamples"/> finite inputs (fs / high-pass cutoff: one
+    ///      period of the slowest frequency the band-pass keeps) are collected, and the channel's
+    ///      sections are re-initialised to the steady state for their MEAN — as if that level had
+    ///      been arriving forever — before those samples are run through. The mean, not the first
+    ///      value: a single sample carries the instantaneous mains and EEG amplitude, and with the
+    ///      interference seen in real sessions that offset took ~4.5 s to decay through the 1 Hz
+    ///      high-pass; the mean over one high-pass period removes it (measured, see the
+    ///      alpha-presence report, 10_alpha_presence/resultados/E_no_finitos_y_saturacion);
+    ///   3. outputs are NaN from the first non-finite input until <see cref="RecoverySamples"/>
+    ///      finite inputs have passed (the priming samples included): the filter is running
+    ///      again but has not re-established its history, and downstream rules then treat those
+    ///      samples exactly as they treat any non-finite sample.
+    /// Other channels are unaffected. Nothing is interpolated, and the raw value is never
+    /// changed. Start-up is NOT altered: a fresh filter still starts from zero state and the
+    /// caller's settling rule (<see cref="SettlingSamples"/>) still applies.
     /// ==================================================================================
     /// </summary>
     public class EegBandpassFilter
@@ -119,6 +164,15 @@ namespace IkeaEeg.Data
 
         /// <summary>[channel][section]. Each channel has its OWN state; nothing is shared.</summary>
         readonly Biquad[][] m_Sections;
+
+        // ---- Non-finite quarantine, per channel ------------------------------------------
+        readonly bool[] m_AwaitingFiniteInput;
+        readonly int[] m_RecoveryRemaining;
+        readonly double[][] m_PrimingBuffer;
+        readonly int[] m_PrimingCount;
+        readonly long[] m_NonFiniteInputs;
+        readonly long[] m_Reinitialisations;
+        readonly long[] m_InvalidatedOutputs;
 
         public double sampleRateHz => m_SampleRateHz;
         public double highPassHz => m_HighPassHz;
@@ -206,6 +260,18 @@ namespace IkeaEeg.Data
                 m_Sections[c] = BuildSections(sampleRateHz, highPassHz, lowPassHz,
                     notchEnabled, notchHz, notchQ);
             }
+
+            m_AwaitingFiniteInput = new bool[channelCount];
+            m_RecoveryRemaining = new int[channelCount];
+            m_PrimingBuffer = new double[channelCount][];
+            m_PrimingCount = new int[channelCount];
+
+            for (var c = 0; c < channelCount; c++)
+                m_PrimingBuffer[c] = new double[PrimingSamples];
+
+            m_NonFiniteInputs = new long[channelCount];
+            m_Reinitialisations = new long[channelCount];
+            m_InvalidatedOutputs = new long[channelCount];
         }
 
         /// <summary>
@@ -335,6 +401,10 @@ namespace IkeaEeg.Data
         ///
         /// The RAW value is not modified — it is passed by value and the filtered result is
         /// returned separately, so the caller keeps both.
+        ///
+        /// Returns NaN for a non-finite input and for the recovery period that follows it (see
+        /// the class summary). For finite input on a channel that never saw a non-finite value
+        /// the arithmetic is exactly what it was before the quarantine existed.
         /// </summary>
         public double Process(int channel, double sample)
         {
@@ -342,13 +412,111 @@ namespace IkeaEeg.Data
                 return sample;
 
             var sections = m_Sections[channel];
+
+            if (double.IsNaN(sample) || double.IsInfinity(sample))
+            {
+                // The state is left exactly as it was; it is rebuilt from the finite values that
+                // follow. A non-finite value during priming starts the priming over.
+                m_NonFiniteInputs[channel]++;
+                m_AwaitingFiniteInput[channel] = true;
+                m_PrimingCount[channel] = 0;
+                m_RecoveryRemaining[channel] = 0;
+                m_InvalidatedOutputs[channel]++;
+                return double.NaN;
+            }
+
+            if (m_AwaitingFiniteInput[channel])
+            {
+                var buffer = m_PrimingBuffer[channel];
+                buffer[m_PrimingCount[channel]++] = sample;
+                m_InvalidatedOutputs[channel]++;
+
+                if (m_PrimingCount[channel] < buffer.Length)
+                    return double.NaN;
+
+                double mean = 0d;
+                for (var i = 0; i < buffer.Length; i++)
+                    mean += buffer[i];
+                mean /= buffer.Length;
+
+                var steady = mean;
+                for (var s = 0; s < sections.Length; s++)
+                    steady = sections[s].PrimeSteadyState(steady);
+
+                // The priming samples are real input: run them through so the state carries them.
+                for (var i = 0; i < buffer.Length; i++)
+                {
+                    var yb = buffer[i];
+                    for (var s = 0; s < sections.Length; s++)
+                        yb = sections[s].Process(yb);
+                }
+
+                m_AwaitingFiniteInput[channel] = false;
+                m_PrimingCount[channel] = 0;
+                m_RecoveryRemaining[channel] = RecoverySamples - buffer.Length;
+                m_Reinitialisations[channel]++;
+                return double.NaN;
+            }
+
             var y = sample;
 
             for (var s = 0; s < sections.Length; s++)
                 y = sections[s].Process(y);
 
+            if (double.IsNaN(y) || double.IsInfinity(y))
+            {
+                // Overflow on a finite but absurd input: the state is now unusable, so it is
+                // quarantined like a non-finite input rather than left to poison the channel.
+                m_AwaitingFiniteInput[channel] = true;
+                m_RecoveryRemaining[channel] = 0;
+                m_InvalidatedOutputs[channel]++;
+                return double.NaN;
+            }
+
+            if (m_RecoveryRemaining[channel] > 0)
+            {
+                m_RecoveryRemaining[channel]--;
+                m_InvalidatedOutputs[channel]++;
+                return double.NaN;
+            }
+
             return y;
         }
+
+        /// <summary>
+        /// Finite inputs after a non-finite one whose outputs are invalidated, priming included.
+        /// The same derivation as <see cref="SettlingSamples"/> (3 / high-pass cutoff). With the
+        /// mean priming below, the residual error at the end of it was ≤ 0.9 % of the reference
+        /// RMS on real recordings; without it (single-value priming) it was up to 29 %.
+        /// </summary>
+        public int RecoverySamples => SettlingSamples;
+
+        /// <summary>
+        /// Finite inputs averaged to re-initialise a channel: fs / high-pass cutoff, one period of
+        /// the slowest component the band-pass keeps. Never more than <see cref="RecoverySamples"/>.
+        /// </summary>
+        public int PrimingSamples =>
+            Math.Max(1, Math.Min(SettlingSamples, (int)Math.Round(m_SampleRateHz / m_HighPassHz)));
+
+        /// <summary>
+        /// True while the channel's outputs are invalid: waiting for a finite input, or inside
+        /// the recovery period after one.
+        /// </summary>
+        public bool IsQuarantined(int channel) =>
+            channel >= 0 && channel < m_ChannelCount &&
+            (m_AwaitingFiniteInput[channel] || m_RecoveryRemaining[channel] > 0);
+
+        /// <summary>Non-finite input samples seen on this channel since construction or Reset.</summary>
+        public long NonFiniteInputCount(int channel) =>
+            channel >= 0 && channel < m_ChannelCount ? m_NonFiniteInputs[channel] : 0;
+
+        /// <summary>Times this channel was re-initialised after non-finite input.</summary>
+        public long ReinitialisationCount(int channel) =>
+            channel >= 0 && channel < m_ChannelCount ? m_Reinitialisations[channel] : 0;
+
+        /// <summary>Outputs returned as NaN by the quarantine (non-finite input plus recovery).</summary>
+        public long InvalidatedOutputCount(int channel) =>
+            channel >= 0 && channel < m_ChannelCount ? m_InvalidatedOutputs[channel] : 0;
 
         /// <summary>
         /// Clears every channel's state.
@@ -362,6 +530,16 @@ namespace IkeaEeg.Data
             {
                 foreach (var section in channel)
                     section.Reset();
+            }
+
+            for (var c = 0; c < m_ChannelCount; c++)
+            {
+                m_AwaitingFiniteInput[c] = false;
+                m_RecoveryRemaining[c] = 0;
+                m_PrimingCount[c] = 0;
+                m_NonFiniteInputs[c] = 0;
+                m_Reinitialisations[c] = 0;
+                m_InvalidatedOutputs[c] = 0;
             }
         }
 
@@ -445,6 +623,10 @@ namespace IkeaEeg.Data
                 sb.AppendLine("  attenuates mains, so this is a protocol option, not a necessity.");
             }
 
+            sb.AppendLine(string.Format(CultureInfo.InvariantCulture,
+                "  non-finite input: quarantined per channel; steady-state re-initialisation to the " +
+                "mean of the next {0} finite samples; outputs NaN until {1} finite samples ({2:F2} s) " +
+                "have passed", PrimingSamples, RecoverySamples, RecoverySamples / m_SampleRateHz));
             sb.AppendLine("  causal forward-only: NOT phase-linear; group delay is frequency-");
             sb.AppendLine("  dependent. Valid for spectral POWER; not for ERP latency.");
             sb.AppendLine("  coefficients (channel 0, normalised so a0 = 1):");

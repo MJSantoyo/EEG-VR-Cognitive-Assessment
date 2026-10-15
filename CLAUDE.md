@@ -69,7 +69,13 @@ to `shadow_decisions.csv` and changes nothing about the experiment.
 - Every window is INDETERMINATE: no normalization method is approved (`NormalizationApproved = false`), no
   baseline protocol is approved, and no code path emits LOW/MODERATE/HIGH.
 - It must not hold references to experiment types (enforced by `ExperimentSelfTest`). Do not add any.
-- Neuroadaptive control is a long-term goal, not an existing feature. Never describe it as working.
+- Neuroadaptive ARCHITECTURE is implemented: `ShadowModeController` hosts `NeuroadaptiveController`
+  (baseline/trial aggregation, workload estimator and policy interfaces), writing
+  `shadow_trial_decisions.csv`. It is CURRENTLY NON-ADAPTIVE: `WorkloadEstimator` always returns
+  INDETERMINATE, `AdaptivePolicy` proposes no EEG-driven difficulty change,
+  `ActiveAdaptationEnabled` is false, no EEG data flows back into `ChairSelectionTask`, and participant
+  difficulty is not modified. Live adaptation is a long-term goal, not an existing feature, and nothing
+  here is scientifically validated. Never describe it as working.
 
 ## 8. Scientific safety and validation rules
 - Do not claim scientific validation that has not been run. State what was tested, how, and what was not.
@@ -154,7 +160,8 @@ Always say which kind of check was done; never let one stand in for the other.
 - Third-party art dependencies documented (`THIRD_PARTY_ASSET_DEPENDENCIES.md`); packs themselves are not in git.
 - Recognition-protocol behaviour, CSV schema and EEG acquisition path are unchanged by the art work.
 - EEG feature extraction, QC, Shadow Mode and offline analysis are implemented but need further validation;
-  no neuroadaptation exists.
+  the neuroadaptive architecture exists but runs in Shadow Mode (observe/log only); no live
+  adaptation exists.
 - Runtime validation status of the multi-scene build on Quest 2 hardware is not recorded here; check
   before claiming it.
 
@@ -165,7 +172,7 @@ Always say which kind of check was done; never let one stand in for the other.
 - Near-identical EEG channels remain unresolved.
 - Baseline aggregation, normalization and workload thresholds are not scientifically approved.
 
-### Planned neuroadaptive direction (NOT implemented)
+### Planned neuroadaptive direction (adaptation NOT implemented; architecture is, in shadow)
 - Adaptation belongs to the Area B chair task.
 - EEG from a completed trial/window may inform the NEXT trial.
 - Never change difficulty mid-trial.

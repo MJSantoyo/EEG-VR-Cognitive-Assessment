@@ -582,7 +582,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::IkeaEeg.Data.EegFeaturePipeline
   m_HighPassHz: 1
   m_LowPassHz: 40
-  m_NotchEnabled: 0
+  m_NotchEnabled: 1
   m_NotchHz: 60
   m_NotchQ: 30
   m_WindowSeconds: 4

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
@@ -166,6 +166,46 @@ namespace IkeaEeg.Data
         public string transientDetail = string.Empty;
 
         /// <summary>
+        /// Channel indices behind <see cref="transientDetail"/>. Recorded by the same check that
+        /// writes the detail; it decides nothing new.
+        /// </summary>
+        public int[] transientChannels = System.Array.Empty<int>();
+
+        /// <summary>
+        /// The RAW (pre-filter) check of every channel over this window's time span, indexed by
+        /// stream channel; null when the raw window was unavailable.
+        /// </summary>
+        public RawChannelCheck[] rawChecks;
+
+        /// <summary>Channels whose raw samples repeat bit-for-bit beyond the existing repeat rule.</summary>
+        public int[] rawStuckChannels = System.Array.Empty<int>();
+
+        /// <summary>Channels with a raw sample at a DOCUMENTED amplifier limit. Always empty while the limits are undocumented.</summary>
+        public int[] rawAtLimitChannels = System.Array.Empty<int>();
+
+        /// <summary>Which raw channels were flagged and why. Empty when none were.</summary>
+        public string rawSaturationDetail = string.Empty;
+
+        /// <summary>The amplifier-limit configuration this window was checked against.</summary>
+        public string amplifierLimitsStatus = string.Empty;
+
+        /// <summary>
+        /// Channels whose filtered output inside this window was quarantined by the filter — a
+        /// non-finite input, or the recovery period after one. Those samples are NaN.
+        /// </summary>
+        public int[] filterQuarantineChannels = System.Array.Empty<int>();
+
+        /// <summary>Channels that received a non-finite RAW sample inside this window.</summary>
+        public int[] nonFiniteInputChannels = System.Array.Empty<int>();
+
+        /// <summary>
+        /// Binary parietal-alpha detection for this window (1 / 0 / invalid with a reason), or
+        /// null when the detector is disabled. OBSERVATIONAL: nothing in this class reads it, and
+        /// it does not enter <see cref="quality"/> or <see cref="featureValidity"/>.
+        /// </summary>
+        public AlphaPresenceResult alphaPresence;
+
+        /// <summary>
         /// Set when a flagged channel is one an ROI actually averages, so the ROI value itself
         /// is contaminated rather than merely sitting in a window that had a problem elsewhere.
         /// </summary>
@@ -249,7 +289,7 @@ namespace IkeaEeg.Data
         /// PURELY OBSERVATIONAL — nothing reads this to decide anything. It exists because the
         /// validity rule cannot currently tell these apart: UpdateChannelHealth returns
         /// ChannelDegraded whenever ANY channel is degraded, and featureValidity requires
-        /// quality == None, so a degraded Fp1 — which contributes to neither frontocentral theta
+        /// quality == None, so a degraded Fp1 — which contributes to neither frontal theta
         /// nor posterior alpha — invalidates a window whose two ROI averages were computed
         /// entirely from healthy electrodes.
         ///
@@ -413,6 +453,13 @@ namespace IkeaEeg.Data
             if (!string.IsNullOrEmpty(roiContamination))
                 lines.Add("ROI CONTAMINATED: " + roiContamination);
 
+            if (!string.IsNullOrEmpty(rawSaturationDetail))
+                lines.Add("raw (pre-filter): " + rawSaturationDetail);
+
+            if (filterQuarantineChannels != null && filterQuarantineChannels.Length > 0)
+                lines.Add("filter quarantine (non-finite input or recovery) on channel index(es) " +
+                          string.Join(",", filterQuarantineChannels));
+
             if ((quality & EegQualityFlags.FilterNotSettled) != 0)
                 lines.Add("the filter had not settled when this window was cut");
 
@@ -540,9 +587,41 @@ namespace IkeaEeg.Data
                  "includes a known-bad electrode. No electrode is ever substituted either way.")]
         [SerializeField] bool m_InvalidateRoiOnDegradedChannel = true;
 
+        [Header("Binary parietal alpha detection (OBSERVATIONAL, prototype)")]
+        [Tooltip("Peak-over-aperiodic-background detector evaluated on every analysed window, on " +
+                 "the SAME filtered samples and Welch spectra as the features above. It changes " +
+                 "no feature, flag or validity decision. 1 = alpha peak detectable, 0 = valid " +
+                 "window without a detectable peak, empty = invalid window with a reason. Not a " +
+                 "measure of attention, relaxation or workload.")]
+        [SerializeField] AlphaPresenceConfig m_AlphaPresence = AlphaPresenceConfig.Default;
+
+        /// <summary>The detector configuration in force, after clamping.</summary>
+        public AlphaPresenceConfig alphaPresenceConfig => m_AlphaPresence.Sanitised();
+
+        [Header("Raw (pre-filter) saturation check")]
+        [Tooltip("The amplifier's input limits in the STREAM's units, from manufacturer " +
+                 "documentation only. Leave 'documented' OFF while AURA's range, gain and " +
+                 "transmitted unit are unconfirmed: the amplitude check then does not run and no " +
+                 "rail value is guessed. The raw stuck-value check (existing repeat rule, applied " +
+                 "before filtering) runs either way.")]
+        [SerializeField] EegAmplifierLimits m_AmplifierLimits = EegAmplifierLimits.Undocumented;
+
+        /// <summary>The amplifier limits in force for the raw check.</summary>
+        public EegAmplifierLimits amplifierLimits => m_AmplifierLimits;
+
         AuraLslReceiver m_Receiver;
         EegBandpassFilter m_Filter;
         RawEegRingBuffer m_Filtered;
+
+        /// <summary>
+        /// The RAW samples over the same span as <see cref="m_Filtered"/>, for the pre-filter
+        /// saturation check. The pipeline's own copy, filled from the same sample event: the
+        /// acquisition path, the receiver's buffer and the recorder are not touched.
+        /// </summary>
+        RawEegRingBuffer m_RawHistory;
+
+        /// <summary>Per channel, whether the previous output was quarantined; for the log only.</summary>
+        bool[] m_WasQuarantined;
 
         long m_SamplesFiltered;
         int m_SettlingSamples;
@@ -789,6 +868,8 @@ namespace IkeaEeg.Data
             m_SamplesFiltered = 0;
 
             m_Filtered = new RawEegRingBuffer(channelCount, fs, m_FilteredHistorySeconds);
+            m_RawHistory = new RawEegRingBuffer(channelCount, fs, m_FilteredHistorySeconds);
+            m_WasQuarantined = new bool[channelCount];
             m_FilterScratch = new double[channelCount];
             m_TypicalStep = new double[channelCount];
             m_TypicalRange = new double[channelCount];
@@ -834,10 +915,28 @@ namespace IkeaEeg.Data
             for (var c = 0; c < sample.channels.Length; c++)
             {
                 // The RAW value is read, never written.
-                filtered[c] = m_Filter.Process(c, sample.channels[c]);
+                var raw = sample.channels[c];
+                filtered[c] = m_Filter.Process(c, raw);
+
+                if (c < m_WasQuarantined.Length)
+                {
+                    var quarantined = double.IsNaN(filtered[c]);
+
+                    if (quarantined != m_WasQuarantined[c])
+                        LogQuarantineChange(c, quarantined, sample.analysisTimestamp);
+
+                    m_WasQuarantined[c] = quarantined;
+                }
 
                 // Running scale estimates, in the signal's own units, used later for
-                // threshold-free quality checks.
+                // threshold-free quality checks. A quarantined (NaN) output is skipped so it
+                // cannot turn the running estimate into NaN for the rest of the session.
+                if (double.IsNaN(filtered[c]) || double.IsNaN(m_FilterScratch[c]))
+                {
+                    m_FilterScratch[c] = filtered[c];
+                    continue;
+                }
+
                 var step = Math.Abs(filtered[c] - m_FilterScratch[c]);
                 m_TypicalStep[c] = m_TypicalStep[c] <= 0d
                     ? step
@@ -851,6 +950,35 @@ namespace IkeaEeg.Data
             // Indexed on the SAME analysis timestamp the raw buffer uses, so a window cut from
             // either lines up with the event log.
             m_Filtered.Add(sample.analysisTimestamp, filtered);
+
+            // Same timestamp, values as received. The ring buffer copies them.
+            m_RawHistory.Add(sample.analysisTimestamp, sample.channels);
+        }
+
+        /// <summary>
+        /// One line when a channel enters or leaves filter quarantine. Rare by construction —
+        /// once per non-finite episode — so it cannot flood the log at the sample rate.
+        /// </summary>
+        void LogQuarantineChange(int channel, bool entering, double timestamp)
+        {
+            var label = m_Montage != null
+                ? m_Montage.LabelOfIndex(channel)
+                : "CH" + (channel + 1).ToString(CultureInfo.InvariantCulture);
+
+            if (entering)
+            {
+                Debug.LogWarning(string.Format(CultureInfo.InvariantCulture,
+                    "[IKEA_EEG] {0}: non-finite input at t={1:F3}; filter output for this channel " +
+                    "is NaN until a finite value arrives and {2} recovery samples have passed. " +
+                    "Other channels are unaffected.", label, timestamp, m_Filter.RecoverySamples));
+            }
+            else
+            {
+                Debug.Log(string.Format(CultureInfo.InvariantCulture,
+                    "[IKEA_EEG] {0}: filter recovered at t={1:F3} (non-finite inputs so far: {2}; " +
+                    "re-initialisations: {3}).", label, timestamp,
+                    m_Filter.NonFiniteInputCount(channel), m_Filter.ReinitialisationCount(channel)));
+            }
         }
 
         // ---------------------------------------------------------------------------------
@@ -890,6 +1018,7 @@ namespace IkeaEeg.Data
             {
                 features.quality |= EegQualityFlags.InsufficientSamples;
                 features.featureValidity = false;
+                features.alphaPresence = AlphaPresenceForEarlyExit(features, "NO_FILTERED_SIGNAL");
                 PublishFeatures(features);
                 return features;
             }
@@ -905,6 +1034,7 @@ namespace IkeaEeg.Data
             {
                 features.quality |= EegQualityFlags.InsufficientSamples;
                 features.featureValidity = false;
+                features.alphaPresence = AlphaPresenceForEarlyExit(features, "NO_SAMPLES_IN_WINDOW");
                 PublishFeatures(features);
                 return features;
             }
@@ -925,6 +1055,7 @@ namespace IkeaEeg.Data
             {
                 features.quality |= EegQualityFlags.InsufficientSamples;
                 features.featureValidity = false;
+                features.alphaPresence = AlphaPresenceForEarlyExit(features, "INSUFFICIENT_SAMPLES");
                 PublishFeatures(features);
                 return features;
             }
@@ -934,6 +1065,10 @@ namespace IkeaEeg.Data
             features.thetaPerChannel = new double[channels];
             features.alphaPerChannel = new double[channels];
             features.channelLabels = new string[channels];
+
+            // The Welch spectra computed below, kept so the alpha detector reads the SAME
+            // spectrum the band powers came from instead of computing a second one.
+            var psds = new PsdResult[channels];
 
             var series = new double[window.sampleCount];
 
@@ -952,6 +1087,7 @@ namespace IkeaEeg.Data
                     var psd = EegSpectralAnalyzer.Welch(series, features.sampleRateHz,
                         m_WelchSegmentSeconds);
 
+                    psds[c] = psd;
                     features.thetaPerChannel[c] = EegSpectralAnalyzer.BandPower(psd, EegBand.Theta);
                     features.alphaPerChannel[c] = EegSpectralAnalyzer.BandPower(psd, EegBand.Alpha);
                 }
@@ -971,6 +1107,7 @@ namespace IkeaEeg.Data
             features.quality |= AssessInterChannelIdentity(window, features);
             features.quality |= AssessChannelPowerOutliers(features);
             features.quality |= AssessTransients(window, features);
+            features.quality |= AssessRawAndQuarantine(window, features);
 
             // Channel-major once, shared by the similarity check and the health tracker.
             var byChannel = ToChannelMajor(window);
@@ -1015,8 +1152,159 @@ namespace IkeaEeg.Data
             features.featureValidity = features.quality == EegQualityFlags.None &&
                                        features.roiValid;
 
+            // ---- Binary parietal alpha (observational) --------------------------------------
+            // Evaluated AFTER every existing decision so it cannot influence one. Same filtered
+            // samples, same Welch spectra, same quality rules; no second filter, no second PSD.
+            features.alphaPresence = EvaluateAlphaPresence(byChannel, psds, features);
+
             PublishFeatures(features);
             return features;
+        }
+
+        /// <summary>
+        /// Runs the alpha detector on a window the pipeline has fully analysed. Null when the
+        /// detector is disabled.
+        /// </summary>
+        AlphaPresenceResult EvaluateAlphaPresence(double[][] byChannel, PsdResult[] psds,
+            LatestEegFeatures features)
+        {
+            var config = m_AlphaPresence.Sanitised();
+
+            if (!config.enabled)
+                return null;
+
+            var context = new AlphaWindowContext
+            {
+                filterSettled = (features.quality & EegQualityFlags.FilterNotSettled) == 0,
+                insufficientSamples = (features.quality & EegQualityFlags.InsufficientSamples) != 0,
+                degradedChannels = features.degradedChannels,
+                powerOutlierChannels = features.powerOutlierChannels,
+                transientChannels = features.transientChannels,
+                thresholds = m_QualityThresholds.Sanitised(),
+                nonFiniteInputChannels = features.nonFiniteInputChannels,
+                filterQuarantineChannels = features.filterQuarantineChannels,
+                rawChecks = features.rawChecks,
+                amplifierLimitsStatus = features.amplifierLimitsStatus,
+            };
+
+            try
+            {
+                return AlphaPresenceDetector.Evaluate(config, features.channelLabels, byChannel, psds,
+                    context, features.windowStart, features.windowEnd, features.sampleCount);
+            }
+            catch (Exception e)
+            {
+                // The detector is an observer of this window; it must never abort it.
+                return AlphaPresenceDetector.InvalidWindow(config, "DETECTOR_ERROR(" + e.GetType().Name + ")",
+                    features.windowStart, features.windowEnd, features.sampleCount);
+            }
+        }
+
+        /// <summary>
+        /// The two checks that need to know what happened BEFORE the filter.
+        ///
+        /// RAW SATURATION. The filtered repeat rule cannot see a pinned input (a band-pass turns
+        /// a constant into a decaying, never-repeating output), so the existing repeat rule is
+        /// also applied to the raw samples of the same span. An amplitude check against the
+        /// amplifier's limits runs only when those limits are documented; otherwise none is run
+        /// and the status says so. Either finding sets <see cref="EegQualityFlags.SaturationLike"/>,
+        /// which is what that flag's documentation always claimed it meant.
+        ///
+        /// FILTER QUARANTINE. Names the channels whose filtered samples in this window are NaN.
+        /// The filter returns NaN only for a non-finite input or the recovery after one, so a NaN
+        /// in the filtered window IS a quarantined sample; reading it from the window keeps the
+        /// answer right for a past window as well as the latest. Those samples already set
+        /// NaNPresent through the per-channel check; this only records which channel and why.
+        /// </summary>
+        EegQualityFlags AssessRawAndQuarantine(EegWindow window, LatestEegFeatures features)
+        {
+            var flags = EegQualityFlags.None;
+            features.amplifierLimitsStatus = m_AmplifierLimits.Describe();
+
+            var quarantined = new List<int>();
+
+            for (var c = 0; c < window.channelCount; c++)
+            {
+                for (var i = 0; i < window.sampleCount; i++)
+                {
+                    if (!double.IsNaN(window.samples[i][c]))
+                        continue;
+
+                    quarantined.Add(c);
+                    break;
+                }
+            }
+
+            features.filterQuarantineChannels = quarantined.ToArray();
+
+            if (m_RawHistory == null ||
+                !m_RawHistory.TryGetWindow(features.windowStart, 0d,
+                    features.windowEnd - features.windowStart, out var raw) ||
+                raw.sampleCount < 2)
+            {
+                return flags;
+            }
+
+            var thresholds = m_QualityThresholds.Sanitised();
+            var byChannel = ToChannelMajor(raw);
+            var checks = new RawChannelCheck[raw.channelCount];
+            var stuck = new List<int>();
+            var atLimit = new List<int>();
+            var nonFinite = new List<int>();
+            var detail = new StringBuilder();
+
+            for (var c = 0; c < raw.channelCount; c++)
+            {
+                checks[c] = EegChannelQualityRules.CheckRaw(byChannel[c], thresholds, m_AmplifierLimits);
+
+                if (checks[c].nonFinite > 0)
+                    nonFinite.Add(c);
+
+                if (!checks[c].stuck && !checks[c].atAmplifierLimit)
+                    continue;
+
+                if (detail.Length > 0)
+                    detail.Append("; ");
+
+                detail.Append(LabelOf(features, c));
+
+                if (checks[c].stuck)
+                {
+                    stuck.Add(c);
+                    detail.Append(" raw value repeats in ")
+                          .Append(checks[c].repeatFraction.ToString("P1", CultureInfo.InvariantCulture))
+                          .Append(" of steps");
+                }
+
+                if (checks[c].atAmplifierLimit)
+                {
+                    atLimit.Add(c);
+                    detail.Append(" ").Append(checks[c].atLimit.ToString(CultureInfo.InvariantCulture))
+                          .Append(" raw sample(s) at the documented amplifier limit");
+                }
+            }
+
+            features.rawChecks = checks;
+            features.nonFiniteInputChannels = nonFinite.ToArray();
+            features.rawStuckChannels = stuck.ToArray();
+            features.rawAtLimitChannels = atLimit.ToArray();
+            features.rawSaturationDetail = detail.ToString();
+
+            if (stuck.Count > 0 || atLimit.Count > 0)
+                flags |= EegQualityFlags.SaturationLike;
+
+            return flags;
+        }
+
+        /// <summary>An explicit invalid alpha result for the early-exit paths. Null when disabled.</summary>
+        AlphaPresenceResult AlphaPresenceForEarlyExit(LatestEegFeatures features, string reason)
+        {
+            var config = m_AlphaPresence.Sanitised();
+
+            return config.enabled
+                ? AlphaPresenceDetector.InvalidWindow(config, reason, features.windowStart,
+                    features.windowEnd, features.sampleCount)
+                : null;
         }
 
         /// <summary>
@@ -1807,6 +2095,7 @@ namespace IkeaEeg.Data
                 return EegQualityFlags.None;
 
             var report = new List<string>();
+            var transient = new List<int>();
 
             for (var c = 0; c < window.channelCount; c++)
             {
@@ -1829,7 +2118,10 @@ namespace IkeaEeg.Data
 
                 report.Add($"{LabelOf(features, c)} {direction} {ratio:F1}x " +
                            $"(first third RMS {firstRms:E3}, last third {lastRms:E3})");
+                transient.Add(c);
             }
+
+            features.transientChannels = transient.ToArray();
 
             if (report.Count == 0)
             {
@@ -2019,6 +2311,7 @@ namespace IkeaEeg.Data
             }
 
             var series = new double[window.sampleCount];
+            var psds = new PsdResult[window.channelCount];
 
             for (var c = 0; c < window.channelCount; c++)
             {
@@ -2031,6 +2324,7 @@ namespace IkeaEeg.Data
                     : $"CH{c + 1}";
 
                 var psd = EegSpectralAnalyzer.Welch(series, fs, m_WelchSegmentSeconds);
+                psds[c] = psd;
                 features.thetaPerChannel[c] = EegSpectralAnalyzer.BandPower(psd, EegBand.Theta);
                 features.alphaPerChannel[c] = EegSpectralAnalyzer.BandPower(psd, EegBand.Alpha);
             }
@@ -2041,13 +2335,15 @@ namespace IkeaEeg.Data
             features.quality |= AssessInterChannelIdentity(window, features);
             features.quality |= AssessChannelPowerOutliers(features);
             features.quality |= AssessTransients(window, features);
+            features.quality |= AssessRawAndQuarantine(window, features);
 
             // Stateless, so it is safe here. The health tracker deliberately is NOT updated: this
             // path exists to inspect an arbitrary past window, and feeding windows to the state
             // machine out of order would corrupt its consecutive-window counters and rewrite the
             // session's health history as a side effect of looking at it.
-            features.quality |= AssessNearIdenticalChannels(
-                ToChannelMajor(window), window.channelCount, features);
+            var byChannel = ToChannelMajor(window);
+
+            features.quality |= AssessNearIdenticalChannels(byChannel, window.channelCount, features);
 
             ComputeRoi(features);
             AssessRoiContamination(features);
@@ -2059,6 +2355,9 @@ namespace IkeaEeg.Data
                 features.degradedChannels = m_Health.DegradedChannels();
                 ApplyChannelHealthToRoi(features);
             }
+
+            // Same observational detector as the live path, on the same spectra.
+            features.alphaPresence = EvaluateAlphaPresence(byChannel, psds, features);
 
             return features;
         }
@@ -2093,6 +2392,87 @@ namespace IkeaEeg.Data
             // Drop the filter so EnsureInitialised rebuilds it with the new chain.
             m_Filter = null;
             m_SamplesFiltered = 0;
+        }
+
+        /// <summary>
+        /// The preprocessing configuration as key=value lines, for a session's metadata file.
+        ///
+        /// READ-ONLY. It reports two things separately on purpose: the CONFIGURED values (the
+        /// serialized fields, i.e. what the scene asks for) and, once the filter exists, the
+        /// EFFECTIVE values read back from the filter object that is actually processing samples.
+        /// They differ only if a field was changed after the filter was built — a change that does
+        /// not take effect until the filter is rebuilt — and the mismatch line says so.
+        /// </summary>
+        public string DescribeEffectiveConfiguration()
+        {
+            var c = CultureInfo.InvariantCulture;
+            var sb = new StringBuilder();
+
+            sb.AppendLine("configured_high_pass_hz=" + m_HighPassHz.ToString("R", c));
+            sb.AppendLine("configured_low_pass_hz=" + m_LowPassHz.ToString("R", c));
+            sb.AppendLine("configured_notch_enabled=" + (m_NotchEnabled ? "TRUE" : "FALSE"));
+            sb.AppendLine("configured_notch_hz=" + m_NotchHz.ToString("R", c));
+            sb.AppendLine("configured_notch_q=" + m_NotchQ.ToString("R", c));
+            sb.AppendLine("window_seconds=" + m_WindowSeconds.ToString("R", c));
+            sb.AppendLine("minimum_window_seconds=" + m_MinimumWindowSeconds.ToString("R", c));
+            sb.AppendLine("publish_continuously=" + (m_PublishContinuously ? "TRUE" : "FALSE"));
+            sb.AppendLine("publish_interval_seconds=" + publishIntervalSeconds.ToString("R", c));
+            sb.AppendLine("welch_segment_seconds=" + m_WelchSegmentSeconds.ToString("R", c));
+            sb.AppendLine("filtered_history_seconds=" + m_FilteredHistorySeconds.ToString("R", c));
+            sb.AppendLine("invalidate_roi_on_degraded_channel=" + (m_InvalidateRoiOnDegradedChannel ? "TRUE" : "FALSE"));
+            sb.AppendLine("quality_thresholds=" + qualityThresholds.Describe());
+            sb.AppendLine("alpha_presence_enabled=" + (alphaPresenceConfig.enabled ? "TRUE" : "FALSE"));
+            sb.AppendLine("alpha_presence_config=" + alphaPresenceConfig.Describe());
+            sb.AppendLine("amplifier_limits=" + m_AmplifierLimits.Describe());
+            sb.AppendLine("raw_stuck_value_check=existing repeat rule on RAW samples, fraction > " +
+                          qualityThresholds.saturationRepeatFraction.ToString("R", c));
+
+            if (m_Filter == null)
+            {
+                sb.AppendLine("filter_built=FALSE (it is built on the first sample, with the configured values above)");
+                return sb.ToString().TrimEnd();
+            }
+
+            sb.AppendLine("filter_built=TRUE");
+            sb.AppendLine("effective_sample_rate_hz=" + m_Filter.sampleRateHz.ToString("R", c));
+            sb.AppendLine("effective_high_pass_hz=" + m_Filter.highPassHz.ToString("R", c));
+            sb.AppendLine("effective_low_pass_hz=" + m_Filter.lowPassHz.ToString("R", c));
+            sb.AppendLine("effective_notch_enabled=" + (m_Filter.notchEnabled ? "TRUE" : "FALSE"));
+            sb.AppendLine("effective_notch_hz=" + (m_Filter.notchEnabled ? m_Filter.notchHz.ToString("R", c) : ""));
+            sb.AppendLine("effective_notch_q=" + (m_Filter.notchEnabled ? m_Filter.notchQ.ToString("R", c) : ""));
+            sb.AppendLine("effective_sections_per_channel=" + m_Filter.sectionsPerChannel.ToString(c));
+            sb.AppendLine("effective_overall_order=" + m_Filter.overallOrder.ToString(c));
+            sb.AppendLine("effective_channels_with_independent_state=" + m_Filter.channelCount.ToString(c));
+            sb.AppendLine("settling_samples=" + m_SettlingSamples.ToString(c));
+            sb.AppendLine("samples_filtered_so_far=" + m_SamplesFiltered.ToString(c));
+            sb.AppendLine("nonfinite_recovery_samples=" + m_Filter.RecoverySamples.ToString(c));
+
+            var nonFinite = new StringBuilder();
+
+            for (var ch = 0; ch < m_Filter.channelCount; ch++)
+            {
+                if (ch > 0) nonFinite.Append(' ');
+                nonFinite.Append("ch").Append((ch + 1).ToString(c)).Append('=')
+                         .Append(m_Filter.NonFiniteInputCount(ch).ToString(c)).Append('/')
+                         .Append(m_Filter.ReinitialisationCount(ch).ToString(c)).Append('/')
+                         .Append(m_Filter.InvalidatedOutputCount(ch).ToString(c));
+            }
+
+            sb.AppendLine("nonfinite_inputs/reinitialisations/invalidated_outputs_so_far=" + nonFinite);
+
+            var mismatch = m_Filter.highPassHz != m_HighPassHz || m_Filter.lowPassHz != m_LowPassHz ||
+                           m_Filter.notchEnabled != m_NotchEnabled ||
+                           (m_NotchEnabled && (m_Filter.notchHz != m_NotchHz || m_Filter.notchQ != m_NotchQ));
+
+            sb.AppendLine("configured_vs_effective=" + (mismatch
+                ? "MISMATCH — a field changed after the filter was built; the EFFECTIVE values are the ones in use"
+                : "MATCH"));
+
+            sb.AppendLine("filter_description=");
+            foreach (var line in m_Filter.Describe().Split('\n'))
+                sb.AppendLine("  " + line.TrimEnd());
+
+            return sb.ToString().TrimEnd();
         }
 
         /// <summary>One-line description of the preprocessing, for reports.</summary>

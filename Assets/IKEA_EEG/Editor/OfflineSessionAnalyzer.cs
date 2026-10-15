@@ -140,11 +140,11 @@ namespace IkeaEeg.EditorTools
         static readonly EegBand k_Alpha = EegBand.Alpha;   // 8-12 Hz
 
         /// <summary>
-        /// The frontocentral theta set THIS ANALYSIS was asked for. Since 2026-09-16 it is also
-        /// the project's FRONTAL_THETA ROI, which gained Cz on that date; before then the ROI
-        /// was F3/Fz/F4 and the two genuinely differed. Both are still resolved and reported
-        /// separately, so a recording made on either side of that change can be read without
-        /// having to know which definition was in force when it was cut.
+        /// The frontocentral theta set THIS ANALYSIS was asked for. It is NOT the project's
+        /// FRONTAL_THETA ROI, which is F3/Fz/F4 (it included Cz only from 2026-09-16 to
+        /// 2026-10-15, when this set and the ROI coincided). Both are resolved and reported
+        /// separately, so a recording from any period can be read without having to know
+        /// which ROI definition was in force when it was cut.
         /// </summary>
         static readonly string[] k_FrontocentralLabels = { "F3", "Fz", "F4", "Cz" };
 

@@ -22,8 +22,10 @@ using IkeaEeg.Experiment;
 using IkeaEeg.Interaction;
 using IkeaEeg.Localization;
 using IkeaEeg.Memory;
+using IkeaEeg.SceneFlow;
 using IkeaEeg.UI;
 using IkeaEeg.XR;
+using UnityEngine.SceneManagement;
 
 namespace IkeaEeg.EditorTools
 {
@@ -43,14 +45,562 @@ namespace IkeaEeg.EditorTools
         [MenuItem("IKEA_EEG/Run Self Test", false, 40)]
         public static void RunMenu()
         {
-            Debug.Log(Run());
+            RunAndLog(interactive: true);
         }
 
-        /// <summary>Batch-mode entry point.</summary>
+        /// <summary>Batch-mode entry point: the LEGACY combined scene, as before.</summary>
         public static void RunFromCommandLine()
         {
             EditorSceneManager.OpenScene(ExperimentSceneBuilder.ScenePath, OpenSceneMode.Single);
-            Debug.Log(Run());
+            RunAndLog(interactive: false);
+        }
+
+        /// <summary>
+        /// The test results and the cleanup outcome are logged as TWO entries, results first,
+        /// so a cleanup failure is reported on its own and can never hide the results.
+        /// </summary>
+        static void RunAndLog(bool interactive)
+        {
+            var results = RunWithSceneFixture(interactive, out var cleanup, out var cleanupFailed);
+            Debug.Log(results);
+
+            if (cleanup == null)
+                return;
+
+            if (!cleanupFailed)
+            {
+                Debug.Log(cleanup);
+                return;
+            }
+
+            Debug.LogError(cleanup);
+
+            if (interactive && !Application.isBatchMode)
+            {
+                EditorUtility.DisplayDialog("IKEA_EEG self-test — CLEANUP FAILED",
+                    "The test results were logged, but restoring the Editor state did not fully " +
+                    "succeed. Do NOT save scenes or the project before reading the " +
+                    "'SELF TEST CLEANUP FAILED' entry in the Console.", "OK");
+            }
+        }
+
+        /// <summary>
+        /// Batch-mode entry point for the SPLIT architecture: Bootstrap plus the three room
+        /// scenes, bound as at run time (see <see cref="RunWithSceneFixture"/>).
+        /// </summary>
+        public static void RunSplitFromCommandLine()
+        {
+            EditorSceneManager.OpenScene(ExperimentSceneBuilder.BootstrapScenePath,
+                OpenSceneMode.Single);
+            RunAndLog(interactive: false);
+        }
+
+        // ---------------------------------------------------------------------------------
+        // Scene fixture: which scenes the checks run against, and leaving them untouched
+        // ---------------------------------------------------------------------------------
+
+        /// <summary>
+        /// Runs the checks against a fixture built from the scenes ON DISK, and leaves the
+        /// Editor's open scenes and project materials as it found them.
+        ///
+        /// WHY. The checks drive the real ExperimentManager, UI controller, chair task and
+        /// teleporter: they write labels, apply chair plans, open sandbox sessions, start
+        /// narration and teleport the rig. Before 2026-10-09 all of that stayed in the open
+        /// scene afterwards, one save away from being written into a scene file. And on the
+        /// split architecture the checks ran against Bootstrap alone, where every room-owned
+        /// reference (UI panels, spawn points, chairs, practice objects) is EMPTY BY DESIGN —
+        /// rooms bind them at run time through AreaSceneContext — so most failures described
+        /// the fixture rather than the project.
+        ///
+        /// WHAT IT DOES.
+        ///   * Refuses in Play Mode, and when any open scene has unsaved changes: the restore
+        ///     below reloads from disk and would discard them.
+        ///   * Legacy combined scene active → runs on it, exactly as before.
+        ///   * Bootstrap active → opens the three room scenes ADDITIVELY and binds each one
+        ///     through its own AreaSceneContext.BindInto followed by RewireBoundButtons — the
+        ///     calls AreaSceneLoader makes at run time — so the persistent systems hold what they
+        ///     hold with that room loaded. All three are bound at once (the union the combined
+        ///     scene always had). One-room-at-a-time loading, unloading and the move between
+        ///     rooms exist only in Play Mode and are NOT exercised here.
+        ///   * Any other scene active → refuses and names the scene to open.
+        ///   * Afterwards: restores every material under Assets/IKEA_EEG/Materials to its
+        ///     pre-test state (the Area B preservation check rewrites two wall materials) and
+        ///     verifies it, then closes everything WITHOUT saving and reopens the original scene
+        ///     setup from disk, then frees the temporary snapshot copies. Each step runs even if
+        ///     another failed; failures go to <paramref name="cleanup"/>, never into the results.
+        ///
+        /// Nothing is saved, no scene is regenerated and no check is skipped or relaxed.
+        /// Returns the test results. <paramref name="cleanup"/> is null when the test was refused.
+        /// </summary>
+        public static string RunWithSceneFixture(bool interactive, out string cleanup,
+            out bool cleanupFailed)
+        {
+            cleanup = null;
+            cleanupFailed = false;
+
+            if (EditorApplication.isPlayingOrWillChangePlaymode)
+                return Refuse("the self-test runs in Edit Mode. Exit Play Mode and run it again.",
+                    interactive);
+
+            var dirty = new List<string>();
+
+            for (var i = 0; i < SceneManager.sceneCount; i++)
+            {
+                var scene = SceneManager.GetSceneAt(i);
+
+                if (scene.isLoaded && scene.isDirty)
+                    dirty.Add(string.IsNullOrEmpty(scene.path) ? scene.name : scene.path);
+            }
+
+            if (dirty.Count > 0)
+            {
+                return Refuse("these open scenes have unsaved changes: " +
+                              string.Join(", ", dirty) + ". The self-test reloads the scenes " +
+                              "from disk when it finishes, which would discard them. Save them " +
+                              "if they are intended, or reopen the scene and choose Don't Save, " +
+                              "then run the self-test again.", interactive);
+            }
+
+            var activePath = SceneManager.GetActiveScene().path;
+            var split = activePath == ExperimentSceneBuilder.BootstrapScenePath;
+            var legacy = activePath == ExperimentSceneBuilder.ScenePath;
+
+            if (!split && !legacy)
+            {
+                return Refuse($"the active scene is '{activePath}'. Open " +
+                              $"{ExperimentSceneBuilder.BootstrapScenePath} (split architecture) " +
+                              $"or {ExperimentSceneBuilder.ScenePath} (legacy combined scene) " +
+                              "and run the self-test again.", interactive);
+            }
+
+            var setup = EditorSceneManager.GetSceneManagerSetup();
+            List<MaterialSnapshot> materials;
+
+            try
+            {
+                materials = SnapshotMaterials();
+            }
+            catch (System.Exception e)
+            {
+                // Nothing has run yet, so nothing needs restoring.
+                return Refuse($"the material snapshot failed ({e.GetType().Name}: {e.Message}). " +
+                              "No check was run and nothing was changed.", interactive);
+            }
+
+            var header = new StringBuilder();
+            string report = null;
+            var problems = new List<string>();
+            var notes = new List<string>();
+
+            try
+            {
+                header.AppendLine("[IKEA_EEG] SELF TEST FIXTURE: " + (split
+                    ? "SPLIT architecture — Bootstrap + room scenes opened additively and bound " +
+                      "as at run time (Edit Mode; room loading/unloading needs Play Mode)"
+                    : "LEGACY combined scene " + ExperimentSceneBuilder.ScenePath));
+
+                if (split)
+                    header.Append(PrepareSplitFixture());
+
+                report = Run();
+            }
+            catch (System.Exception e)
+            {
+                // Run() isolates every section, so this is the fixture itself failing. The
+                // results gathered so far are kept and the cleanup below still runs.
+                report = (s_Log != null ? s_Log.ToString() : "") + System.Environment.NewLine +
+                         $"[IKEA_EEG] SELF TEST ABORTED outside any check — {e.GetType().Name}: " +
+                         $"{e.Message}{System.Environment.NewLine}{e.StackTrace}";
+            }
+            finally
+            {
+                // Each step is isolated: one failing never stops the others, and none of them
+                // can throw past this block and take the results with it (the 2026-10-09
+                // MissingReferenceException in RestoreMaterials did exactly that).
+                //
+                // 1. MATERIALS FIRST, while the test's in-memory edits and the snapshots are
+                //    still there — before the scene reload below runs its unused-asset sweep.
+                try
+                {
+                    RestoreMaterials(materials, problems, notes);
+                }
+                catch (System.Exception e)
+                {
+                    problems.Add($"material restore aborted: {e.GetType().Name}: {e.Message}");
+                }
+
+                // 2. Close everything WITHOUT saving, then reopen exactly what was open, from disk.
+                try
+                {
+                    EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+
+                    if (setup != null && setup.Length > 0)
+                        EditorSceneManager.RestoreSceneManagerSetup(setup);
+                }
+                catch (System.Exception e)
+                {
+                    problems.Add($"scene restore failed ({e.GetType().Name}: {e.Message}). Reopen " +
+                                 "by hand, choosing Don't Save: " +
+                                 string.Join(", ", (setup ?? new SceneSetup[0]).Select(s => s.path)));
+                }
+
+                // 3. Free the temporary snapshot copies whatever happened above.
+                ReleaseSnapshots(materials, problems);
+
+                // 4. Persistent material assets the test CREATED (AreaBEnvironmentBuilder creates
+                //    a wall material when it is missing). Reported, never deleted.
+                try
+                {
+                    var before = new HashSet<string>(materials.Select(s => s.path));
+                    var created = AssetDatabase
+                        .FindAssets("t:Material", new[] { MaterialsFolder })
+                        .Select(AssetDatabase.GUIDToAssetPath)
+                        .Where(p => !before.Contains(p))
+                        .ToList();
+
+                    if (created.Count > 0)
+                        problems.Add("material assets created during the test (not deleted; " +
+                                     "decide whether to keep them): " + string.Join(", ", created));
+                }
+                catch (System.Exception e)
+                {
+                    problems.Add($"new-asset check failed: {e.GetType().Name}: {e.Message}");
+                }
+            }
+
+            var setupPaths = string.Join(", ", (setup ?? new SceneSetup[0]).Select(s => s.path));
+            var nl = System.Environment.NewLine;
+
+            cleanupFailed = problems.Count > 0;
+            cleanup = cleanupFailed
+                ? "[IKEA_EEG] SELF TEST CLEANUP FAILED — the test results above are complete; " +
+                  "only the restore of the Editor state is affected. Do not save scenes or the " +
+                  $"project until this is resolved.{nl}  - " + string.Join($"{nl}  - ", problems) +
+                  (notes.Count > 0 ? $"{nl}  notes:{nl}  - " + string.Join($"{nl}  - ", notes) : "")
+                : $"[IKEA_EEG] SELF TEST CLEANUP OK: open scenes reloaded from disk without saving " +
+                  $"({setupPaths}); {materials.Count} material asset(s) under {MaterialsFolder} " +
+                  "compared with their pre-test state and restored where the test changed them" +
+                  (notes.Count > 0 ? $".{nl}  - " + string.Join($"{nl}  - ", notes) : ".");
+
+            return header + report;
+        }
+
+        static string Refuse(string why, bool interactive)
+        {
+            var message = "[IKEA_EEG] SELF TEST NOT RUN — " + why;
+
+            if (interactive && !Application.isBatchMode)
+                EditorUtility.DisplayDialog("IKEA_EEG self-test", message, "OK");
+
+            return message;
+        }
+
+        /// <summary>
+        /// Opens the three room scenes additively and binds them into the persistent systems
+        /// with the same calls AreaSceneLoader makes. Returns a description for the report.
+        /// </summary>
+        static string PrepareSplitFixture()
+        {
+            var log = new StringBuilder();
+            var bootstrap = SceneManager.GetActiveScene();
+
+            foreach (var path in new[]
+                     {
+                         ExperimentSceneBuilder.AreaAScenePath, ExperimentSceneBuilder.AreaBScenePath,
+                         ExperimentSceneBuilder.AreaCScenePath,
+                     })
+            {
+                var scene = SceneManager.GetSceneByPath(path);
+
+                if (!scene.IsValid() || !scene.isLoaded)
+                    scene = EditorSceneManager.OpenScene(path, OpenSceneMode.Additive);
+
+                log.AppendLine($"  fixture: {path} open ({(scene.isLoaded ? "loaded" : "NOT loaded")})");
+            }
+
+            // The persistent systems stay in, and new objects keep going to, the bootstrap scene.
+            SceneManager.SetActiveScene(bootstrap);
+
+            var systems = new PersistentSystems
+            {
+                manager = Object.FindAnyObjectByType<ExperimentManager>(),
+                ui = Object.FindAnyObjectByType<ExperimentUIController>(),
+                chairTask = Object.FindAnyObjectByType<ChairSelectionTask>(),
+                teleporter = Object.FindAnyObjectByType<XRRigTeleporter>(),
+                recognitionPanel = Object.FindAnyObjectByType<RecognitionResponsePanel>(),
+            };
+
+            if (!systems.isComplete)
+            {
+                log.AppendLine("  fixture: the persistent systems are incomplete in Bootstrap — " +
+                               "rooms NOT bound; the checks below describe Bootstrap alone");
+                return log.ToString();
+            }
+
+            // Found in the open scenes, not through AreaSceneContext.loaded: that registry is
+            // filled in OnEnable, which does not run in Edit Mode.
+            var contexts = Object.FindObjectsByType<AreaSceneContext>(FindObjectsInactive.Include,
+                    FindObjectsSortMode.None)
+                .OrderBy(c => c.area)
+                .ToList();
+
+            foreach (var context in contexts)
+            {
+                var missing = context.MissingReferences().ToList();
+                context.BindInto(systems);
+
+                log.AppendLine($"  fixture: bound {context.GetType().Name} from " +
+                               $"'{context.gameObject.scene.name}'" +
+                               (missing.Count == 0
+                                   ? ""
+                                   : $" — authored references MISSING: {string.Join(", ", missing)}"));
+            }
+
+            if (contexts.Count != 3)
+                log.AppendLine($"  fixture: expected 3 room contexts, found {contexts.Count}");
+
+            systems.ui.RewireBoundButtons();
+
+            // The state the session is in after its first room load at run time: Area A is the
+            // open room. SwitchTo sets this itself after binding; here it is set the same way,
+            // because no load happens in Edit Mode. Without it every NEW TRIAL / RESTART takes
+            // the "load Area A first" path, which is Play Mode only.
+            var loader = Object.FindAnyObjectByType<AreaSceneLoader>();
+            var areaA = contexts.OfType<AreaASceneContext>().FirstOrDefault();
+
+            if (loader != null && areaA != null)
+            {
+                typeof(AreaSceneLoader).GetProperty(nameof(AreaSceneLoader.current))
+                    ?.GetSetMethod(true)?.Invoke(loader, new object[] { areaA });
+
+                log.AppendLine("  fixture: AreaSceneLoader.current = Area A, as after the first " +
+                               "room load at run time");
+            }
+
+            return log.ToString();
+        }
+
+        const string MaterialsFolder = "Assets/IKEA_EEG/Materials";
+
+        /// <summary>
+        /// The pre-test state of ONE persistent material asset.
+        ///
+        /// Two kinds of Material live here and must not be confused:
+        ///   * <see cref="asset"/> is the PERSISTENT .mat asset. It is restored, never destroyed.
+        ///   * <see cref="copy"/> is a TEMPORARY in-memory duplicate, never saved, that holds the
+        ///     pre-test values. It is freed in <see cref="ReleaseSnapshots"/>, and only there.
+        ///
+        /// WHY THE COPY IS HideAndDontSave. Until 2026-10-09 it had no hide flags. Nothing in any
+        /// scene and no static field referenced it — only a local list — so the unused-asset
+        /// sweep that runs when NewScene/RestoreSceneManagerSetup change scenes destroyed every
+        /// copy, and the restore threw MissingReferenceException on the first one, leaving all
+        /// assets unrestored and losing the report. DontUnloadUnusedAsset (part of
+        /// HideAndDontSave) exempts the copy from that sweep; DontSave keeps it out of any scene
+        /// or asset file. Restoring before the scene reload is the second line of defence.
+        /// </summary>
+        sealed class MaterialSnapshot
+        {
+            public string path;
+            public Material asset;
+            public Material copy;
+            public string json;
+            public string[] keywords;
+            public MaterialGlobalIlluminationFlags giFlags;
+            public int renderQueue;
+            public bool wasDirty;
+        }
+
+        static List<MaterialSnapshot> SnapshotMaterials()
+        {
+            var list = new List<MaterialSnapshot>();
+
+            foreach (var guid in AssetDatabase.FindAssets("t:Material", new[] { MaterialsFolder }))
+            {
+                var path = AssetDatabase.GUIDToAssetPath(guid);
+                var asset = AssetDatabase.LoadAssetAtPath<Material>(path);
+
+                if (asset == null)
+                    continue;
+
+                var copy = new Material(asset)
+                {
+                    name = "__SelfTestSnapshot_" + asset.name,
+                    hideFlags = HideFlags.HideAndDontSave,
+                };
+
+                list.Add(new MaterialSnapshot
+                {
+                    path = path,
+                    asset = asset,
+                    copy = copy,
+                    json = SerializedState(asset),
+                    keywords = asset.shaderKeywords,
+                    giFlags = asset.globalIlluminationFlags,
+                    renderQueue = asset.renderQueue,
+                    wasDirty = EditorUtility.IsDirty(asset),
+                });
+            }
+
+            return list;
+        }
+
+        /// <summary>
+        /// The asset's full serialized state, used to detect a change and to VERIFY a restore.
+        /// Null when it cannot be serialized; the restore then still runs but is reported as
+        /// unverified.
+        /// </summary>
+        static string SerializedState(Material material)
+        {
+            try
+            {
+                return EditorJsonUtility.ToJson(material);
+            }
+            catch (System.Exception)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Puts every snapshotted asset back to its pre-test state and checks that it is.
+        ///
+        /// A material is never skipped silently. Per asset:
+        ///   * unchanged (same serialized state) → only its dirty flag is put back;
+        ///   * changed → restored from the temporary copy, then verified;
+        ///   * copy missing, or the restore does not verify, and the asset had NO unsaved edits
+        ///     before the test (memory == disk) → reimported from disk, which is exactly its
+        ///     pre-test state, then verified again;
+        ///   * anything else → reported in <paramref name="problems"/> with the asset path.
+        /// One asset failing does not stop the others.
+        /// </summary>
+        static void RestoreMaterials(List<MaterialSnapshot> snapshots, List<string> problems,
+            List<string> notes)
+        {
+            var restored = new List<string>();
+            var reimported = new List<string>();
+            var flagOnly = new List<string>();
+            var unverified = new List<string>();
+
+            foreach (var s in snapshots)
+            {
+                try
+                {
+                    // The persistent asset: reload by path if the object we held is gone.
+                    var asset = s.asset != null ? s.asset : AssetDatabase.LoadAssetAtPath<Material>(s.path);
+
+                    if (asset == null)
+                    {
+                        problems.Add($"{s.path}: the asset no longer exists or cannot be " +
+                                     "loaded — NOT restored. Check it in git.");
+                        continue;
+                    }
+
+                    var dirtyNow = EditorUtility.IsDirty(asset);
+                    var changed = s.json == null || SerializedState(asset) != s.json;
+
+                    if (!changed)
+                    {
+                        if (dirtyNow && !s.wasDirty)
+                        {
+                            EditorUtility.ClearDirty(asset);
+                            flagOnly.Add(asset.name);
+                        }
+
+                        continue;
+                    }
+
+                    if (s.copy != null)
+                    {
+                        asset.shader = s.copy.shader;
+                        asset.CopyPropertiesFromMaterial(s.copy);
+                        asset.shaderKeywords = s.keywords;
+                        asset.globalIlluminationFlags = s.giFlags;
+                        asset.renderQueue = s.renderQueue;
+                    }
+
+                    var verified = s.json != null && SerializedState(asset) == s.json;
+
+                    if (!verified && !s.wasDirty)
+                    {
+                        // Memory matched disk before the test, so disk IS the pre-test state.
+                        AssetDatabase.ImportAsset(s.path, ImportAssetOptions.ForceUpdate);
+                        asset = AssetDatabase.LoadAssetAtPath<Material>(s.path);
+                        verified = asset != null && s.json != null && SerializedState(asset) == s.json;
+                        reimported.Add(System.IO.Path.GetFileNameWithoutExtension(s.path) +
+                                       (s.copy == null ? " (snapshot copy lost)" : ""));
+                    }
+                    else if (s.copy != null && verified)
+                    {
+                        restored.Add(asset.name);
+                    }
+
+                    if (asset != null && !s.wasDirty)
+                        EditorUtility.ClearDirty(asset);
+
+                    if (verified)
+                        continue;
+
+                    if (s.json == null && s.copy != null)
+                    {
+                        unverified.Add(asset != null ? asset.name : s.path);
+                        continue;
+                    }
+
+                    problems.Add($"{s.path}: could NOT be put back to its pre-test state" +
+                                 (s.wasDirty
+                                     ? " — it already had unsaved edits before the test, so " +
+                                       "reimporting from disk would have discarded them and was " +
+                                       "not done"
+                                     : " — even after reimporting it from disk") +
+                                 ". Do not save the project; reimport it by hand " +
+                                 "(right-click ▸ Reimport) and check git diff.");
+                }
+                catch (System.Exception e)
+                {
+                    problems.Add($"{s.path}: restore threw {e.GetType().Name}: {e.Message}");
+                }
+            }
+
+            if (restored.Count > 0)
+                notes.Add("restored from snapshot and verified: " + string.Join(", ", restored));
+
+            if (reimported.Count > 0)
+                notes.Add("reimported from disk (unchanged on disk; pre-test state had no unsaved " +
+                          "edits): " + string.Join(", ", reimported));
+
+            if (flagOnly.Count > 0)
+                notes.Add("written by the test with identical values; dirty flag cleared, nothing " +
+                          "to restore: " + string.Join(", ", flagOnly));
+
+            if (unverified.Count > 0)
+                notes.Add("restored from snapshot but NOT verifiable (could not be serialized): " +
+                          string.Join(", ", unverified));
+        }
+
+        /// <summary>
+        /// Frees the TEMPORARY snapshot copies. Runs whatever happened before it; the
+        /// persistent assets are never touched here.
+        /// </summary>
+        static void ReleaseSnapshots(List<MaterialSnapshot> snapshots, List<string> problems)
+        {
+            if (snapshots == null)
+                return;
+
+            foreach (var s in snapshots)
+            {
+                try
+                {
+                    if (s.copy != null)
+                        Object.DestroyImmediate(s.copy);
+
+                    s.copy = null;
+                }
+                catch (System.Exception e)
+                {
+                    problems.Add($"temporary snapshot copy of {s.path} could not be freed: " +
+                                 $"{e.GetType().Name}: {e.Message}");
+                }
+            }
         }
 
         public static string Run()
@@ -9173,23 +9723,22 @@ namespace IkeaEeg.EditorTools
                 "at least one electrode belongs to NO ROI — which is what makes the global " +
                 "versus ROI-scoped question a real one rather than academic");
 
-            // The frontocentral ROI is F3/Fz/F4/Cz — the frontal ring plus the vertex. Cz was
-            // absent until 2026-09-16 while every statement of intent included it; it was added
-            // in the montage, deliberately, before any baseline existed. Asserted so the set
-            // theta_fc is averaged over cannot change again without a test saying so.
-            Assert(frontal.Length == 4,
+            // The frontal theta ROI is F3/Fz/F4 (researcher decision 2026-10-15; Cz was in it
+            // from 2026-09-16 to 2026-10-15). Asserted so the set theta_fc is averaged over
+            // cannot change again without a test saying so.
+            Assert(frontal.Length == 3,
                 $"FRONTAL_THETA averages {frontal.Length} electrodes as implemented");
 
             var frontalLabels = frontal.Select(i => montage.LabelOfIndex(i)).ToArray();
 
-            Assert(frontalLabels.Contains("Cz"),
-                $"Cz IS part of FRONTAL_THETA ({string.Join("/", frontalLabels)}) — theta_fc " +
-                "therefore means mean(F3,Fz,F4,Cz), and is NOT comparable with the purely " +
-                "frontal value logged by runs recorded before 2026-09-16");
+            Assert(!frontalLabels.Contains("Cz"),
+                $"Cz is NOT part of FRONTAL_THETA ({string.Join("/", frontalLabels)}) — theta_fc " +
+                "means mean(F3,Fz,F4), and is NOT comparable with the mean(F3,Fz,F4,Cz) " +
+                "logged by runs recorded between 2026-09-16 and 2026-10-15");
 
             Assert(frontalLabels.Contains("F3") && frontalLabels.Contains("Fz") &&
                    frontalLabels.Contains("F4"),
-                "and the three frontal electrodes are unchanged by that correction");
+                "and the three frontal electrodes are F3, Fz and F4");
 
             // ---- B: a degraded NON-ROI channel still invalidates the window -----------------
             // This is the current rule, asserted so a future change to it is visible.
@@ -9436,16 +9985,34 @@ namespace IkeaEeg.EditorTools
         /// <c>GameObject.Find</c> returns only active objects, which makes it useless for
         /// checking the layout of panels that are hidden until their area opens — it returns
         /// null and any guarded assertion quietly does not run.
+        ///
+        /// Searches EVERY loaded scene, the active one first. On the legacy combined scene that
+        /// is the same single scene as before. On the split architecture the room objects live
+        /// in the AreaA/B/C scenes, not in the active Bootstrap; searching only the active scene
+        /// reported nine authored objects as missing (2026-10-09 batch run).
         /// </summary>
         static GameObject FindInSceneIncludingInactive(string name)
         {
-            foreach (var root in UnityEngine.SceneManagement.SceneManager.GetActiveScene()
-                         .GetRootGameObjects())
+            var active = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
+            var scenes = new List<UnityEngine.SceneManagement.Scene> { active };
+
+            for (var i = 0; i < UnityEngine.SceneManagement.SceneManager.sceneCount; i++)
             {
-                foreach (var t in root.GetComponentsInChildren<Transform>(true))
+                var scene = UnityEngine.SceneManagement.SceneManager.GetSceneAt(i);
+
+                if (scene != active && scene.isLoaded)
+                    scenes.Add(scene);
+            }
+
+            foreach (var scene in scenes)
+            {
+                foreach (var root in scene.GetRootGameObjects())
                 {
-                    if (t.name == name)
-                        return t.gameObject;
+                    foreach (var t in root.GetComponentsInChildren<Transform>(true))
+                    {
+                        if (t.name == name)
+                            return t.gameObject;
+                    }
                 }
             }
 
@@ -9713,12 +10280,11 @@ namespace IkeaEeg.EditorTools
                 // ---- ROIs, resolved by LABEL -----------------------------------------------
                 var frontal = montage.ResolveRoi(AuraMontageConfig.FrontalThetaRoi, out var fp);
 
-                Assert(frontal != null && frontal.Length == 4,
-                    $"FRONTAL_THETA resolves to four channels ({fp})");
+                Assert(frontal != null && frontal.Length == 3,
+                    $"FRONTAL_THETA resolves to three channels ({fp})");
 
-                Assert(frontal != null && frontal[0] == 1 && frontal[1] == 2 && frontal[2] == 3 &&
-                       frontal[3] == 4,
-                    "FRONTAL_THETA = F3, Fz, F4, Cz -> sample indices 1, 2, 3, 4");
+                Assert(frontal != null && frontal[0] == 1 && frontal[1] == 2 && frontal[2] == 3,
+                    "FRONTAL_THETA = F3, Fz, F4 -> sample indices 1, 2, 3");
 
                 var posterior = montage.ResolveRoi(AuraMontageConfig.PosteriorAlphaRoi, out var pp);
 
@@ -9729,7 +10295,7 @@ namespace IkeaEeg.EditorTools
                        posterior[2] == 7,
                     "POSTERIOR_ALPHA = P3, Pz, P4 -> sample indices 5, 6, 7");
 
-                // Fp1 is kept but not aggregated. Cz IS aggregated, into FRONTAL_THETA.
+                // Fp1 and Cz are kept (recorded, quality-checked) but not aggregated.
                 Assert(montage.IndexOfLabel("Fp1") == 0 && montage.IndexOfLabel("Cz") == 4,
                     "Fp1 and Cz remain mapped at their acquisition indices");
 
@@ -9741,10 +10307,10 @@ namespace IkeaEeg.EditorTools
                 }
 
                 Assert(!inAnyRoi.Contains(0),
-                    "Fp1 is the only electrode in no ROI; it is not silently folded into one");
+                    "Fp1 is in no ROI; it is not silently folded into one");
 
-                Assert(inAnyRoi.Contains(4),
-                    "Cz IS aggregated — into FRONTAL_THETA — as the montage now defines it");
+                Assert(!inAnyRoi.Contains(4),
+                    "Cz is in no ROI; it is not aggregated into FRONTAL_THETA");
 
                 // ---- All-or-nothing ROI resolution ------------------------------------------
                 var broken = AuraMontageConfig.CreateHumanVerifiedDefault();

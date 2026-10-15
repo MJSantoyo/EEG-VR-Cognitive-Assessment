@@ -122,6 +122,20 @@ namespace IkeaEeg.SceneFlow
             if (!multiSceneAvailable)
                 yield break;
 
+            // SceneManager.LoadSceneAsync and UnloadSceneAsync exist only in Play Mode; outside
+            // it they throw. The Editor self-test drives the manager outside Play Mode and
+            // reaches here through NEW TRIAL / RESTART, where the throw escaped the coroutine
+            // and left the manager's room-transition flag stuck. Opening rooms in the Editor is
+            // EditorSceneManager's job, so nothing is loaded, bound or unloaded and `current`
+            // is unchanged: the caller sees "room not loaded", as after a failed load.
+            // No effect in Play Mode or in a build.
+            if (!Application.isPlaying)
+            {
+                Debug.LogWarning($"[IKEA_EEG] Room switch to {area} skipped: rooms are loaded " +
+                                 "only in Play Mode. Nothing changed.");
+                yield break;
+            }
+
             if (isSwitching)
             {
                 Debug.LogWarning($"[IKEA_EEG] A room switch is already running; the request for " +

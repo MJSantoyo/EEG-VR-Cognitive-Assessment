@@ -44,16 +44,30 @@ namespace IkeaEeg.Neuro
         /// </summary>
         public const string TrialFileName = "shadow_trial_decisions.csv";
 
+        /// <summary>
+        /// The binary parietal-alpha detector's rows: one per published window, keyed by the same
+        /// window_index as <see cref="FileName"/>. A SIBLING file with its own header
+        /// (AlphaPresenceDetector.CsvHeader), so the frozen 15-column window file is untouched.
+        /// Observational: nothing reads it back and it feeds no decision.
+        /// </summary>
+        public const string AlphaPresenceFileName = "shadow_alpha_presence.csv";
+
         [Tooltip("Rows buffered before touching the disk. Shadow mode must never add a frame " +
                  "spike near a stimulus marker.")]
         [SerializeField] int m_FlushEveryRows = 32;
 
         readonly List<string> m_Pending = new List<string>();
         readonly List<string> m_PendingTrialRows = new List<string>();
+        readonly List<string> m_PendingAlphaRows = new List<string>();
 
         string m_FilePath;
         bool m_HeaderWritten;
         bool m_TrialHeaderWritten;
+        bool m_AlphaHeaderWritten;
+        string m_AlphaHeader = string.Empty;
+
+        /// <summary>Alpha-presence rows handed to this sink this session.</summary>
+        public long alphaRowsWritten { get; private set; }
 
         /// <summary>Trial-level rows handed to this sink this session.</summary>
         public long trialRowsWritten { get; private set; }
@@ -82,6 +96,9 @@ namespace IkeaEeg.Neuro
                 m_TrialHeaderWritten = false;
                 m_PendingTrialRows.Clear();
                 trialRowsWritten = 0;
+                m_AlphaHeaderWritten = false;
+                m_PendingAlphaRows.Clear();
+                alphaRowsWritten = 0;
             }
             catch (IOException e)
             {
@@ -121,9 +138,58 @@ namespace IkeaEeg.Neuro
             m_PendingTrialRows.Add(csvRow);
         }
 
+        /// <summary>
+        /// Queues one pre-formatted alpha-presence row for <see cref="AlphaPresenceFileName"/>.
+        /// The header is supplied by the caller because it depends on the configured channels.
+        /// </summary>
+        public void WriteAlphaPresenceRow(string header, string csvRow)
+        {
+            alphaRowsWritten++;
+
+            if (string.IsNullOrEmpty(m_FilePath) || string.IsNullOrEmpty(csvRow))
+                return;
+
+            if (string.IsNullOrEmpty(m_AlphaHeader))
+                m_AlphaHeader = header ?? string.Empty;
+
+            m_PendingAlphaRows.Add(csvRow);
+        }
+
+        /// <summary>Writes queued alpha rows; the header goes out with the first row only.</summary>
+        void FlushAlphaRows()
+        {
+            if (string.IsNullOrEmpty(m_FilePath) || m_PendingAlphaRows.Count == 0)
+                return;
+
+            var directory = Path.GetDirectoryName(m_FilePath);
+
+            if (string.IsNullOrEmpty(directory))
+                return;
+
+            try
+            {
+                var path = Path.Combine(directory, AlphaPresenceFileName);
+
+                if (!m_AlphaHeaderWritten)
+                {
+                    File.AppendAllText(path, m_AlphaHeader + "\n");
+                    m_AlphaHeaderWritten = true;
+                }
+
+                File.AppendAllText(path, string.Join("\n", m_PendingAlphaRows) + "\n");
+                m_PendingAlphaRows.Clear();
+            }
+            catch (IOException e)
+            {
+                Debug.LogWarning($"[IKEA_EEG] Shadow alpha-presence rows could not be written: " +
+                                 e.Message);
+            }
+        }
+
         public void Flush()
         {
             FlushTrialRows();
+            FlushAlphaRows();
 
             if (string.IsNullOrEmpty(m_FilePath) || m_Pending.Count == 0 && m_HeaderWritten)
                 return;
@@ -267,6 +333,20 @@ namespace IkeaEeg.Neuro
             text.AppendLine("trial_rows_written     = " +
                 trialRowsWritten.ToString(CultureInfo.InvariantCulture) +
                 " (" + TrialFileName + ")");
+            text.AppendLine("alpha_rows_written     = " +
+                alphaRowsWritten.ToString(CultureInfo.InvariantCulture) +
+                " (" + AlphaPresenceFileName + ")");
+
+            if (controller != null)
+            {
+                text.AppendLine("alpha_present_windows  = " +
+                    controller.alphaPresentWindows.ToString(CultureInfo.InvariantCulture));
+                text.AppendLine("alpha_absent_windows   = " +
+                    controller.alphaAbsentWindows.ToString(CultureInfo.InvariantCulture));
+                text.AppendLine("alpha_invalid_windows  = " +
+                    controller.alphaInvalidWindows.ToString(CultureInfo.InvariantCulture));
+            }
+
             text.AppendLine();
 
             text.AppendLine("## Grouped rejection breakdown");

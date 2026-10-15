@@ -181,6 +181,91 @@ namespace IkeaEeg.Data
         }
     }
 
+    /// <summary>
+    /// The amplifier's documented input limits, expressed in the STREAM's units, for the raw
+    /// (pre-filter) saturation check.
+    ///
+    /// UNDOCUMENTED BY DEFAULT, AND THEN THE CHECK DOES NOT RUN. As of 2026-10-09 neither the
+    /// project nor the stream metadata documents AURA's input range, ADC bit depth, gain or the
+    /// unit of the transmitted values (EEG_PIPELINE_TECHNICAL_DOCUMENTATION.md §7). A rail value
+    /// guessed from a recording would be a threshold wearing a number, so none is shipped.
+    ///
+    /// To enable it, enter BOTH limits exactly as the manufacturer documents them, converted to
+    /// the stream's confirmed unit, and name the document in <see cref="source"/>. A limit without
+    /// a source is treated as undocumented.
+    /// </summary>
+    [Serializable]
+    public struct EegAmplifierLimits
+    {
+        /// <summary>True only when the limits below come from manufacturer documentation.</summary>
+        public bool documented;
+
+        /// <summary>Most negative representable input, stream units. A raw sample at or below it is at the rail.</summary>
+        public double lowerLimit;
+
+        /// <summary>Most positive representable input, stream units. A raw sample at or above it is at the rail.</summary>
+        public double upperLimit;
+
+        /// <summary>Document, version and page the limits come from. Required.</summary>
+        public string source;
+
+        public static EegAmplifierLimits Undocumented => new EegAmplifierLimits
+        {
+            documented = false,
+            lowerLimit = 0d,
+            upperLimit = 0d,
+            source = string.Empty,
+        };
+
+        /// <summary>Whether the limit check can run: documented, sourced, finite and ordered.</summary>
+        public bool usable =>
+            documented && !string.IsNullOrWhiteSpace(source) &&
+            !double.IsNaN(lowerLimit) && !double.IsInfinity(lowerLimit) &&
+            !double.IsNaN(upperLimit) && !double.IsInfinity(upperLimit) &&
+            lowerLimit < upperLimit;
+
+        public string Describe()
+        {
+            return usable
+                ? string.Format(CultureInfo.InvariantCulture,
+                    "documented [{0:R}, {1:R}] stream units; source: {2}",
+                    lowerLimit, upperLimit, source.Replace(';', ','))
+                : "LIMITS_UNDOCUMENTED (no amplitude-based saturation check is run)";
+        }
+    }
+
+    /// <summary>
+    /// What the RAW (pre-filter) samples of one channel say about one window.
+    ///
+    /// Exists because the filtered-signal rules cannot see a clipped or stuck input: a band-pass
+    /// turns a constant rail value into a decaying, never-repeating output, so the repeat count on
+    /// filtered data stays near zero while the electrode is pinned. Counted on the values exactly
+    /// as received.
+    /// </summary>
+    public struct RawChannelCheck
+    {
+        public int sampleCount;
+        public int nonFinite;
+
+        /// <summary>Fraction of consecutive raw samples that repeat bit-for-bit.</summary>
+        public double repeatFraction;
+
+        /// <summary>Raw samples at or beyond a documented limit. 0 when the limits are undocumented.</summary>
+        public int atLimit;
+
+        /// <summary>
+        /// repeatFraction above <see cref="EegQualityThresholds.saturationRepeatFraction"/> — the
+        /// EXISTING repeat rule, applied to raw samples. A stuck value, which includes a rail held
+        /// for most of the window. It is a count, not an amplitude.
+        /// </summary>
+        public bool stuck;
+
+        /// <summary>Any raw sample at or beyond a documented limit. Never true without documented limits.</summary>
+        public bool atAmplifierLimit;
+
+        public bool limitsChecked;
+    }
+
     /// <summary>Why a channel was called degraded. Flags, so several can apply at once.</summary>
     [Flags]
     public enum EegDegradationReason
@@ -470,6 +555,46 @@ namespace IkeaEeg.Data
                 reason |= EegDegradationReason.Discontinuity;
 
             return reason;
+        }
+
+        /// <summary>
+        /// Checks one channel's RAW window. No amplitude threshold is invented here: the repeat
+        /// rule reuses <see cref="EegQualityThresholds.saturationRepeatFraction"/>, and the limit
+        /// rule runs only when <paramref name="limits"/> is documented.
+        /// </summary>
+        public static RawChannelCheck CheckRaw(IReadOnlyList<double> raw,
+            EegQualityThresholds thresholds, EegAmplifierLimits limits)
+        {
+            var stats = Measure(raw);
+            var t = thresholds.Sanitised();
+
+            var check = new RawChannelCheck
+            {
+                sampleCount = stats.sampleCount,
+                nonFinite = stats.nonFinite,
+                repeatFraction = stats.repeatFraction,
+                limitsChecked = limits.usable,
+            };
+
+            check.stuck = stats.sampleCount > 1 && stats.repeatFraction > t.saturationRepeatFraction;
+
+            if (limits.usable && raw != null)
+            {
+                for (var i = 0; i < raw.Count; i++)
+                {
+                    var v = raw[i];
+
+                    if (double.IsNaN(v) || double.IsInfinity(v))
+                        continue;
+
+                    if (v <= limits.lowerLimit || v >= limits.upperLimit)
+                        check.atLimit++;
+                }
+
+                check.atAmplifierLimit = check.atLimit > 0;
+            }
+
+            return check;
         }
 
         /// <summary>Spells a reason set out in words, for a log line or a report cell.</summary>

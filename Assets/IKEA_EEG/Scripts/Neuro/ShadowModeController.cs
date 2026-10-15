@@ -320,6 +320,10 @@ namespace IkeaEeg.Neuro
             if (m_Sink != null)
                 m_Sink.Write(decision);
 
+            // Binary parietal-alpha prototype: recorded beside the decision, never fed into it.
+            // The gates above, the workload level and the adaptive policy do not read it.
+            RecordAlphaPresence(decision.windowIndex, features);
+
             // AFTER the shadow row, and contained: nothing the coordinator does can stop or alter
             // this window's own decision.
             try
@@ -331,6 +335,44 @@ namespace IkeaEeg.Neuro
             {
                 Debug.LogWarning($"[IKEA_EEG] Neuroadaptive shadow ignored an error on window " +
                                  $"{windowsObserved}: {e.Message}");
+            }
+        }
+
+        // ---- Binary parietal-alpha prototype (observational) ------------------------------
+
+        /// <summary>Windows the detector called 1, 0, or invalid. Diagnostics only; nothing reads them.</summary>
+        public long alphaPresentWindows { get; private set; }
+        public long alphaAbsentWindows { get; private set; }
+        public long alphaInvalidWindows { get; private set; }
+
+        /// <summary>
+        /// Writes the pipeline's alpha-presence result for this window to its sibling file.
+        /// Contained: a failure here is logged and can never stop or alter the window's decision.
+        /// </summary>
+        void RecordAlphaPresence(long windowIndex, LatestEegFeatures features)
+        {
+            var alpha = features?.alphaPresence;
+
+            if (alpha == null)
+                return;
+
+            try
+            {
+                if (!alpha.result.HasValue) alphaInvalidWindows++;
+                else if (alpha.result.Value == 1) alphaPresentWindows++;
+                else alphaAbsentWindows++;
+
+                if (m_Sink != null && m_Pipeline != null)
+                {
+                    m_Sink.WriteAlphaPresenceRow(
+                        AlphaPresenceDetector.CsvHeader(m_Pipeline.alphaPresenceConfig),
+                        AlphaPresenceDetector.ToCsvRow(windowIndex, alpha, features.QualityText()));
+                }
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[IKEA_EEG] Alpha-presence row skipped on window {windowIndex}: " +
+                                 e.Message);
             }
         }
 
