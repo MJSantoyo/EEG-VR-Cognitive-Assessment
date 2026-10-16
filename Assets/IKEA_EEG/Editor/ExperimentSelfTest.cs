@@ -639,6 +639,7 @@ namespace IkeaEeg.EditorTools
             RunSection("EEG DC-OFFSET REJECTION (REAL AURA OFFSETS)", CheckEegDcOffsetRejection);
             RunSection("RECOGNITION PROTOCOL — DATA + CLASSIFICATION", CheckRecognitionProtocol);
             RunSection("RECOGNITION PROTOCOL — SCENE + PARADIGM SEPARATION", CheckRecognitionScene);
+            RunSection("RECOGNITION LISTS — ROUND x LANGUAGE (A/B/C x EN/ES/JA)", CheckRecognitionRoundLists);
             RunSection("BLOCK 1 — INSTRUCTIONS + FAMILIARIZATION FEEDBACK", CheckBlock1Feedback);
             RunSection("BLOCK 2 — TWO-PHASE PRACTICE + RECOGNITION LABELS/LAYOUT",
                 CheckBlock2PracticeAndLayout);
@@ -3595,6 +3596,217 @@ namespace IkeaEeg.EditorTools
             {
                 Object.DestroyImmediate(list);
             }
+        }
+
+        /// <summary>
+        /// The nine round × language recognition lists: presence, counts, stable IDs, the run
+        /// resolver (run 1/2/3 → A/B/C, no English fallback), shared target identity across
+        /// encoding and both recognition phases, CANDLE_B absence and the validation flag.
+        /// </summary>
+        static void CheckRecognitionRoundLists()
+        {
+            // ---- The source CSV passes the importer's own rules ----------------------------
+            var csv = Path.Combine(Path.GetDirectoryName(Application.dataPath) ?? ".",
+                RecognitionListImporter.CsvRelativePath);
+
+            if (File.Exists(csv))
+            {
+                var rows = RecognitionListImporter.ParseRows(File.ReadAllText(csv, Encoding.UTF8));
+                Assert(rows.Count == 135, $"the content CSV has 135 concept rows ({rows.Count})");
+                Assert(RecognitionListImporter.Check(rows, out var csvProblem),
+                    $"the content CSV passes the import rules ({csvProblem})");
+            }
+            else
+            {
+                Info($"content CSV not present at {csv}; import rules checked on the assets only");
+            }
+
+            // ---- 9 lists are configured, one per round × language --------------------------
+            var config = AssetDatabase.LoadAssetAtPath<ExperimentConfig>(ExperimentAssetBuilder.ConfigPath);
+            Assert(config != null, "the default ExperimentConfig exists");
+
+            if (config == null)
+                return;
+
+            var lists = config.recognitionWordLists ?? new List<RecognitionWordList>();
+            Assert(lists.Count == 9 && lists.All(l => l != null),
+                $"ExperimentConfig holds 9 recognition lists ({lists.Count})");
+
+            var placeholder = AssetDatabase.LoadAssetAtPath<RecognitionWordList>(
+                ExperimentAssetBuilder.RecognitionWordListPath);
+            Assert(placeholder == null || !lists.Contains(placeholder),
+                "the legacy English placeholder is NOT selected by ExperimentConfig");
+
+            foreach (var listId in RecognitionListImporter.ListIds)
+            {
+                foreach (var language in ExperimentLanguages.Selectable)
+                {
+                    var code = ExperimentLanguages.ToCode(language);
+                    var list = AssetDatabase.LoadAssetAtPath<RecognitionWordList>(
+                        RecognitionListImporter.AssetPath(listId, language));
+
+                    Assert(list != null && lists.Contains(list),
+                        $"{listId}_{code} exists and is configured");
+
+                    if (list == null)
+                        continue;
+
+                    Assert(list.listId == listId && list.language == language,
+                        $"{listId}_{code} declares list {list.listId}, language {list.language}");
+
+                    Assert(list.targetCount == 15 &&
+                           list.LureCount(RecognitionPhase.Immediate) == 15 &&
+                           list.LureCount(RecognitionPhase.Delayed) == 15,
+                        $"{listId}_{code} has 15/15/15 ({list.targetCount}/" +
+                        $"{list.LureCount(RecognitionPhase.Immediate)}/" +
+                        $"{list.LureCount(RecognitionPhase.Delayed)})");
+
+                    Assert(list.hasStableIds &&
+                           list.targetIds.Count == list.targetCount &&
+                           list.LureIds(RecognitionPhase.Immediate).Count == list.LureCount(RecognitionPhase.Immediate) &&
+                           list.LureIds(RecognitionPhase.Delayed).Count == list.LureCount(RecognitionPhase.Delayed),
+                        $"{listId}_{code} has one stable ID per visible word in every role");
+
+                    var validImmediate = list.Validate(RecognitionPhase.Immediate, out var pi);
+                    var validDelayed = list.Validate(RecognitionPhase.Delayed, out var pd);
+                    Assert(validImmediate && validDelayed,
+                        $"{listId}_{code} validates for both phases ({pi}{pd})");
+
+                    Assert(!list.validatedForResearch,
+                        $"{listId}_{code} is NOT marked validated for research");
+
+                    var allWords = list.targetWords
+                        .Concat(list.immediateRecognitionLures)
+                        .Concat(list.delayedRecognitionLures);
+                    var allIds = list.targetIds
+                        .Concat(list.LureIds(RecognitionPhase.Immediate))
+                        .Concat(list.LureIds(RecognitionPhase.Delayed)).ToList();
+
+                    Assert(!allWords.Any(w => w.ToUpperInvariant().Contains("CANDLE_B")) &&
+                           !allIds.Any(i => i.Contains("CANDLE_B")),
+                        $"{listId}_{code} contains no CANDLE_B");
+
+                    Assert(allIds.Distinct().Count() == 45,
+                        $"{listId}_{code}: 45 distinct stable IDs — no concept in two roles");
+
+                    // Same concepts, same order, in every language of a round.
+                    var english = AssetDatabase.LoadAssetAtPath<RecognitionWordList>(
+                        RecognitionListImporter.AssetPath(listId, ExperimentLanguage.English));
+
+                    if (english != null)
+                    {
+                        Assert(list.targetIds.SequenceEqual(english.targetIds),
+                            $"{listId}_{code} target IDs match {listId}_EN in order");
+                    }
+
+                    // ---- Encoding, immediate and delayed share one target identity --------
+                    // Encoding presents targetWords[i] logged with TargetId(i); both phases are
+                    // built from the same list object by RecognitionSequence.
+                    var encoding = new HashSet<string>(
+                        list.targetWords.Select((w, i) => $"{list.TargetId(i)}|{w}"));
+
+                    foreach (var phase in new[] { RecognitionPhase.Immediate, RecognitionPhase.Delayed })
+                    {
+                        var seq = RecognitionSequence.Build(list, phase, 7);
+                        var targets = new HashSet<string>(seq
+                            .Where(i => i.itemClass == RecognitionItemClass.Target)
+                            .Select(i => $"{i.stableId}|{i.word}"));
+                        var lureIds = new HashSet<string>(seq
+                            .Where(i => i.itemClass == RecognitionItemClass.Lure)
+                            .Select(i => i.stableId));
+
+                        Assert(targets.SetEquals(encoding),
+                            $"{listId}_{code} {phase}: targets carry the encoding stable ID + word");
+
+                        Assert(lureIds.SetEquals(list.LureIds(phase)) &&
+                               seq.All(i => !string.IsNullOrEmpty(i.stableId)),
+                            $"{listId}_{code} {phase}: every lure carries its own stable ID");
+
+                        Assert(seq.All(i => i.ToNotes().Contains($"stable_id={i.stableId};")),
+                            $"{listId}_{code} {phase}: the stable ID reaches the logged notes");
+                    }
+                }
+            }
+
+            // ---- Resolver: language + run_index → list ------------------------------------
+            foreach (var language in ExperimentLanguages.Selectable)
+            {
+                for (var run = 1; run <= 3; run++)
+                {
+                    var resolved = config.ResolveRecognitionList(language, run, out var problem);
+                    var expected = RecognitionListImporter.ListIds[run - 1];
+
+                    Assert(resolved != null && resolved.listId == expected &&
+                           resolved.language == language,
+                        $"run {run} in {ExperimentLanguages.ToCode(language)} resolves " +
+                        $"{expected}_{ExperimentLanguages.ToCode(language)} " +
+                        $"(got {(resolved != null ? resolved.wordSetId : "null")}; {problem})");
+                }
+
+                Assert(config.ResolveRecognitionList(language, 4, out var run4) == null &&
+                       !string.IsNullOrEmpty(run4),
+                    $"run 4 resolves NO list — no wrap-around reuse ({run4})");
+            }
+
+            Assert(config.ResolveRecognitionList(ExperimentLanguage.None, 1, out _) == null,
+                "no language selected resolves no list");
+
+            // ---- No English fallback ------------------------------------------------------
+            var englishOnly = ScriptableObject.CreateInstance<ExperimentConfig>();
+
+            try
+            {
+                englishOnly.recognitionWordLists = lists
+                    .Where(l => l != null && l.language == ExperimentLanguage.English).ToList();
+
+                foreach (var language in new[] { ExperimentLanguage.Spanish, ExperimentLanguage.Japanese })
+                {
+                    var resolved = englishOnly.ResolveRecognitionList(language, 1, out var problem);
+
+                    Assert(resolved == null && problem.Contains("no other language"),
+                        $"{ExperimentLanguages.ToCode(language)} with only English lists resolves " +
+                        $"NOTHING — no English fallback ({problem})");
+                }
+            }
+            finally
+            {
+                Object.DestroyImmediate(englishOnly);
+            }
+
+            // ---- A list whose IDs do not pair with its words is rejected ------------------
+            var broken = ScriptableObject.CreateInstance<RecognitionWordList>();
+
+            try
+            {
+                broken.SetLists(new List<string> { "T1", "T2" }, new List<string> { "L1" },
+                    new List<string> { "D1" }, validated: false, provenanceNote: "self-test fixture");
+                broken.SetIdentity("A", ExperimentLanguage.English,
+                    new List<string> { "WORD_T1" }, new List<string> { "WORD_L1" },
+                    new List<string> { "WORD_D1" });
+
+                var rejected = !broken.Validate(RecognitionPhase.Immediate, out var idProblem);
+
+                Assert(!broken.hasStableIds && rejected && idProblem.Contains("target IDs"),
+                    $"a list with fewer stable IDs than words is REJECTED ({idProblem})");
+            }
+            finally
+            {
+                Object.DestroyImmediate(broken);
+            }
+
+            // ---- All three phases read the ONE resolved list ------------------------------
+            var source = ManagerSource();
+
+            Assert(!Regex.IsMatch(source, @"m_Config\.recognitionWordList\b"),
+                "ExperimentManager no longer reads the single legacy recognitionWordList");
+
+            Assert(Regex.Matches(source, @"ResolveRecognitionListForRun\(out var problem\)").Count == 2,
+                "encoding and the shared immediate/delayed phase coroutine both resolve through " +
+                "ResolveRecognitionListForRun (cached per run, cleared by PrepareTrial)");
+
+            var builder = File.ReadAllText("Assets/IKEA_EEG/Editor/ExperimentAssetBuilder.cs");
+            Assert(!builder.Contains("CANDLE_B"),
+                "the asset builder can no longer regenerate CANDLE_B");
         }
 
         /// <summary>

@@ -97,6 +97,15 @@ namespace IkeaEeg.Experiment
         // measurements over overlapping words, and merging them would make an item's outcome
         // ambiguous about which phase produced it.
         readonly List<string> m_RecognitionTargets = new List<string>();
+
+        /// <summary>
+        /// The ONE list this run presents, resolved from session language + run_index. Encoding,
+        /// immediate and delayed recognition all read it, so the three phases cannot disagree
+        /// about which words were targets. Cleared by PrepareTrial.
+        /// </summary>
+        RecognitionWordList m_RecognitionList;
+
+        string RecognitionWordSetId => m_RecognitionList != null ? m_RecognitionList.wordSetId : string.Empty;
         readonly List<RecognitionItem> m_ImmediateRecognitionItems = new List<RecognitionItem>();
         readonly List<RecognitionItem> m_DelayedRecognitionItems = new List<RecognitionItem>();
 
@@ -1166,6 +1175,7 @@ namespace IkeaEeg.Experiment
             m_ImmediateRecognitionItems.Clear();
             m_DelayedRecognitionItems.Clear();
             m_RecognitionTargets.Clear();
+            m_RecognitionList = null;
 
             // The Area B block starts over: the general instructions will be shown again and
             // READY will be required before trial 1. PrepareTrial is reached from a restart and
@@ -3374,6 +3384,63 @@ namespace IkeaEeg.Experiment
         // ---------------------------------------------------------------------------------
 
         /// <summary>
+        /// The recognition list for THIS run: session language + run_index (1 → A, 2 → B, 3 → C).
+        ///
+        /// Resolved once and cached, so encoding and both recognition phases present the same
+        /// list; a developer jump straight to Area C resolves the same list the run would have
+        /// encoded, because the rule is deterministic. Null with a reason when nothing matches —
+        /// the caller aborts. No English fallback exists.
+        /// </summary>
+        RecognitionWordList ResolveRecognitionListForRun(out string problem)
+        {
+            problem = string.Empty;
+
+            if (m_RecognitionList != null)
+                return m_RecognitionList;
+
+            if (m_Config == null)
+            {
+                problem = "no ExperimentConfig";
+                return null;
+            }
+
+            var runIndex = m_Logger != null ? Mathf.Max(1, m_Logger.runIndex) : 1;
+            var list = m_Config.ResolveRecognitionList(ExperimentLocalization.language, runIndex,
+                out problem);
+
+            if (list == null)
+            {
+                var reason = problem;
+
+                Log(EventTypes.Warning, e => e.notes =
+                    $"recognition_list_unavailable=TRUE; reason={reason}; " +
+                    $"platform_language={ExperimentLocalization.languageCode}; " +
+                    $"run_index={runIndex}; run_blocked=TRUE; no_english_fallback_applied=TRUE");
+
+                Debug.LogError($"[IKEA_EEG] NO RECOGNITION LIST — {problem}. The run is BLOCKED.");
+                return null;
+            }
+
+            m_RecognitionList = list;
+
+            Log(EventTypes.WordSetSelected, e =>
+            {
+                e.protocolMode = ProtocolModeTag();
+                e.wordSetId = list.wordSetId;
+                e.notes = $"reason=recognition list for run; run_index={runIndex}; " +
+                          $"platform_language={ExperimentLocalization.languageCode}; " +
+                          $"asset={list.name}; " +
+                          list.DescribeProvenance(RecognitionPhase.Immediate);
+            });
+
+            Debug.Log($"[IKEA_EEG] Recognition list for run {runIndex} " +
+                      $"({ExperimentLocalization.languageCode}): {list.wordSetId} " +
+                      $"(validated_for_research={(list.validatedForResearch ? "TRUE" : "FALSE")}).");
+
+            return list;
+        }
+
+        /// <summary>
         /// VISUAL encoding: each target word is displayed alone for a configured time, with a
         /// short transition beep at each change, and is never spoken.
         ///
@@ -3394,17 +3461,11 @@ namespace IkeaEeg.Experiment
         {
             SetState(ExperimentState.WordEncoding);
 
-            var list = m_Config.recognitionWordList;
+            var list = ResolveRecognitionListForRun(out var problem);
 
-            if (list == null || list.targetCount == 0)
+            if (list == null)
             {
-                AbortTrial("no recognition word list configured (targets are empty)");
-                yield break;
-            }
-
-            if (!list.Validate(RecognitionPhase.Immediate, out var problem))
-            {
-                AbortTrial($"recognition word list is not usable: {problem}");
+                AbortTrial($"recognition encoding cannot run: {problem}");
                 yield break;
             }
 
@@ -3432,6 +3493,7 @@ namespace IkeaEeg.Experiment
             Log(EventTypes.WordEncodingStart, e =>
             {
                 e.protocolMode = ProtocolModeTag();
+                e.wordSetId = RecognitionWordSetId;
                 e.notes = $"word_count={m_TrialWords.Count}; modality=VISUAL_ONLY; " +
                           $"words_spoken_aloud=FALSE; " +
                           $"display_seconds={m_Config.recognitionWordDisplaySeconds:F2}; " +
@@ -3462,12 +3524,14 @@ namespace IkeaEeg.Experiment
                 Log(EventTypes.WordPresented, e =>
                 {
                     e.protocolMode = ProtocolModeTag();
+                    e.wordSetId = RecognitionWordSetId;
                     e.wordIndex = (index + 1).ToString(CultureInfo.InvariantCulture);
                     e.expectedWord = word;
                     e.recognitionItemId = $"TARGET_{index + 1:00}";
                     e.recognitionItemClass = RecognitionItemClass.Target.ToString().ToUpperInvariant();
                     e.stimulusOnsetTime = onset.ToString("F6", CultureInfo.InvariantCulture);
                     e.notes = $"presentation_index={index + 1}/{m_TrialWords.Count}; " +
+                              $"stable_id={list.TargetId(index)}; " +
                               "modality=VISUAL; spoken=FALSE";
                 });
 
@@ -3481,13 +3545,15 @@ namespace IkeaEeg.Experiment
                 Log(EventTypes.WordOffset, e =>
                 {
                     e.protocolMode = ProtocolModeTag();
+                    e.wordSetId = RecognitionWordSetId;
                     e.wordIndex = (index + 1).ToString(CultureInfo.InvariantCulture);
                     e.expectedWord = word;
                     e.recognitionItemId = $"TARGET_{index + 1:00}";
                     e.recognitionItemClass = RecognitionItemClass.Target.ToString().ToUpperInvariant();
                     e.stimulusOnsetTime = onset.ToString("F6", CultureInfo.InvariantCulture);
                     e.stimulusOffsetTime = offset.ToString("F6", CultureInfo.InvariantCulture);
-                    e.notes = $"displayed_seconds={(offset - onset):F3}";
+                    e.notes = $"displayed_seconds={(offset - onset):F3}; " +
+                              $"stable_id={list.TargetId(index)}";
                 });
 
                 if (i < m_TrialWords.Count - 1)
@@ -3513,15 +3579,9 @@ namespace IkeaEeg.Experiment
         {
             SetState(state);
 
-            var list = m_Config.recognitionWordList;
+            var list = ResolveRecognitionListForRun(out var problem);
 
             if (list == null)
-            {
-                AbortTrial($"{phase} recognition cannot run: no recognition word list");
-                yield break;
-            }
-
-            if (!list.Validate(phase, out var problem))
             {
                 AbortTrial($"{phase} recognition cannot run: {problem}");
                 yield break;
@@ -3543,6 +3603,7 @@ namespace IkeaEeg.Experiment
             {
                 e.protocolMode = ProtocolModeTag();
                 e.recognitionPhase = phase.ToString().ToUpperInvariant();
+                e.wordSetId = RecognitionWordSetId;
                 e.randomizationSeed = seed.ToString(CultureInfo.InvariantCulture);
                 e.notes = $"item_count={items.Count}; target_count={list.targetCount}; " +
                           $"lure_count={list.LureCount(phase)}; " +
@@ -3591,6 +3652,7 @@ namespace IkeaEeg.Experiment
             {
                 e.protocolMode = ProtocolModeTag();
                 e.recognitionPhase = phase.ToString().ToUpperInvariant();
+                e.wordSetId = RecognitionWordSetId;
 
                 // Transparent tallies only. Deliberately NOT a composite or derived score.
                 e.notes = RecognitionSequence.Summarise(store);
@@ -3666,6 +3728,7 @@ namespace IkeaEeg.Experiment
             Log(EventTypes.RecognitionItemOnset, e =>
             {
                 e.protocolMode = ProtocolModeTag();
+                e.wordSetId = RecognitionWordSetId;
                 e.expectedWord = item.word;
                 e.recognitionItemId = item.itemId;
                 e.recognitionItemClass = item.itemClass.ToString().ToUpperInvariant();
@@ -3673,6 +3736,7 @@ namespace IkeaEeg.Experiment
                 e.recognitionPresentationOrder =
                     (item.presentationOrder + 1).ToString(CultureInfo.InvariantCulture);
                 e.stimulusOnsetTime = item.onsetTime.ToString("F6", CultureInfo.InvariantCulture);
+                e.notes = $"stable_id={item.stableId}";
             });
 
             var deadline = Time.time + m_Config.recognitionResponseTimeoutSeconds;
@@ -3715,6 +3779,7 @@ namespace IkeaEeg.Experiment
                 Log(EventTypes.RecognitionItemTimeout, e =>
                 {
                     e.protocolMode = ProtocolModeTag();
+                    e.wordSetId = RecognitionWordSetId;
                     e.expectedWord = item.word;
                     e.recognitionItemId = item.itemId;
                     e.recognitionItemClass = item.itemClass.ToString().ToUpperInvariant();
@@ -3723,7 +3788,7 @@ namespace IkeaEeg.Experiment
                         (item.presentationOrder + 1).ToString(CultureInfo.InvariantCulture);
                     e.recognitionResponse = "NONE";
                     e.recognitionOutcome = RecognitionOutcome.NoResponse.ToString().ToUpperInvariant();
-                    e.notes = $"no response within " +
+                    e.notes = $"stable_id={item.stableId}; no response within " +
                               $"{m_Config.recognitionResponseTimeoutSeconds:F1} s; " +
                               "NOT scored as an error";
                 });
@@ -3737,6 +3802,7 @@ namespace IkeaEeg.Experiment
                 Log(EventTypes.RecognitionResponse, e =>
                 {
                     e.protocolMode = ProtocolModeTag();
+                    e.wordSetId = RecognitionWordSetId;
                     e.expectedWord = item.word;
                     e.recognitionItemId = item.itemId;
                     e.recognitionItemClass = item.itemClass.ToString().ToUpperInvariant();

@@ -1,0 +1,136 @@
+round,list_id,role,stable_id,en,es,ja,romaji,semantic_category,equivalence_note,review_status
+1,A,target,WORD_RIVER,RIVER,río,川,kawa,naturaleza,JA 川 cubre río/arroyo; sin ambigüedad relevante.,draft_pending_review
+1,A,target,WORD_FOREST,FOREST,bosque,森,mori,naturaleza,Sin ambigüedad relevante prevista.,draft_pending_review
+1,A,target,WORD_DOG,DOG,perro,犬,inu,animal,Sin ambigüedad; ES-MX perro.,draft_pending_review
+1,A,target,WORD_APPLE,APPLE,manzana,りんご,ringo,alimento,Sustituye TABLE. Sin ambigüedad relevante.,draft_pending_review
+1,A,target,WORD_CANDLE,CANDLE,vela,ろうそく,rousoku,objeto del hogar,JA ろうそく en hiragana; kanji 蝋燭 raro. Se retiró LANTERN para evitar fuente de luz repetida.,draft_pending_review
+1,A,target,WORD_PILLOW,PILLOW,almohada,枕,makura,objeto del hogar,Sin ambigüedad.,draft_pending_review
+1,A,target,WORD_MIRROR,MIRROR,espejo,鏡,kagami,objeto del hogar,Sin ambigüedad.,draft_pending_review
+1,A,target,WORD_WINDOW,WINDOW,ventana,窓,mado,estructura/lugar,Sin ambigüedad; categorizada como parte de edificio.,draft_pending_review
+1,A,target,WORD_TUNNEL,TUNNEL,túnel,トンネル,tonneru,estructura/lugar,Cognado en las tres lenguas (JA トンネル).,draft_pending_review
+1,A,target,WORD_GARDEN,GARDEN,jardín,庭,niwa,estructura/lugar,JA 庭 sugiere patio/jardín tradicional; ES jardín puede ser público o doméstico.,draft_pending_review
+1,A,target,WORD_BOTTLE,BOTTLE,botella,瓶,bin,contenedor,JA 瓶 es botella de vidrio; ボトル (katakana) sería alternativa más general.,draft_pending_review
+1,A,target,WORD_BASKET,BASKET,canasta,かご,kago,contenedor,"ES-MX: canasta/cesta; JA かご (hiragana, forma habitual en uso general).",draft_pending_review
+1,A,target,WORD_SCISSORS,SCISSORS,tijeras,はさみ,hasami,herramienta,Plural en EN/ES; JA はさみ sin marca de número. Revisar si se presenta singular.,draft_pending_review
+1,A,target,WORD_UMBRELLA,UMBRELLA,paraguas,傘,kasa,accesorio/ropa,JA 傘 puede leerse como paraguas o sombrilla; ES paraguas es lluvia.,draft_pending_review
+1,A,target,WORD_BICYCLE,BICYCLE,bicicleta,自転車,jitensha,vehículo,Sustituye MARKET. JA 自転車 es el término estándar.,draft_pending_review
+1,A,immediate_lure,WORD_MOUNTAIN,MOUNTAIN,montaña,山,yama,naturaleza,Sin ambigüedad.,draft_pending_review
+1,A,immediate_lure,WORD_DESERT,DESERT,desierto,砂漠,sabaku,naturaleza,EN desert/dessert (ortografía); sin ambigüedad en ES/JA.,draft_pending_review
+1,A,immediate_lure,WORD_DUCK,DUCK,pato,アヒル,ahiru,animal,JA アヒル = pato doméstico; 鴨 (kamo) = pato silvestre.,draft_pending_review
+1,A,immediate_lure,WORD_BREAD,BREAD,pan,パン,pan,alimento,"JA パン es préstamo; no confundir con EN PAN (sartén), que está en otra lista.",draft_pending_review
+1,A,immediate_lure,WORD_CLOCK,CLOCK,reloj,時計,tokei,objeto del hogar,JA 時計 cubre reloj de pared y de pulsera; ES reloj igual.,draft_pending_review
+1,A,immediate_lure,WORD_TOWEL,TOWEL,toalla,タオル,taoru,objeto del hogar,Sin ambigüedad.,draft_pending_review
+1,A,immediate_lure,WORD_KEY,KEY,llave,鍵,kagi,objeto del hogar,ES llave tiene otros sentidos (llave de agua); JA 鍵 es llave de cerradura.,draft_pending_review
+1,A,immediate_lure,WORD_BRIDGE,BRIDGE,puente,橋,hashi,estructura/lugar,EN bridge también juego de cartas; contexto aislado mínimo.,draft_pending_review
+1,A,immediate_lure,WORD_SCHOOL,SCHOOL,escuela,学校,gakkou,estructura/lugar,Sin ambigüedad.,draft_pending_review
+1,A,immediate_lure,WORD_FENCE,FENCE,cerca,フェンス,fensu,estructura/lugar,ES-MX cerca/reja/barda varía; JA フェンス en katakana (柵 es alternativa).,draft_pending_review
+1,A,immediate_lure,WORD_BOX,BOX,caja,箱,hako,contenedor,EN box también verbo/deporte; ES caja; JA 箱.,draft_pending_review
+1,A,immediate_lure,WORD_SUITCASE,SUITCASE,maleta,スーツケース,suutsukeesu,contenedor,JA スーツケース largo (7 caracteres).,draft_pending_review
+1,A,immediate_lure,WORD_HAMMER,HAMMER,martillo,ハンマー,hanmaa,herramienta,JA ハンマー; 金づち (kanazuchi) es alternativa nativa.,draft_pending_review
+1,A,immediate_lure,WORD_SHOE,SHOE,zapato,靴,kutsu,accesorio/ropa,Plural/par habitual; sin ambigüedad.,draft_pending_review
+1,A,immediate_lure,WORD_TRAIN,TRAIN,tren,電車,densha,vehículo,Sin ambigüedad.,draft_pending_review
+1,A,delayed_lure,WORD_SNOW,SNOW,nieve,雪,yuki,naturaleza,Posible baja familiaridad directa en contextos cálidos; imaginable en cualquier caso.,draft_pending_review
+1,A,delayed_lure,WORD_CAVE,CAVE,cueva,洞窟,doukutsu,naturaleza,Sin ambigüedad.,draft_pending_review
+1,A,delayed_lure,WORD_HORSE,HORSE,caballo,馬,uma,animal,Sin ambigüedad.,draft_pending_review
+1,A,delayed_lure,WORD_EGG,EGG,huevo,卵,tamago,alimento,Sin ambigüedad.,draft_pending_review
+1,A,delayed_lure,WORD_BROOM,BROOM,escoba,ほうき,houki,objeto del hogar,JA ほうき hiragana; kanji 箒 raro.,draft_pending_review
+1,A,delayed_lure,WORD_SPOON,SPOON,cuchara,スプーン,supuun,objeto del hogar,Sin ambigüedad.,draft_pending_review
+1,A,delayed_lure,WORD_CURTAIN,CURTAIN,cortina,カーテン,kaaten,objeto del hogar,Sin ambigüedad.,draft_pending_review
+1,A,delayed_lure,WORD_TOWER,TOWER,torre,塔,tou,estructura/lugar,Sin ambigüedad.,draft_pending_review
+1,A,delayed_lure,WORD_HOSPITAL,HOSPITAL,hospital,病院,byouin,estructura/lugar,Cognado ES/EN.,draft_pending_review
+1,A,delayed_lure,WORD_GATE,GATE,portón,門,mon,estructura/lugar,ES portón (entrada grande); alternativa puerta de reja. JA 門 es portón/entrada.,draft_pending_review
+1,A,delayed_lure,WORD_BUCKET,BUCKET,cubeta,バケツ,baketsu,contenedor,ES-MX cubeta (cubo en España).,draft_pending_review
+1,A,delayed_lure,WORD_BACKPACK,BACKPACK,mochila,リュック,ryukku,contenedor,ES-MX mochila; JA リュック (rucksack) es el término cotidiano.,draft_pending_review
+1,A,delayed_lure,WORD_SHOVEL,SHOVEL,pala,シャベル,shaberu,herramienta,JA シャベル/スコップ varían regionalmente.,draft_pending_review
+1,A,delayed_lure,WORD_GLOVE,GLOVE,guante,手袋,tebukuro,accesorio/ropa,Sin ambigüedad.,draft_pending_review
+1,A,delayed_lure,WORD_BOAT,BOAT,barco,船,fune,vehículo,"ES barco es genérico; JA 船 (fune) genérico, ボート es bote pequeño.",draft_pending_review
+2,B,target,WORD_ISLAND,ISLAND,isla,島,shima,naturaleza,Sin ambigüedad.,draft_pending_review
+2,B,target,WORD_RAINBOW,RAINBOW,arcoíris,虹,niji,naturaleza,ES-MX arcoíris (también arcoiris).,draft_pending_review
+2,B,target,WORD_RABBIT,RABBIT,conejo,うさぎ,usagi,animal,JA うさぎ (hiragana habitual).,draft_pending_review
+2,B,target,WORD_TURTLE,TURTLE,tortuga,亀,kame,animal,JA 亀 (kame) es tortuga/tortuga acuática.,draft_pending_review
+2,B,target,WORD_BANANA,BANANA,plátano,バナナ,banana,alimento,ES-MX plátano (banana es menos usual en MX).,draft_pending_review
+2,B,target,WORD_CHEESE,CHEESE,queso,チーズ,chiizu,alimento,Sin ambigüedad.,draft_pending_review
+2,B,target,WORD_LAMP,LAMP,lámpara,ランプ,ranpu,objeto del hogar,JA ランプ (lámpara tipo antigua); 電灯 / ライト alternativas.,draft_pending_review
+2,B,target,WORD_BLANKET,BLANKET,cobija,毛布,moufu,objeto del hogar,ES-MX cobija (manta en otros países); JA 毛布 es manta de lana/cama.,draft_pending_review
+2,B,target,WORD_KETTLE,KETTLE,tetera,やかん,yakan,objeto del hogar,ES-MX tetera/hervidor; JA やかん es el hervidor de agua; equivalencia aproximada.,draft_pending_review
+2,B,target,WORD_LIGHTHOUSE,LIGHTHOUSE,faro,灯台,toudai,estructura/lugar,Familiaridad estimada algo menor en poblaciones sin costa; imaginable.,draft_pending_review
+2,B,target,WORD_PARK,PARK,parque,公園,kouen,estructura/lugar,EN park también verbo; ES parque; JA 公園.,draft_pending_review
+2,B,target,WORD_CUP,CUP,taza,カップ,kappu,contenedor,"ES taza vs JA カップ; JA コップ designa vaso, distinción propia del japonés.",draft_pending_review
+2,B,target,WORD_SAW,SAW,sierra,のこぎり,nokogiri,herramienta,Posible lectura verbal en EN (past tense de 'see'); en JA/ES no ocurre.,draft_pending_review
+2,B,target,WORD_CAP,CAP,gorra,キャップ,kyappu,accesorio/ropa,"ES gorra (no 'sombrero', que en México evoca el sombrero tradicional); JA キャップ; 帽子 sería más general.",draft_pending_review
+2,B,target,WORD_AIRPLANE,AIRPLANE,avión,飛行機,hikouki,vehículo,Sin ambigüedad.,draft_pending_review
+2,B,immediate_lure,WORD_HILL,HILL,colina,丘,oka,naturaleza,ES colina/loma (MX: loma frecuente); JA 丘.,draft_pending_review
+2,B,immediate_lure,WORD_STAR,STAR,estrella,星,hoshi,naturaleza,Sin ambigüedad (cuerpo celeste; no 'celebridad' en contexto de palabra aislada).,draft_pending_review
+2,B,immediate_lure,WORD_FISH,FISH,pez,魚,sakana,animal,EN plural 'fish'; ES pez (vivo) vs pescado (comida).,draft_pending_review
+2,B,immediate_lure,WORD_COW,COW,vaca,牛,ushi,animal,Sin ambigüedad.,draft_pending_review
+2,B,immediate_lure,WORD_GRAPE,GRAPE,uva,ぶどう,budou,alimento,ES uva; JA ぶどう.,draft_pending_review
+2,B,immediate_lure,WORD_ONION,ONION,cebolla,玉ねぎ,tamanegi,alimento,Sin ambigüedad.,draft_pending_review
+2,B,immediate_lure,WORD_COMB,COMB,peine,くし,kushi,objeto del hogar,JA くし hiragana; kanji 櫛 raro.,draft_pending_review
+2,B,immediate_lure,WORD_RADIO,RADIO,radio,ラジオ,rajio,objeto del hogar,EN/ES radio puede ser aparato o medio; JA ラジオ igual.,draft_pending_review
+2,B,immediate_lure,WORD_BELL,BELL,campana,鐘,kane,objeto del hogar,JA 鐘 es campana de templo/iglesia; ベル es timbre pequeño.,draft_pending_review
+2,B,immediate_lure,WORD_FOUNTAIN,FOUNTAIN,fuente,噴水,funsui,estructura/lugar,ES fuente puede ser plato de servir o manantial; JA 噴水 es fuente de plaza.,draft_pending_review
+2,B,immediate_lure,WORD_STATION,STATION,estación,駅,eki,estructura/lugar,Ambigüedad EN (estación de tren/radio/gasolina); en JA 駅 es solo tren. Contexto aislado mínimo.,draft_pending_review
+2,B,immediate_lure,WORD_BAG,BAG,bolsa,かばん,kaban,contenedor,ES bolsa/mochila/bolso; JA かばん es bolso/maletín; 袋 es bolsa. Equivalencia aproximada.,draft_pending_review
+2,B,immediate_lure,WORD_ROPE,ROPE,cuerda,ロープ,roopu,herramienta,Sin ambigüedad.,draft_pending_review
+2,B,immediate_lure,WORD_SCARF,SCARF,bufanda,マフラー,mafuraa,accesorio/ropa,JA マフラー (bufanda de cuello); スカーフ sería pañuelo de seda.,draft_pending_review
+2,B,immediate_lure,WORD_BUS,BUS,autobús,バス,basu,vehículo,ES-MX: 'camión' es el término común; se propone autobús por claridad (decisión pendiente).,draft_pending_review
+2,B,delayed_lure,WORD_CLOUD,CLOUD,nube,雲,kumo,naturaleza,Homófono parcial JA: 雲 kumo coincide en lectura con 蜘蛛 (no usado). Se evitó SPIDER.,draft_pending_review
+2,B,delayed_lure,WORD_SAND,SAND,arena,砂,suna,naturaleza,Sin ambigüedad.,draft_pending_review
+2,B,delayed_lure,WORD_BEE,BEE,abeja,蜂,hachi,animal,Sin ambigüedad.,draft_pending_review
+2,B,delayed_lure,WORD_SHEEP,SHEEP,oveja,羊,hitsuji,animal,Sin ambigüedad (EN invariable en plural).,draft_pending_review
+2,B,delayed_lure,WORD_CARROT,CARROT,zanahoria,にんじん,ninjin,alimento,Sin ambigüedad.,draft_pending_review
+2,B,delayed_lure,WORD_SOUP,SOUP,sopa,スープ,suupu,alimento,Sin ambigüedad.,draft_pending_review
+2,B,delayed_lure,WORD_BOOK,BOOK,libro,本,hon,objeto del hogar,Sin ambigüedad.,draft_pending_review
+2,B,delayed_lure,WORD_SOAP,SOAP,jabón,石けん,sekken,objeto del hogar,JA 石けん (hiragana en 'けん'); formas 石鹸 / せっけん.,draft_pending_review
+2,B,delayed_lure,WORD_PHONE,PHONE,teléfono,電話,denwa,objeto del hogar,EN phone/telephone; JA 電話 también 'llamada' (ambigüedad objeto/acción).,draft_pending_review
+2,B,delayed_lure,WORD_HOTEL,HOTEL,hotel,ホテル,hoteru,estructura/lugar,Préstamo en las tres lenguas; riesgo de lectura casi idéntica (cognado).,draft_pending_review
+2,B,delayed_lure,WORD_ROOF,ROOF,techo,屋根,yane,estructura/lugar,Sin ambigüedad.,draft_pending_review
+2,B,delayed_lure,WORD_ENVELOPE,ENVELOPE,sobre,封筒,fuutou,contenedor,ES sobre tiene otros sentidos (preposición 'sobre'); JA 封筒.,draft_pending_review
+2,B,delayed_lure,WORD_NEEDLE,NEEDLE,aguja,針,hari,herramienta,Sin ambigüedad; JA 針 también aguja de reloj.,draft_pending_review
+2,B,delayed_lure,WORD_JACKET,JACKET,chamarra,ジャケット,jaketto,accesorio/ropa,ES-MX chamarra (chaqueta en ES-ES); JA ジャケット (上着 más general).,draft_pending_review
+2,B,delayed_lure,WORD_CAR,CAR,coche,車,kuruma,vehículo,ES-MX coche/carro; JA 車 también vehículo en general.,draft_pending_review
+3,C,target,WORD_MOON,MOON,luna,月,tsuki,naturaleza,Sin ambigüedad.,draft_pending_review
+3,C,target,WORD_VALLEY,VALLEY,valle,谷,tani,naturaleza,Sin ambigüedad.,draft_pending_review
+3,C,target,WORD_ELEPHANT,ELEPHANT,elefante,象,zou,animal,Sin ambigüedad.,draft_pending_review
+3,C,target,WORD_FROG,FROG,rana,カエル,kaeru,animal,JA カエル (katakana habitual para el animal).,draft_pending_review
+3,C,target,WORD_POTATO,POTATO,papa,じゃがいも,jagaimo,alimento,ES-MX papa (patata en España).,draft_pending_review
+3,C,target,WORD_CAKE,CAKE,pastel,ケーキ,keeki,alimento,ES-MX pastel; JA ケーキ (préstamo).,draft_pending_review
+3,C,target,WORD_CARPET,CARPET,alfombra,カーペット,kaapetto,objeto del hogar,ES-MX alfombra; JA カーペット/じゅうたん.,draft_pending_review
+3,C,target,WORD_CAMERA,CAMERA,cámara,カメラ,kamera,objeto del hogar,Sin ambigüedad.,draft_pending_review
+3,C,target,WORD_PIANO,PIANO,piano,ピアノ,piano,objeto del hogar,Cognado en las tres lenguas; sustituye a categoría mueble (se evitó mobiliario).,draft_pending_review
+3,C,target,WORD_FARM,FARM,granja,農場,noujou,estructura/lugar,JA 農場 (nōjō) más técnico que ES granja; JA 牧場 sería ganadería.,draft_pending_review
+3,C,target,WORD_STAIRS,STAIRS,escaleras,階段,kaidan,estructura/lugar,ES escaleras (plural); JA 階段. No se usa LADDER para evitar colisión ES 'escalera'.,draft_pending_review
+3,C,target,WORD_BOWL,BOWL,tazón,ボウル,bouru,contenedor,"ES-MX tazón; JA ボウル (bōru). Riesgo de confusión con BALL/ボール, por eso no hay BALL en el banco.",draft_pending_review
+3,C,target,WORD_AXE,AXE,hacha,斧,ono,herramienta,JA 斧 kanji poco frecuente en texto; alternativa オノ.,draft_pending_review
+3,C,target,WORD_GLASSES,GLASSES,lentes,眼鏡,megane,accesorio/ropa,Plural; ES-MX lentes; JA 眼鏡 (también めがね).,draft_pending_review
+3,C,target,WORD_HELICOPTER,HELICOPTER,helicóptero,ヘリコプター,herikoputaa,vehículo,JA ヘリコプター largo (7 caracteres); decisión pendiente si se acepta longitud.,draft_pending_review
+3,C,immediate_lure,WORD_LAKE,LAKE,lago,湖,mizuumi,naturaleza,Sin ambigüedad.,draft_pending_review
+3,C,immediate_lure,WORD_ROCK,ROCK,roca,岩,iwa,naturaleza,EN rock también 'música'; ES roca (también piedra); JA 岩 (roca grande) vs 石 (piedra).,draft_pending_review
+3,C,immediate_lure,WORD_MONKEY,MONKEY,mono,猿,saru,animal,Sin ambigüedad.,draft_pending_review
+3,C,immediate_lure,WORD_BUTTERFLY,BUTTERFLY,mariposa,蝶,chou,animal,Sin ambigüedad.,draft_pending_review
+3,C,immediate_lure,WORD_MUSHROOM,MUSHROOM,hongo,きのこ,kinoko,alimento,ES hongo/champiñón; JA きのこ.,draft_pending_review
+3,C,immediate_lure,WORD_ORANGE,ORANGE,naranja,オレンジ,orenji,alimento,EN orange también color; ES naranja igual; JA オレンジ también color.,draft_pending_review
+3,C,immediate_lure,WORD_PENCIL,PENCIL,lápiz,鉛筆,enpitsu,objeto del hogar,Sin ambigüedad.,draft_pending_review
+3,C,immediate_lure,WORD_FLAG,FLAG,bandera,旗,hata,objeto del hogar,Sin ambigüedad; posible referente nacional.,draft_pending_review
+3,C,immediate_lure,WORD_PAN,PAN,sartén,フライパン,furaipan,objeto del hogar,"EN pan (sartén) puede confundirse con ES 'pan' (bread, otro concepto) en lectura cruzada; JA フライパン.",draft_pending_review
+3,C,immediate_lure,WORD_LIBRARY,LIBRARY,biblioteca,図書館,toshokan,estructura/lugar,ES biblioteca (EN library; falso amigo con 'librería'); JA 図書館 tres caracteres.,draft_pending_review
+3,C,immediate_lure,WORD_CHIMNEY,CHIMNEY,chimenea,煙突,entotsu,estructura/lugar,JA 煙突; familiaridad estimada menor en viviendas sin chimenea.,draft_pending_review
+3,C,immediate_lure,WORD_CAN,CAN,lata,缶,kan,contenedor,EN can también verbo modal ('poder'); ES lata; JA 缶.,draft_pending_review
+3,C,immediate_lure,WORD_SPONGE,SPONGE,esponja,スポンジ,suponji,herramienta,ES esponja; JA スポンジ también 'bizcocho' (カステラ/スポンジケーキ).,draft_pending_review
+3,C,immediate_lure,WORD_BELT,BELT,cinturón,ベルト,beruto,accesorio/ropa,Sin ambigüedad.,draft_pending_review
+3,C,immediate_lure,WORD_MOTORCYCLE,MOTORCYCLE,moto,バイク,baiku,vehículo,ES moto/motocicleta; JA バイク (motocicleta; 'bike' en EN es bicicleta).,draft_pending_review
+3,C,delayed_lure,WORD_BEACH,BEACH,playa,ビーチ,biichi,naturaleza,JA ビーチ / 浜辺 / 海岸; préstamo katakana elegido.,draft_pending_review
+3,C,delayed_lure,WORD_WATERFALL,WATERFALL,cascada,滝,taki,naturaleza,Sin ambigüedad.,draft_pending_review
+3,C,delayed_lure,WORD_BEAR,BEAR,oso,熊,kuma,animal,EN bear también verbo; ES oso; JA 熊.,draft_pending_review
+3,C,delayed_lure,WORD_PENGUIN,PENGUIN,pingüino,ペンギン,pengin,animal,Sin ambigüedad.,draft_pending_review
+3,C,delayed_lure,WORD_HONEY,HONEY,miel,はちみつ,hachimitsu,alimento,EN honey también apelativo; JA はちみつ (蜂蜜).,draft_pending_review
+3,C,delayed_lure,WORD_WATERMELON,WATERMELON,sandía,スイカ,suika,alimento,Sin ambigüedad.,draft_pending_review
+3,C,delayed_lure,WORD_BALLOON,BALLOON,globo,風船,fuusen,objeto del hogar,ES globo (también globo terráqueo); JA 風船.,draft_pending_review
+3,C,delayed_lure,WORD_TELEVISION,TELEVISION,televisión,テレビ,terebi,objeto del hogar,JA テレビ abreviación estándar.,draft_pending_review
+3,C,delayed_lure,WORD_GUITAR,GUITAR,guitarra,ギター,gitaa,objeto del hogar,Sin ambigüedad.,draft_pending_review
+3,C,delayed_lure,WORD_MUSEUM,MUSEUM,museo,博物館,hakubutsukan,estructura/lugar,JA 博物館 (3 kanji formales); 美術館 sería museo de arte.,draft_pending_review
+3,C,delayed_lure,WORD_BENCH,BENCH,banca,ベンチ,benchi,estructura/lugar,ES-MX banca; JA ベンチ.,draft_pending_review
+3,C,delayed_lure,WORD_TRAY,TRAY,charola,お盆,obon,contenedor,ES-MX charola (bandeja en otros países); JA お盆 (también festividad Obon).,draft_pending_review
+3,C,delayed_lure,WORD_KNIFE,KNIFE,cuchillo,ナイフ,naifu,herramienta,Sin ambigüedad; K silenciosa en EN (nada que ver en ES/JA).,draft_pending_review
+3,C,delayed_lure,WORD_DRESS,DRESS,vestido,ドレス,doresu,accesorio/ropa,EN dress también verbo; ES vestido; JA ドレス (formal) vs ワンピース (cotidiano).,draft_pending_review
+3,C,delayed_lure,WORD_TAXI,TAXI,taxi,タクシー,takushii,vehículo,Cognado en las tres lenguas.,draft_pending_review

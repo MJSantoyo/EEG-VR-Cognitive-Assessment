@@ -1,0 +1,118 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a58b4487cea445e478aca9317d3411c8, type: 3}
+  m_Name: RecognitionList_B_JA
+  m_EditorClassIdentifier: Assembly-CSharp::IkeaEeg.Experiment.RecognitionWordList
+  m_ValidatedForResearch: 0
+  m_ProvenanceNote: "DRAFT \u2014 NOT VALIDATED \u2014 NOT CNS STIMULI \u2014 NOT
+    RAVLT.\nGenerated content imported from Documentation/VR_Memory_Content/VR_Memory_Content.csv
+    (review_status=draft_pending_review). Not reviewed by native speakers, no frequency/imageability
+    norms, no pilot, no evidence of equivalence between lists or languages. Development
+    and piloting only; must not be reported as a validated memory measure."
+  m_Language: 3
+  m_TargetWords:
+  - "\u5CF6"
+  - "\u8679"
+  - "\u3046\u3055\u304E"
+  - "\u4E80"
+  - "\u30D0\u30CA\u30CA"
+  - "\u30C1\u30FC\u30BA"
+  - "\u30E9\u30F3\u30D7"
+  - "\u6BDB\u5E03"
+  - "\u3084\u304B\u3093"
+  - "\u706F\u53F0"
+  - "\u516C\u5712"
+  - "\u30AB\u30C3\u30D7"
+  - "\u306E\u3053\u304E\u308A"
+  - "\u30AD\u30E3\u30C3\u30D7"
+  - "\u98DB\u884C\u6A5F"
+  m_ImmediateRecognitionLures:
+  - "\u4E18"
+  - "\u661F"
+  - "\u9B5A"
+  - "\u725B"
+  - "\u3076\u3069\u3046"
+  - "\u7389\u306D\u304E"
+  - "\u304F\u3057"
+  - "\u30E9\u30B8\u30AA"
+  - "\u9418"
+  - "\u5674\u6C34"
+  - "\u99C5"
+  - "\u304B\u3070\u3093"
+  - "\u30ED\u30FC\u30D7"
+  - "\u30DE\u30D5\u30E9\u30FC"
+  - "\u30D0\u30B9"
+  m_DelayedRecognitionLures:
+  - "\u96F2"
+  - "\u7802"
+  - "\u8702"
+  - "\u7F8A"
+  - "\u306B\u3093\u3058\u3093"
+  - "\u30B9\u30FC\u30D7"
+  - "\u672C"
+  - "\u77F3\u3051\u3093"
+  - "\u96FB\u8A71"
+  - "\u30DB\u30C6\u30EB"
+  - "\u5C4B\u6839"
+  - "\u5C01\u7B52"
+  - "\u91DD"
+  - "\u30B8\u30E3\u30B1\u30C3\u30C8"
+  - "\u8ECA"
+  m_ListId: B
+  m_TargetIds:
+  - WORD_ISLAND
+  - WORD_RAINBOW
+  - WORD_RABBIT
+  - WORD_TURTLE
+  - WORD_BANANA
+  - WORD_CHEESE
+  - WORD_LAMP
+  - WORD_BLANKET
+  - WORD_KETTLE
+  - WORD_LIGHTHOUSE
+  - WORD_PARK
+  - WORD_CUP
+  - WORD_SAW
+  - WORD_CAP
+  - WORD_AIRPLANE
+  m_ImmediateLureIds:
+  - WORD_HILL
+  - WORD_STAR
+  - WORD_FISH
+  - WORD_COW
+  - WORD_GRAPE
+  - WORD_ONION
+  - WORD_COMB
+  - WORD_RADIO
+  - WORD_BELL
+  - WORD_FOUNTAIN
+  - WORD_STATION
+  - WORD_BAG
+  - WORD_ROPE
+  - WORD_SCARF
+  - WORD_BUS
+  m_DelayedLureIds:
+  - WORD_CLOUD
+  - WORD_SAND
+  - WORD_BEE
+  - WORD_SHEEP
+  - WORD_CARROT
+  - WORD_SOUP
+  - WORD_BOOK
+  - WORD_SOAP
+  - WORD_PHONE
+  - WORD_HOTEL
+  - WORD_ROOF
+  - WORD_ENVELOPE
+  - WORD_NEEDLE
+  - WORD_JACKET
+  - WORD_CAR

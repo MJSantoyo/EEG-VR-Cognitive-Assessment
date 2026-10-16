@@ -1,0 +1,118 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a58b4487cea445e478aca9317d3411c8, type: 3}
+  m_Name: RecognitionList_C_JA
+  m_EditorClassIdentifier: Assembly-CSharp::IkeaEeg.Experiment.RecognitionWordList
+  m_ValidatedForResearch: 0
+  m_ProvenanceNote: "DRAFT \u2014 NOT VALIDATED \u2014 NOT CNS STIMULI \u2014 NOT
+    RAVLT.\nGenerated content imported from Documentation/VR_Memory_Content/VR_Memory_Content.csv
+    (review_status=draft_pending_review). Not reviewed by native speakers, no frequency/imageability
+    norms, no pilot, no evidence of equivalence between lists or languages. Development
+    and piloting only; must not be reported as a validated memory measure."
+  m_Language: 3
+  m_TargetWords:
+  - "\u6708"
+  - "\u8C37"
+  - "\u8C61"
+  - "\u30AB\u30A8\u30EB"
+  - "\u3058\u3083\u304C\u3044\u3082"
+  - "\u30B1\u30FC\u30AD"
+  - "\u30AB\u30FC\u30DA\u30C3\u30C8"
+  - "\u30AB\u30E1\u30E9"
+  - "\u30D4\u30A2\u30CE"
+  - "\u8FB2\u5834"
+  - "\u968E\u6BB5"
+  - "\u30DC\u30A6\u30EB"
+  - "\u65A7"
+  - "\u773C\u93E1"
+  - "\u30D8\u30EA\u30B3\u30D7\u30BF\u30FC"
+  m_ImmediateRecognitionLures:
+  - "\u6E56"
+  - "\u5CA9"
+  - "\u733F"
+  - "\u8776"
+  - "\u304D\u306E\u3053"
+  - "\u30AA\u30EC\u30F3\u30B8"
+  - "\u925B\u7B46"
+  - "\u65D7"
+  - "\u30D5\u30E9\u30A4\u30D1\u30F3"
+  - "\u56F3\u66F8\u9928"
+  - "\u7159\u7A81"
+  - "\u7F36"
+  - "\u30B9\u30DD\u30F3\u30B8"
+  - "\u30D9\u30EB\u30C8"
+  - "\u30D0\u30A4\u30AF"
+  m_DelayedRecognitionLures:
+  - "\u30D3\u30FC\u30C1"
+  - "\u6EDD"
+  - "\u718A"
+  - "\u30DA\u30F3\u30AE\u30F3"
+  - "\u306F\u3061\u307F\u3064"
+  - "\u30B9\u30A4\u30AB"
+  - "\u98A8\u8239"
+  - "\u30C6\u30EC\u30D3"
+  - "\u30AE\u30BF\u30FC"
+  - "\u535A\u7269\u9928"
+  - "\u30D9\u30F3\u30C1"
+  - "\u304A\u76C6"
+  - "\u30CA\u30A4\u30D5"
+  - "\u30C9\u30EC\u30B9"
+  - "\u30BF\u30AF\u30B7\u30FC"
+  m_ListId: C
+  m_TargetIds:
+  - WORD_MOON
+  - WORD_VALLEY
+  - WORD_ELEPHANT
+  - WORD_FROG
+  - WORD_POTATO
+  - WORD_CAKE
+  - WORD_CARPET
+  - WORD_CAMERA
+  - WORD_PIANO
+  - WORD_FARM
+  - WORD_STAIRS
+  - WORD_BOWL
+  - WORD_AXE
+  - WORD_GLASSES
+  - WORD_HELICOPTER
+  m_ImmediateLureIds:
+  - WORD_LAKE
+  - WORD_ROCK
+  - WORD_MONKEY
+  - WORD_BUTTERFLY
+  - WORD_MUSHROOM
+  - WORD_ORANGE
+  - WORD_PENCIL
+  - WORD_FLAG
+  - WORD_PAN
+  - WORD_LIBRARY
+  - WORD_CHIMNEY
+  - WORD_CAN
+  - WORD_SPONGE
+  - WORD_BELT
+  - WORD_MOTORCYCLE
+  m_DelayedLureIds:
+  - WORD_BEACH
+  - WORD_WATERFALL
+  - WORD_BEAR
+  - WORD_PENGUIN
+  - WORD_HONEY
+  - WORD_WATERMELON
+  - WORD_BALLOON
+  - WORD_TELEVISION
+  - WORD_GUITAR
+  - WORD_MUSEUM
+  - WORD_BENCH
+  - WORD_TRAY
+  - WORD_KNIFE
+  - WORD_DRESS
+  - WORD_TAXI

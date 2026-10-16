@@ -174,76 +174,12 @@ namespace IkeaEeg.EditorTools
         // Configuration assets
         // ---------------------------------------------------------------------------------
 
+        /// <summary>
+        /// LEGACY single English placeholder list. No longer generated or linked by any builder;
+        /// the runtime uses the nine round × language lists from RecognitionListImporter.
+        /// </summary>
         public const string RecognitionWordListPath =
             DataFolder + "/RecognitionWordList_PLACEHOLDER.asset";
-
-        /// <summary>
-        /// Creates the recognition stimulus asset if it does not exist, populated with clearly
-        /// marked development placeholders.
-        ///
-        /// THE PLACEHOLDERS ARE NOT CNS STIMULI AND MUST NEVER BE PRESENTED AS SUCH. The
-        /// official CNS Vital Signs word list has not been established from authorised
-        /// methodological documentation, so nothing here attempts to reproduce, approximate or
-        /// guess it. These are ordinary high-frequency English nouns chosen only so the
-        /// architecture can be exercised end to end before the real list arrives — they carry no
-        /// norms, no frequency matching, no imageability control and no clinical meaning.
-        ///
-        /// The asset's own filename, its provenance field and its validatedForResearch flag all
-        /// say so, so a file produced from them is self-describing without this project to hand.
-        ///
-        /// NEVER OVERWRITES an existing asset: as with the word list above, a list the
-        /// researcher has edited is never stomped.
-        /// </summary>
-        public static RecognitionWordList BuildRecognitionWordList()
-        {
-            var asset = AssetDatabase.LoadAssetAtPath<RecognitionWordList>(RecognitionWordListPath);
-
-            if (asset != null)
-                return asset;
-
-            asset = ScriptableObject.CreateInstance<RecognitionWordList>();
-            AssetDatabase.CreateAsset(asset, RecognitionWordListPath);
-
-            // 15 targets + 15 immediate lures + 15 delayed lures. The COUNTS follow the
-            // CNS-derived structure described in the brief; the WORDS are placeholders.
-            asset.SetLists(
-                new List<string>
-                {
-                    "TABLE", "RIVER", "CANDLE", "MARKET", "PILLOW",
-                    "GARDEN", "BOTTLE", "WINDOW", "FOREST", "BASKET",
-                    "MIRROR", "TUNNEL", "SADDLE", "HARBOR", "LANTERN",
-                },
-                new List<string>
-                {
-                    "COPPER", "MEADOW", "KETTLE", "STATION", "BLANKET",
-                    "ORCHARD", "BUCKET", "CORNER", "VALLEY", "RIBBON",
-                    "PICTURE", "BRIDGE", "COLLAR", "ISLAND", "CANDLE_B",
-                },
-                new List<string>
-                {
-                    "PEBBLE", "CHIMNEY", "WAGON", "PASTURE", "CUSHION",
-                    "THICKET", "JUG", "LEDGE", "CANYON", "LACE",
-                    "PORTRAIT", "TOWER", "CUFF", "PENINSULA", "TORCH",
-                },
-                validated: false,
-                provenanceNote:
-                    "DEVELOPMENT ONLY — NOT CNS STIMULI.\n" +
-                    "Generated placeholders for functional testing of the recognition " +
-                    "architecture. These are NOT the CNS Vital Signs word list and were not " +
-                    "derived from it. They are uncontrolled for frequency, imageability, " +
-                    "length and semantic category, carry no norms, and must not be used for " +
-                    "data collection or reported as a memory measure. Replace with the " +
-                    "authorised list and set validatedForResearch before any participant runs.");
-
-            EditorUtility.SetDirty(asset);
-            AssetDatabase.SaveAssets();
-
-            Debug.LogWarning($"[IKEA_EEG] Created {RecognitionWordListPath} with DEVELOPMENT " +
-                             "PLACEHOLDER words. These are NOT CNS stimuli. Replace them before " +
-                             "any data collection.");
-
-            return asset;
-        }
 
         public static WordListDefinition BuildWordList()
         {
@@ -443,17 +379,11 @@ namespace IkeaEeg.EditorTools
             // the asset exists so re-running the builder never silently resets a protocol.
             asset.wordList = wordList;
 
-            // The recognition list is linked ONLY when the field is empty. Filling an empty new
-            // field is not the same as overwriting a choice: if the researcher has pointed this
-            // at their own asset, that reference is left exactly as they set it.
-            if (asset.recognitionWordList == null)
-            {
-                asset.recognitionWordList = BuildRecognitionWordList();
-
-                Debug.LogWarning("[IKEA_EEG] ExperimentConfig had no recognitionWordList; linked " +
-                                 $"the PLACEHOLDER asset at {RecognitionWordListPath}. Those " +
-                                 "words are NOT CNS stimuli — replace before data collection.");
-            }
+            // The round × language recognition lists are linked ONLY when the field is empty, so
+            // a researcher's own choice is never overwritten. They come from the content CSV;
+            // the old placeholder is never linked again.
+            if (asset.recognitionWordLists == null || asset.recognitionWordLists.Count == 0)
+                asset.recognitionWordLists = RecognitionListImporter.ImportAll();
 
             if (created)
             {

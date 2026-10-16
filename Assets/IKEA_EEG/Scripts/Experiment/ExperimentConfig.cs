@@ -254,11 +254,12 @@ namespace IkeaEeg.Experiment
         [Tooltip("Which set from the word list this trial uses.")]
         public int wordSetIndex;
 
-        [Header("Word list — Recognition protocol")]
-        [Tooltip("Targets and lures for the recognition protocol. Used ONLY when protocolMode " +
-                 "is Recognition. This asset is NOT the CNS word list and must not be described " +
-                 "as one; see its own provenance field.")]
-        public RecognitionWordList recognitionWordList;
+        [Header("Word lists — Recognition protocol (round list × language)")]
+        [Tooltip("One list per round (A, B, C) and language (EN, ES, JA), selected per run by " +
+                 "ResolveRecognitionList. Used ONLY when protocolMode is Recognition. Generated " +
+                 "from Documentation/VR_Memory_Content/VR_Memory_Content.csv by " +
+                 "IKEA_EEG/Import Recognition Lists. DRAFT content: NOT validated, NOT CNS, NOT RAVLT.")]
+        public List<RecognitionWordList> recognitionWordLists = new List<RecognitionWordList>();
 
         [Tooltip("How long each VISUAL encoding word stays on screen, seconds. The protocol " +
                  "specifies 2 s.")]
@@ -532,6 +533,78 @@ namespace IkeaEeg.Experiment
         public string GetTrialWordSetId()
         {
             return wordList != null ? wordList.GetSetId(wordSetIndex) : string.Empty;
+        }
+
+        /// <summary>Round list for a run: run 1 → A, 2 → B, 3 → C; null for any other run.</summary>
+        public static string RecognitionListIdForRun(int runIndex)
+        {
+            switch (runIndex)
+            {
+                case 1: return "A";
+                case 2: return "B";
+                case 3: return "C";
+                default: return null;
+            }
+        }
+
+        /// <summary>
+        /// The recognition list for a session language and run, or null with the reason.
+        ///
+        /// Exactly one list must match language AND round, carry stable IDs and validate for both
+        /// phases. There is NO English fallback and no wrap-around: a run with no list of its own
+        /// is blocked, because presenting another round's words would contaminate recognition.
+        /// </summary>
+        public RecognitionWordList ResolveRecognitionList(Localization.ExperimentLanguage language,
+            int runIndex, out string problem)
+        {
+            var listId = RecognitionListIdForRun(runIndex);
+            var code = Localization.ExperimentLanguages.ToCode(language);
+
+            if (listId == null)
+            {
+                problem = $"no recognition round list is defined for run {runIndex} " +
+                          "(only runs 1-3 map to lists A-C)";
+                return null;
+            }
+
+            RecognitionWordList match = null;
+
+            foreach (var list in recognitionWordLists)
+            {
+                if (list == null || list.listId != listId || list.language != language)
+                    continue;
+
+                if (match != null)
+                {
+                    problem = $"more than one recognition list is configured for {listId}_{code}";
+                    return null;
+                }
+
+                match = list;
+            }
+
+            if (match == null)
+            {
+                problem = $"no recognition list {listId}_{code} is configured for run {runIndex}; " +
+                          "no other language or round is substituted";
+                return null;
+            }
+
+            if (!match.hasStableIds)
+            {
+                problem = $"recognition list {match.wordSetId} has no stable ID for every word";
+                return null;
+            }
+
+            if (!match.Validate(RecognitionPhase.Immediate, out problem) ||
+                !match.Validate(RecognitionPhase.Delayed, out problem))
+            {
+                problem = $"recognition list {match.wordSetId} is not usable: {problem}";
+                return null;
+            }
+
+            problem = string.Empty;
+            return match;
         }
 
         /// <summary>

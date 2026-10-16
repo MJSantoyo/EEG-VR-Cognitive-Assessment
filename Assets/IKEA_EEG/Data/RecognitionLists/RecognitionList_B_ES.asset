@@ -1,0 +1,118 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a58b4487cea445e478aca9317d3411c8, type: 3}
+  m_Name: RecognitionList_B_ES
+  m_EditorClassIdentifier: Assembly-CSharp::IkeaEeg.Experiment.RecognitionWordList
+  m_ValidatedForResearch: 0
+  m_ProvenanceNote: "DRAFT \u2014 NOT VALIDATED \u2014 NOT CNS STIMULI \u2014 NOT
+    RAVLT.\nGenerated content imported from Documentation/VR_Memory_Content/VR_Memory_Content.csv
+    (review_status=draft_pending_review). Not reviewed by native speakers, no frequency/imageability
+    norms, no pilot, no evidence of equivalence between lists or languages. Development
+    and piloting only; must not be reported as a validated memory measure."
+  m_Language: 2
+  m_TargetWords:
+  - isla
+  - "arco\xEDris"
+  - conejo
+  - tortuga
+  - "pl\xE1tano"
+  - queso
+  - "l\xE1mpara"
+  - cobija
+  - tetera
+  - faro
+  - parque
+  - taza
+  - sierra
+  - gorra
+  - "avi\xF3n"
+  m_ImmediateRecognitionLures:
+  - colina
+  - estrella
+  - pez
+  - vaca
+  - uva
+  - cebolla
+  - peine
+  - radio
+  - campana
+  - fuente
+  - "estaci\xF3n"
+  - bolsa
+  - cuerda
+  - bufanda
+  - "autob\xFAs"
+  m_DelayedRecognitionLures:
+  - nube
+  - arena
+  - abeja
+  - oveja
+  - zanahoria
+  - sopa
+  - libro
+  - "jab\xF3n"
+  - "tel\xE9fono"
+  - hotel
+  - techo
+  - sobre
+  - aguja
+  - chamarra
+  - coche
+  m_ListId: B
+  m_TargetIds:
+  - WORD_ISLAND
+  - WORD_RAINBOW
+  - WORD_RABBIT
+  - WORD_TURTLE
+  - WORD_BANANA
+  - WORD_CHEESE
+  - WORD_LAMP
+  - WORD_BLANKET
+  - WORD_KETTLE
+  - WORD_LIGHTHOUSE
+  - WORD_PARK
+  - WORD_CUP
+  - WORD_SAW
+  - WORD_CAP
+  - WORD_AIRPLANE
+  m_ImmediateLureIds:
+  - WORD_HILL
+  - WORD_STAR
+  - WORD_FISH
+  - WORD_COW
+  - WORD_GRAPE
+  - WORD_ONION
+  - WORD_COMB
+  - WORD_RADIO
+  - WORD_BELL
+  - WORD_FOUNTAIN
+  - WORD_STATION
+  - WORD_BAG
+  - WORD_ROPE
+  - WORD_SCARF
+  - WORD_BUS
+  m_DelayedLureIds:
+  - WORD_CLOUD
+  - WORD_SAND
+  - WORD_BEE
+  - WORD_SHEEP
+  - WORD_CARROT
+  - WORD_SOUP
+  - WORD_BOOK
+  - WORD_SOAP
+  - WORD_PHONE
+  - WORD_HOTEL
+  - WORD_ROOF
+  - WORD_ENVELOPE
+  - WORD_NEEDLE
+  - WORD_JACKET
+  - WORD_CAR

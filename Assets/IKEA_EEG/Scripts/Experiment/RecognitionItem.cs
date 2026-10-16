@@ -65,6 +65,12 @@ namespace IkeaEeg.Experiment
         /// </summary>
         public string itemId = string.Empty;
 
+        /// <summary>
+        /// Concept identity from the stimulus list (e.g. WORD_CANDLE), the same in every language.
+        /// Empty when the list carries no IDs. Never shown to the participant.
+        /// </summary>
+        public string stableId = string.Empty;
+
         /// <summary>0-based position in the RANDOMISED sequence actually presented.</summary>
         public int presentationOrder;
 
@@ -103,7 +109,8 @@ namespace IkeaEeg.Experiment
 
         public string ToNotes()
         {
-            return $"item_id={itemId}; class={itemClass.ToString().ToUpperInvariant()}; " +
+            return $"item_id={itemId}; stable_id={stableId}; " +
+                   $"class={itemClass.ToString().ToUpperInvariant()}; " +
                    $"phase={phase.ToString().ToUpperInvariant()}; " +
                    $"presentation_order={presentationOrder + 1}; " +
                    $"response={response.ToString().ToUpperInvariant()}; " +
@@ -296,6 +303,7 @@ namespace IkeaEeg.Experiment
                     itemClass = RecognitionItemClass.Target,
                     phase = phase,
                     itemId = $"TARGET_{i + 1:00}",
+                    stableId = list.TargetId(i),
                 });
             }
 
@@ -310,6 +318,7 @@ namespace IkeaEeg.Experiment
                     itemClass = RecognitionItemClass.Lure,
                     phase = phase,
                     itemId = $"{lurePrefix}_{i + 1:00}",
+                    stableId = list.LureId(phase, i),
                 });
             }
 

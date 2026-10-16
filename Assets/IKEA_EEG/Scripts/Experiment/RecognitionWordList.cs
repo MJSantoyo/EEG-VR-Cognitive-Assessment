@@ -87,6 +87,19 @@ namespace IkeaEeg.Experiment
                  "list is deliberately independent and may legitimately differ in length.")]
         [SerializeField] List<string> m_DelayedRecognitionLures = new List<string>();
 
+        [Header("Identity (round list + stable concept IDs)")]
+        [Tooltip("Which round list this is (A, B, C). Together with the language it is what the " +
+                 "run resolver selects on. Empty on the legacy placeholder.")]
+        [SerializeField] string m_ListId = string.Empty;
+
+        [Tooltip("Stable concept ID per target word, same order as the targets (e.g. WORD_CANDLE). " +
+                 "Identical across languages, so EN/ES/JA responses join on it.")]
+        [SerializeField] List<string> m_TargetIds = new List<string>();
+
+        [SerializeField] List<string> m_ImmediateLureIds = new List<string>();
+
+        [SerializeField] List<string> m_DelayedLureIds = new List<string>();
+
         public bool validatedForResearch => m_ValidatedForResearch;
         public string provenanceNote => m_ProvenanceNote;
         public Localization.ExperimentLanguage language => m_Language;
@@ -94,6 +107,38 @@ namespace IkeaEeg.Experiment
         public IReadOnlyList<string> targetWords => m_TargetWords;
         public IReadOnlyList<string> immediateRecognitionLures => m_ImmediateRecognitionLures;
         public IReadOnlyList<string> delayedRecognitionLures => m_DelayedRecognitionLures;
+
+        public string listId => m_ListId ?? string.Empty;
+
+        /// <summary>The value logged in the CSV word_set_id column, e.g. B_JA.</summary>
+        public string wordSetId =>
+            $"{listId}_{Localization.ExperimentLanguages.ToCode(m_Language)}";
+
+        /// <summary>True when every word list carries a stable ID per word.</summary>
+        public bool hasStableIds =>
+            CountsMatch(m_TargetWords, m_TargetIds) && m_TargetIds.Count > 0 &&
+            CountsMatch(m_ImmediateRecognitionLures, m_ImmediateLureIds) &&
+            CountsMatch(m_DelayedRecognitionLures, m_DelayedLureIds);
+
+        public IReadOnlyList<string> targetIds => m_TargetIds;
+
+        public IReadOnlyList<string> LureIds(RecognitionPhase phase) =>
+            phase == RecognitionPhase.Immediate
+                ? (IReadOnlyList<string>)m_ImmediateLureIds
+                : m_DelayedLureIds;
+
+        /// <summary>Stable ID of target i, or empty when this list has none.</summary>
+        public string TargetId(int index) => IdAt(m_TargetIds, index);
+
+        /// <summary>Stable ID of lure i of a phase, or empty when this list has none.</summary>
+        public string LureId(RecognitionPhase phase, int index) =>
+            IdAt(phase == RecognitionPhase.Immediate ? m_ImmediateLureIds : m_DelayedLureIds, index);
+
+        static string IdAt(List<string> ids, int index) =>
+            ids != null && index >= 0 && index < ids.Count ? ids[index] ?? string.Empty : string.Empty;
+
+        static bool CountsMatch(List<string> words, List<string> ids) =>
+            words != null && ids != null && ids.Count == words.Count;
 
         public int targetCount => m_TargetWords?.Count ?? 0;
 
@@ -136,6 +181,23 @@ namespace IkeaEeg.Experiment
             if (lures == null || lures.Count == 0)
             {
                 problem = $"no {phase} recognition lures configured";
+                return false;
+            }
+
+            // IDs are optional (legacy placeholder, self-test fixtures), but when present they
+            // must pair one-to-one with the words or an item would be logged under another's ID.
+            if (m_TargetIds != null && m_TargetIds.Count > 0 &&
+                m_TargetIds.Count != m_TargetWords.Count)
+            {
+                problem = $"{m_TargetIds.Count} target IDs for {m_TargetWords.Count} target words";
+                return false;
+            }
+
+            var lureIds = LureIds(phase);
+
+            if (lureIds != null && lureIds.Count > 0 && lureIds.Count != lures.Count)
+            {
+                problem = $"{lureIds.Count} {phase} lure IDs for {lures.Count} {phase} lures";
                 return false;
             }
 
@@ -217,6 +279,7 @@ namespace IkeaEeg.Experiment
         public string DescribeProvenance(RecognitionPhase phase)
         {
             return $"validated_for_research={(m_ValidatedForResearch ? "TRUE" : "FALSE")}; " +
+                   $"list_id={listId}; " +
                    $"language={m_Language}; " +
                    $"target_count={targetCount}; " +
                    $"{phase.ToString().ToLowerInvariant()}_lure_count={LureCount(phase)}; " +
@@ -233,6 +296,17 @@ namespace IkeaEeg.Experiment
             m_DelayedRecognitionLures = delayedLures;
             m_ValidatedForResearch = validated;
             m_ProvenanceNote = provenanceNote;
+        }
+
+        /// <summary>Editor/importer wiring for a round list. Never called at run time.</summary>
+        public void SetIdentity(string listId, Localization.ExperimentLanguage language,
+            List<string> targetIds, List<string> immediateLureIds, List<string> delayedLureIds)
+        {
+            m_ListId = listId;
+            m_Language = language;
+            m_TargetIds = targetIds;
+            m_ImmediateLureIds = immediateLureIds;
+            m_DelayedLureIds = delayedLureIds;
         }
     }
 }

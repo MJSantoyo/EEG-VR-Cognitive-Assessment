@@ -117,7 +117,16 @@ MonoBehaviour:
   protocolMode: 1
   wordList: {fileID: 11400000, guid: e1eb444c49108e64885eb331d74eb00a, type: 2}
   wordSetIndex: 0
-  recognitionWordList: {fileID: 11400000, guid: 49e01d1092888c44a84a1eeeca42e629, type: 2}
+  recognitionWordLists:
+  - {fileID: 11400000, guid: f78d25d7e691a074da882c2f0181ebf0, type: 2}
+  - {fileID: 11400000, guid: 3303d9718b9a1804d8ceaf7db3548729, type: 2}
+  - {fileID: 11400000, guid: 51dc226c61610f3478f4a7c6463712a6, type: 2}
+  - {fileID: 11400000, guid: 820a8dd52cfdb1244bc910d72557c865, type: 2}
+  - {fileID: 11400000, guid: 0bcf7245cfc9f2247b0ad6e3705a21dc, type: 2}
+  - {fileID: 11400000, guid: aa807177a1d1c5b4e97893756d0edb57, type: 2}
+  - {fileID: 11400000, guid: 8a8bee787a4ee4849888dc65a6ed82d8, type: 2}
+  - {fileID: 11400000, guid: 0a31f4ca5a8a97a43a06f445a0d5eb51, type: 2}
+  - {fileID: 11400000, guid: 4a18068768d9f8344b69c37832e8b603, type: 2}
   recognitionWordDisplaySeconds: 2
   recognitionInterWordGapSeconds: 0.25
   recognitionResponseTimeoutSeconds: 15

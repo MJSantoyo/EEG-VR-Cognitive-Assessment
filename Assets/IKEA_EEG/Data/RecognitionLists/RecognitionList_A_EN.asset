@@ -1,0 +1,118 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a58b4487cea445e478aca9317d3411c8, type: 3}
+  m_Name: RecognitionList_A_EN
+  m_EditorClassIdentifier: Assembly-CSharp::IkeaEeg.Experiment.RecognitionWordList
+  m_ValidatedForResearch: 0
+  m_ProvenanceNote: "DRAFT \u2014 NOT VALIDATED \u2014 NOT CNS STIMULI \u2014 NOT
+    RAVLT.\nGenerated content imported from Documentation/VR_Memory_Content/VR_Memory_Content.csv
+    (review_status=draft_pending_review). Not reviewed by native speakers, no frequency/imageability
+    norms, no pilot, no evidence of equivalence between lists or languages. Development
+    and piloting only; must not be reported as a validated memory measure."
+  m_Language: 1
+  m_TargetWords:
+  - RIVER
+  - FOREST
+  - DOG
+  - APPLE
+  - CANDLE
+  - PILLOW
+  - MIRROR
+  - WINDOW
+  - TUNNEL
+  - GARDEN
+  - BOTTLE
+  - BASKET
+  - SCISSORS
+  - UMBRELLA
+  - BICYCLE
+  m_ImmediateRecognitionLures:
+  - MOUNTAIN
+  - DESERT
+  - DUCK
+  - BREAD
+  - CLOCK
+  - TOWEL
+  - KEY
+  - BRIDGE
+  - SCHOOL
+  - FENCE
+  - BOX
+  - SUITCASE
+  - HAMMER
+  - SHOE
+  - TRAIN
+  m_DelayedRecognitionLures:
+  - SNOW
+  - CAVE
+  - HORSE
+  - EGG
+  - BROOM
+  - SPOON
+  - CURTAIN
+  - TOWER
+  - HOSPITAL
+  - GATE
+  - BUCKET
+  - BACKPACK
+  - SHOVEL
+  - GLOVE
+  - BOAT
+  m_ListId: A
+  m_TargetIds:
+  - WORD_RIVER
+  - WORD_FOREST
+  - WORD_DOG
+  - WORD_APPLE
+  - WORD_CANDLE
+  - WORD_PILLOW
+  - WORD_MIRROR
+  - WORD_WINDOW
+  - WORD_TUNNEL
+  - WORD_GARDEN
+  - WORD_BOTTLE
+  - WORD_BASKET
+  - WORD_SCISSORS
+  - WORD_UMBRELLA
+  - WORD_BICYCLE
+  m_ImmediateLureIds:
+  - WORD_MOUNTAIN
+  - WORD_DESERT
+  - WORD_DUCK
+  - WORD_BREAD
+  - WORD_CLOCK
+  - WORD_TOWEL
+  - WORD_KEY
+  - WORD_BRIDGE
+  - WORD_SCHOOL
+  - WORD_FENCE
+  - WORD_BOX
+  - WORD_SUITCASE
+  - WORD_HAMMER
+  - WORD_SHOE
+  - WORD_TRAIN
+  m_DelayedLureIds:
+  - WORD_SNOW
+  - WORD_CAVE
+  - WORD_HORSE
+  - WORD_EGG
+  - WORD_BROOM
+  - WORD_SPOON
+  - WORD_CURTAIN
+  - WORD_TOWER
+  - WORD_HOSPITAL
+  - WORD_GATE
+  - WORD_BUCKET
+  - WORD_BACKPACK
+  - WORD_SHOVEL
+  - WORD_GLOVE
+  - WORD_BOAT

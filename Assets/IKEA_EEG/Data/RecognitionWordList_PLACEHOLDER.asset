@@ -51,7 +51,7 @@ MonoBehaviour:
   - BRIDGE
   - COLLAR
   - ISLAND
-  - CANDLE_B
+  - LADDER
   m_DelayedRecognitionLures:
   - PEBBLE
   - CHIMNEY
