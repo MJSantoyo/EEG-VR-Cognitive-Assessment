@@ -54,8 +54,7 @@
         /// <summary>
         /// Recognition-mode encoding instructions: 15 words, seen not heard, tested later.
         ///
-        /// ENGLISH-ONLY this iteration. The ES/JA slots deliberately hold the English string —
-        /// see RecognitionPrompt for why an invented translation is worse than an obvious gap.
+        /// ES/JA are draft translations, pending native-speaker review.
         /// </summary>
         public const string RecognitionEncodingInstructions = "RECOGNITION_ENCODING_INSTRUCTIONS";
 
@@ -66,8 +65,8 @@
         /// Area C instructions for the RECOGNITION protocol, shown before delayed recognition.
         ///
         /// Separate from AreaCInstructions, which describes SPOKEN free recall ("repeat the five
-        /// words that were presented") and stays exactly right for FreeRecall. English-only this
-        /// iteration, like the other Recognition strings.
+        /// words that were presented") and stays exactly right for FreeRecall. ES/JA are draft
+        /// translations, pending native-speaker review.
         /// </summary>
         public const string RecognitionDelayedInstructions = "RECOGNITION_DELAYED_INSTRUCTIONS";
 
@@ -89,18 +88,18 @@
         /// <summary>
         /// Prompt shown during a recognition phase.
         ///
-        /// ENGLISH-ONLY FOR THIS ITERATION, by instruction. The ES/JA entries deliberately carry
-        /// the English string rather than a machine translation: a participant-facing clinical
+        /// ES/JA are now draft translations pending native-speaker review. Strings still marked
+        /// English-only deliberately carry the English text rather than a machine translation: a participant-facing clinical
         /// instruction must be written by someone who speaks the language, and an invented
         /// translation would look finished while quietly changing what was asked. The
         /// localization architecture is untouched, so filling these in later is a table edit.
         /// </summary>
         public const string RecognitionPrompt = "RECOGNITION_PROMPT";
 
-        /// <summary>Label on the SEEN BEFORE response button. English-only this iteration.</summary>
+        /// <summary>Label on the SEEN BEFORE response button. ES/JA are draft translations pending native-speaker review.</summary>
         public const string RecognitionSeenBefore = "RECOGNITION_SEEN_BEFORE";
 
-        /// <summary>Label on the NOT SEEN BEFORE response button. English-only this iteration.</summary>
+        /// <summary>Label on the NOT SEEN BEFORE response button. ES/JA are draft translations pending native-speaker review.</summary>
         public const string RecognitionNotSeenBefore = "RECOGNITION_NOT_SEEN_BEFORE";
 
         /// <summary>
@@ -114,11 +113,8 @@
         public const string RecognitionItemProgress = "RECOGNITION_ITEM_PROGRESS";
 
         // ---- Resting EEG acquisition blocks -------------------------------------------------
-        // ENGLISH-ONLY THIS ITERATION, following the same policy as every Recognition string:
-        // the ES and JA slots deliberately hold the English text. These are participant-facing
-        // instructions for an acquisition block whose wording has not been approved in those
-        // languages, and a machine translation would look finished while quietly changing what
-        // the participant was told to do. ES/JA are PENDING human approval.
+        // ES/JA are draft translations, pending native-speaker review. Pre and post are separate
+        // keys: same resting condition, different opening clause.
 
         /// <summary>Pre-task resting instructions. Shown before the fixation point appears.</summary>
         public const string PreTaskRestInstructions = "PRE_TASK_REST_INSTRUCTIONS";

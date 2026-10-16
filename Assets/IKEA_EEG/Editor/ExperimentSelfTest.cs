@@ -640,6 +640,7 @@ namespace IkeaEeg.EditorTools
             RunSection("RECOGNITION PROTOCOL — DATA + CLASSIFICATION", CheckRecognitionProtocol);
             RunSection("RECOGNITION PROTOCOL — SCENE + PARADIGM SEPARATION", CheckRecognitionScene);
             RunSection("RECOGNITION LISTS — ROUND x LANGUAGE (A/B/C x EN/ES/JA)", CheckRecognitionRoundLists);
+            RunSection("PARTICIPANT INSTRUCTIONS — ES/JA ARE NOT ENGLISH", CheckInstructionLocalization);
             RunSection("BLOCK 1 — INSTRUCTIONS + FAMILIARIZATION FEEDBACK", CheckBlock1Feedback);
             RunSection("BLOCK 2 — TWO-PHASE PRACTICE + RECOGNITION LABELS/LAYOUT",
                 CheckBlock2PracticeAndLayout);
@@ -3595,6 +3596,89 @@ namespace IkeaEeg.EditorTools
             finally
             {
                 Object.DestroyImmediate(list);
+            }
+        }
+
+        /// <summary>
+        /// The five instruction strings (plus the two recognition response labels) found in English during a Spanish/Japanese Play Mode
+        /// run: each must be genuinely translated, keep its meaning markers, and pre/post rest
+        /// must stay separate keys that describe the same resting condition.
+        /// </summary>
+        static void CheckInstructionLocalization()
+        {
+            var keys = new[]
+            {
+                LocKeys.PreTaskRestInstructions, LocKeys.PostTaskRestInstructions,
+                LocKeys.RecognitionEncodingInstructions, LocKeys.RecognitionEncodingWatch,
+                LocKeys.RecognitionDelayedInstructions,
+                LocKeys.RecognitionSeenBefore, LocKeys.RecognitionNotSeenBefore,
+                LocKeys.RecognitionPrompt,
+            };
+
+            foreach (var key in keys)
+            {
+                Assert(LocalizationTable.TryGet(key, out var e), $"{key} exists");
+
+                Assert(!string.IsNullOrWhiteSpace(e.spanish) && e.spanish != e.english,
+                    $"{key}: Spanish is not the English text (\"{e.spanish}\")");
+
+                Assert(!string.IsNullOrWhiteSpace(e.japanese) && e.japanese != e.english &&
+                       !Regex.IsMatch(e.japanese, "[A-Za-z]"),
+                    $"{key}: Japanese contains no English (\"{e.japanese}\")");
+            }
+
+            LocalizationTable.TryGet(LocKeys.RecognitionEncodingInstructions, out var enc);
+            Assert(enc.spanish.Contains("15") && enc.japanese.Contains("15"),
+                "the ES/JA encoding instruction still states 15 words");
+
+            // Visual, never auditory, in every language.
+            LocalizationTable.TryGet(LocKeys.RecognitionEncodingWatch, out var watch);
+            Assert(!watch.spanish.ToLowerInvariant().Contains("escuch") && !watch.japanese.Contains("聞"),
+                $"the ES/JA encoding line is not 'listen' ({watch.spanish} / {watch.japanese})");
+
+            LocalizationTable.TryGet(LocKeys.RecognitionDelayedInstructions, out var delayed);
+            Assert(!delayed.spanish.ToLowerInvariant().Contains("repita") &&
+                   !delayed.japanese.Contains("言って"),
+                "the ES/JA delayed instruction asks for recognition, not spoken recall");
+
+            // The response pair: English untouched, and the two answers never collapse to one label.
+            LocalizationTable.TryGet(LocKeys.RecognitionSeenBefore, out var seen);
+            LocalizationTable.TryGet(LocKeys.RecognitionNotSeenBefore, out var notSeen);
+            Assert(seen.english == "SEEN BEFORE" && notSeen.english == "NOT SEEN BEFORE",
+                "the English SEEN BEFORE / NOT SEEN BEFORE labels are unchanged");
+
+            foreach (var language in ExperimentLanguages.Selectable)
+            {
+                Assert(seen.For(language) != notSeen.For(language),
+                    $"{ExperimentLanguages.ToCode(language)}: the two response labels differ " +
+                    $"({seen.For(language)} / {notSeen.For(language)})");
+            }
+
+            LocalizationTable.TryGet(LocKeys.RecognitionPrompt, out var prompt);
+            Assert(prompt.english == "Was this word shown before?",
+                "the English recognition prompt is unchanged");
+
+            // Immediate and delayed share RunRecognitionPhase, the only reader of the prompt key.
+            Assert(Regex.Matches(ManagerSource(), @"Get\(LocKeys\.RecognitionPrompt\)").Count == 1 &&
+                   Regex.Matches(ManagerSource(), @"RunRecognitionPhase\(RecognitionPhase\.(Immediate|Delayed)").Count == 2,
+                "one prompt lookup, inside the phase coroutine both recognition phases run");
+
+            // One panel serves immediate AND delayed recognition, so one key pair covers both.
+            Assert(Regex.Matches(ManagerSource(), @"RecognitionResponsePanel m_\w+;").Count == 1,
+                "the manager holds a single recognition response panel for both phases");
+
+            // Separate keys, separate opening clause, identical resting condition.
+            LocalizationTable.TryGet(LocKeys.PreTaskRestInstructions, out var pre);
+            LocalizationTable.TryGet(LocKeys.PostTaskRestInstructions, out var post);
+
+            foreach (var language in ExperimentLanguages.Selectable)
+            {
+                var a = pre.For(language);
+                var b = post.For(language);
+                var code = ExperimentLanguages.ToCode(language);
+
+                Assert(a != b && a.Substring(a.IndexOf("\n\n")) == b.Substring(b.IndexOf("\n\n")),
+                    $"{code}: pre/post rest differ only in the opening clause");
             }
         }
 

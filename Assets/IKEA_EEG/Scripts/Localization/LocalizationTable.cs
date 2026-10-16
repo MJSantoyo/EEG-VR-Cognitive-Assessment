@@ -177,42 +177,39 @@ namespace IkeaEeg.Localization
                 // RECOGNITION MODE. Separate from AreaAInstructions above, which stays exactly
                 // as it is because it is still correct for FreeRecall.
                 //
-                // ENGLISH-ONLY THIS ITERATION: the ES and JA slots hold the English text on
-                // purpose. This is participant-facing methodological instruction for a protocol
-                // that is not yet finalised for those languages, and a machine translation would
-                // look finished while quietly changing what the participant was asked to do.
-                // The gap is visible; a wrong translation would not be.
+                // ES/JA: DRAFT translations, pending native-speaker review. Same meaning as the
+                // English: 15 words, SEEN one at a time, remembered for a later test.
                 LocKeys.RecognitionEncodingInstructions,
                 new Entry(
                     "You will see a total of 15 words, one at a time." +
                     "\n\n" +
                     "Try to remember them, because you will be asked about them later.",
-                    "You will see a total of 15 words, one at a time." +
+                    "Verá un total de 15 palabras, una a la vez." +
                     "\n\n" +
-                    "Try to remember them, because you will be asked about them later.",
-                    "You will see a total of 15 words, one at a time." +
+                    "Intente recordarlas, porque más adelante se le preguntará por ellas.",
+                    "全部で15個の単語が、1つずつ表示されます。" +
                     "\n\n" +
-                    "Try to remember them, because you will be asked about them later.")
+                    "あとでこれらの単語について質問しますので、覚えておいてください。")
             },
             {
+                // Visual, never auditory (cf. EncodingListen). ES/JA draft, pending review.
                 LocKeys.RecognitionEncodingWatch,
-                new Entry("Watch carefully.", "Watch carefully.", "Watch carefully.")
+                new Entry("Watch carefully.", "Observe con atención.", "よく見てください。")
             },
             {
                 // RECOGNITION delayed-phase instructions. AreaCInstructions above is UNTOUCHED
                 // and still describes spoken free recall, which is correct for FreeRecall.
                 //
                 // Deliberately contains none of: repeat, recall, say, listen, heard, five words.
-                // ENGLISH-ONLY this iteration — ES/JA carry the English text on purpose, as with
-                // every other Recognition string.
+                // ES/JA: DRAFT translations, pending native-speaker review.
                 LocKeys.RecognitionDelayedInstructions,
                 new Entry(
                     "You will now be shown words again.\n\n" +
                     "For each word, select whether you saw it earlier.",
-                    "You will now be shown words again.\n\n" +
-                    "For each word, select whether you saw it earlier.",
-                    "You will now be shown words again.\n\n" +
-                    "For each word, select whether you saw it earlier.")
+                    "Ahora se le mostrarán palabras de nuevo.\n\n" +
+                    "Para cada palabra, seleccione si la vio antes.",
+                    "これから、もう一度単語が表示されます。\n\n" +
+                    "それぞれの単語について、前に見たかどうかを選んでください。")
             },
             {
                 // FAMILIARIZATION FEEDBACK. Localized in all three languages: this is tutorial
@@ -246,21 +243,22 @@ namespace IkeaEeg.Localization
                     "今、5つの言葉を言ってください。")
             },
             {
-                // ENGLISH-ONLY THIS ITERATION. The Spanish and Japanese slots intentionally hold
-                // the English text: see LocalizationKeys.RecognitionPrompt. Do not machine-
-                // translate these - they are participant-facing task instructions.
+                // ES/JA: DRAFT translations, pending native-speaker review. Same verb as the
+                // delayed instruction ("se le mostrarán" / "表示されます").
                 LocKeys.RecognitionPrompt,
                 new Entry("Was this word shown before?",
-                    "Was this word shown before?",
-                    "Was this word shown before?")
+                    "¿Esta palabra se mostró anteriormente?",
+                    "この単語は前に表示されましたか？")
             },
             {
                 LocKeys.RecognitionSeenBefore,
-                new Entry("SEEN BEFORE", "SEEN BEFORE", "SEEN BEFORE")
+                // ES/JA: DRAFT translations, pending native-speaker review. ES echoes the
+                // delayed instruction's "si la vio antes"; JA echoes its "前に見たかどうか".
+                new Entry("SEEN BEFORE", "LA VI ANTES", "前に見た")
             },
             {
                 LocKeys.RecognitionNotSeenBefore,
-                new Entry("NOT SEEN BEFORE", "NOT SEEN BEFORE", "NOT SEEN BEFORE")
+                new Entry("NOT SEEN BEFORE", "NO LA VI ANTES", "前に見ていない")
             },
             {
                 // ENGLISH-ONLY THIS ITERATION, as with every Recognition string. ES/JA PENDING.
@@ -271,14 +269,12 @@ namespace IkeaEeg.Localization
             },
 
             // ---- Resting EEG acquisition --------------------------------------------------
-            // ENGLISH-ONLY THIS ITERATION. The ES and JA slots hold the English text on purpose,
-            // exactly as every Recognition string in this table does. These are participant-facing
-            // acquisition instructions; a machine translation would read as finished while
-            // quietly altering what the participant was asked to do. ES/JA PENDING human approval.
+            // ES/JA: DRAFT translations, pending native-speaker review.
             //
             // The two texts differ only in their opening clause. The CONDITION they describe is
             // deliberately identical — eyes open, still, fixating — because the pre- and post-task
             // recordings are only comparable if the participant was asked for the same thing.
+            // The second and third paragraphs are therefore word-for-word the same in each language.
             {
                 LocKeys.PreTaskRestInstructions,
                 new Entry(
@@ -288,18 +284,18 @@ namespace IkeaEeg.Localization
                     "of you." +
                     "\n\n" +
                     "Avoid unnecessary movements until the recording is complete.",
-                    "Before we begin the assessment, we will record a short resting reference." +
+                    "Antes de comenzar la evaluación, registraremos un breve periodo de " +
+                    "referencia en reposo." +
                     "\n\n" +
-                    "Please remain still, keep your eyes open, and look at the point in front " +
-                    "of you." +
+                    "Por favor, permanezca inmóvil, mantenga los ojos abiertos y mire el punto " +
+                    "que tiene delante." +
                     "\n\n" +
-                    "Avoid unnecessary movements until the recording is complete.",
-                    "Before we begin the assessment, we will record a short resting reference." +
+                    "Evite movimientos innecesarios hasta que termine la grabación.",
+                    "検査を始める前に、安静時の基準となる短い記録を行います。" +
                     "\n\n" +
-                    "Please remain still, keep your eyes open, and look at the point in front " +
-                    "of you." +
+                    "体を動かさず、目を開けたまま、目の前の点を見てください。" +
                     "\n\n" +
-                    "Avoid unnecessary movements until the recording is complete.")
+                    "記録が終わるまで、不要な動きは控えてください。")
             },
             {
                 LocKeys.PostTaskRestInstructions,
@@ -310,18 +306,17 @@ namespace IkeaEeg.Localization
                     "of you." +
                     "\n\n" +
                     "Avoid unnecessary movements until the recording is complete.",
-                    "The assessment is complete. We will now record a short resting period." +
+                    "La evaluación ha terminado. Ahora registraremos un breve periodo de reposo." +
                     "\n\n" +
-                    "Please remain still, keep your eyes open, and look at the point in front " +
-                    "of you." +
+                    "Por favor, permanezca inmóvil, mantenga los ojos abiertos y mire el punto " +
+                    "que tiene delante." +
                     "\n\n" +
-                    "Avoid unnecessary movements until the recording is complete.",
-                    "The assessment is complete. We will now record a short resting period." +
+                    "Evite movimientos innecesarios hasta que termine la grabación.",
+                    "検査は終わりました。これから、安静時の短い記録を行います。" +
                     "\n\n" +
-                    "Please remain still, keep your eyes open, and look at the point in front " +
-                    "of you." +
+                    "体を動かさず、目を開けたまま、目の前の点を見てください。" +
                     "\n\n" +
-                    "Avoid unnecessary movements until the recording is complete.")
+                    "記録が終わるまで、不要な動きは控えてください。")
             },
             {
                 LocKeys.ReadyForAreaB,
