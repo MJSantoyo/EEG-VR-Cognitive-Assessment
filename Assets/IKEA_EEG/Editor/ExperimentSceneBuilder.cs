@@ -189,11 +189,11 @@ namespace IkeaEeg.EditorTools
                 // control above it and cannot occlude the word, which sits ~76 cm higher.
                 var anchorA = new GameObject("Anchor_Recognition_AreaA");
                 anchorA.transform.SetParent(environment.transform, false);
-                anchorA.transform.position = k_AreaAOrigin + new Vector3(0f, 0.95f, 1.18f);
+                anchorA.transform.position = k_AreaAOrigin + new Vector3(0f, 0.50f, 1.18f);
 
                 var anchorC = new GameObject("Anchor_Recognition_AreaC");
                 anchorC.transform.SetParent(environment.transform, false);
-                anchorC.transform.position = k_AreaCOrigin + new Vector3(0f, 0.95f, 1.18f);
+                anchorC.transform.position = k_AreaCOrigin + new Vector3(0f, 0.72f, 1.18f);
 
                 var recognitionPanel = BuildRecognitionPanel(environment.transform, mats,
                     anchorA.transform, anchorC.transform);
@@ -1089,7 +1089,7 @@ namespace IkeaEeg.EditorTools
 
             // ---- UI ----------------------------------------------------------------------
             var canvas = CreateWorldCanvas("UI_A_Canvas", root.transform,
-                new Vector3(0f, 1.65f, 1.4f), new Vector2(1500f, 1150f), mats,
+                new Vector3(0f, 1.20f, 1.4f), new Vector2(1500f, 1150f), mats,
                 spawn.transform.localPosition.z, 0.00095f);
 
             ui = new AreaAUi
@@ -1098,9 +1098,10 @@ namespace IkeaEeg.EditorTools
                 title = CreateText("Txt_Title", canvas.transform, new Vector2(0f, 480f),
                     new Vector2(1400f, 110f), "COGNITIVE ASSESSMENT", 68f,
                     TextAlignmentOptions.Center, new Color(0.55f, 0.85f, 1f)),
+                // Auto-size 40..54: the Encoding instruction (three sentences) must fit 360 px in ES/JA.
                 instruction = CreateText("Txt_Instruction", canvas.transform, new Vector2(0f, 250f),
                     new Vector2(1360f, 360f), string.Empty, 54f,
-                    TextAlignmentOptions.Center, Color.white),
+                    TextAlignmentOptions.Center, Color.white, autoSizeMin: 40f),
                 word = CreateText("Txt_WordDisplay", canvas.transform, new Vector2(0f, 60f),
                     new Vector2(1360f, 200f), string.Empty, 130f,
                     TextAlignmentOptions.Center, new Color(1f, 0.93f, 0.5f)),
@@ -1354,14 +1355,14 @@ namespace IkeaEeg.EditorTools
             ui.exitButton.gameObject.SetActive(false);
 
             // ---- Instruction overlay ---------------------------------------------------------
-            // A LARGE surface 2.2 m in front of the participant. At that distance it fills the
-            // view and stands between them and the chairs — deliberately, so the task is
+            // A LARGE surface 3.2 m in front of the participant (centred near a seated eye),
+            // so it no longer crowds the face yet still stands between them and the chairs — deliberately, so the task is
             // understood before the stimuli are ever seen. Font sizes here are set for
-            // older-adult legibility: ~9 cm glyphs at 2.2 m.
-            const float overlayZ = -0.4f;      // 2.2 m in front of Spawn_B at z = -2.6
+            // older-adult legibility: ~9 cm glyphs at 3.2 m.
+            const float overlayZ = 0.6f;       // 3.2 m in front of Spawn_B at z = -2.6
 
             var overlayCanvas = CreateWorldCanvas("UI_B_InstructionOverlay", root.transform,
-                new Vector3(0f, 1.95f, overlayZ), new Vector2(1700f, 1250f), mats, spawnZ,
+                new Vector3(0f, 1.30f, overlayZ), new Vector2(1700f, 1250f), mats, spawnZ,
                 0.0016f);
 
             ui.instructionOverlay = overlayCanvas.gameObject;
@@ -1399,13 +1400,13 @@ namespace IkeaEeg.EditorTools
             //
             // It was at y 0.25 m and 1.5 m out, which put it roughly 45 degrees below the eye
             // line: the participant had to look at the floor to read it, which is what the
-            // headset test reported. At y 1.30 m it sits just under the READY button on the
+            // headset test reported. At y 0.40 m (3.1 m out, ~15 deg below a seated eye) it sits just under the READY button on the
             // instruction surface and is read with a small downward glance.
             //
-            // z is 0.10 m NEARER the participant than the overlay (overlayZ = -0.4), so the
+            // z is 0.10 m NEARER the participant than the overlay (overlayZ = 0.6), so the
             // legend panel is never occluded by the instruction surface behind it.
             ui.shapeLegend = BuildShapeLegend(root.transform,
-                new Vector3(0f, 1.05f, overlayZ - 0.10f), spawnZ, mats);
+                new Vector3(0f, 0.40f, overlayZ - 0.10f), spawnZ, mats);
             ui.shapeLegend.SetActive(false);
 
             overlayCanvas.gameObject.SetActive(false);
@@ -1624,16 +1625,23 @@ namespace IkeaEeg.EditorTools
             //
             // 2300 px x 0.00095 = 2.185 m tall, centred at 1.55 m, so it spans 0.46..2.64 m —
             // clear of the 3.0 m ceiling and still readable from the spawn point 2.1 m away.
+            // SEATED-EYE UPDATE: authored at 1.32 m (spans 0.23..2.41 m) for the instruction/recognition
+            // screens; ExperimentUIController puts it back at 1.55 m with the instruction at +975 while
+            // Results show. The overlay y values below were re-derived against Area A's canvas at 1.20 m
+            // (word -66, counter +44, cheatsheet -246, fixation -126); the arithmetic in the older
+            // comments uses the original 1.65 / 1.55 m pair.
             var canvas = CreateWorldCanvas("UI_C_Canvas", root.transform,
-                new Vector3(0f, 1.55f, 1.4f), new Vector2(1600f, 2300f), mats,
+                new Vector3(0f, 1.32f, 1.4f), new Vector2(1600f, 2300f), mats,
                 spawn.transform.localPosition.z, 0.00095f);
 
             ui = new AreaCUi
             {
                 panel = canvas.gameObject,
-                instruction = CreateText("Txt_Instruction", canvas.transform, new Vector2(0f, 975f),
-                    new Vector2(1520f, 170f), string.Empty, 56f,
-                    TextAlignmentOptions.Center, Color.white, autoSizeMin: 36f),
+                // Own band ABOVE the counter (+16..+72) and word (-166..+34): box +100..+480, so the
+                // ~8-line post-rest instructions fit (auto-size down to 38) without reaching READY.
+                instruction = CreateText("Txt_Instruction", canvas.transform, new Vector2(0f, 290f),
+                    new Vector2(1520f, 380f), string.Empty, 54f,
+                    TextAlignmentOptions.Center, Color.white, autoSizeMin: 38f),
                 status = CreateText("Txt_RecallStatus", canvas.transform, new Vector2(0f, 830f),
                     new Vector2(1520f, 80f), string.Empty, 46f,
                     TextAlignmentOptions.Center, new Color(0.75f, 0.85f, 0.75f)),
@@ -1659,7 +1667,7 @@ namespace IkeaEeg.EditorTools
                 // RunRecognitionPhase clears the word before Area C ever writes a summary, so
                 // the two are never on screen together. It clears the response pair (0.95 m)
                 // by 0.76 m, exactly as in Area A.
-                word = CreateText("Txt_WordDisplay_C", canvas.transform, new Vector2(0f, 165f),
+                word = CreateText("Txt_WordDisplay_C", canvas.transform, new Vector2(0f, -66f),
                     new Vector2(1520f, 200f), string.Empty, 130f,
                     TextAlignmentOptions.Center, new Color(1f, 0.93f, 0.5f)),
 
@@ -1688,11 +1696,11 @@ namespace IkeaEeg.EditorTools
                 // Both share the vertical band of the results block, which is safe for the same
                 // reason the word is: they are hidden before Area C ever writes a summary.
                 recognitionCounter = CreateText("Txt_RecognitionCounter_C", canvas.transform,
-                    new Vector2(0f, 275f), new Vector2(700f, 55f), string.Empty, 34f,
+                    new Vector2(0f, 44f), new Vector2(700f, 55f), string.Empty, 34f,
                     TextAlignmentOptions.Center, new Color(0.62f, 0.70f, 0.80f)),
 
                 developerCheatsheet = CreateText("Txt_DevCheatsheet_C", canvas.transform,
-                    new Vector2(0f, -15f), new Vector2(900f, 160f), string.Empty, 34f,
+                    new Vector2(0f, -246f), new Vector2(900f, 160f), string.Empty, 34f,
                     TextAlignmentOptions.Center, new Color(1f, 0.35f, 0.85f)),
 
                 // The Area C twin. Its y is DERIVED from the Area A one so both fixation points
@@ -1702,7 +1710,7 @@ namespace IkeaEeg.EditorTools
                 // Pre- and post-task rest are only comparable if the participant was looking at
                 // the same place, at the same height, at the same distance.
                 fixation = CreateText("Txt_Fixation_C", canvas.transform,
-                    new Vector2(0f, 105f), new Vector2(560f, 560f), string.Empty, 300f,
+                    new Vector2(0f, -126f), new Vector2(560f, 560f), string.Empty, 300f,
                     TextAlignmentOptions.Center, new Color(0.86f, 0.88f, 0.92f)),
 
                 // READY for the POST-TASK rest.
@@ -1713,8 +1721,10 @@ namespace IkeaEeg.EditorTools
                 // caught that as an overlap with NEW TRIAL, correctly: those rects coexist in
                 // space even though they never coexist in time, and a layout that depends on
                 // timing to avoid a collision is one refactor away from showing both at once.
+                // SEATED-EYE UPDATE: -190 (box -255..-125) sits 225 px below the instruction box
+                // and still clears NEW TRIAL's top (-285).
                 restReadyButton = CreateButton("Btn_RestReady_C", canvas.transform,
-                    new Vector2(0f, -50f), new Vector2(560f, 130f), string.Empty,
+                    new Vector2(0f, -190f), new Vector2(560f, 130f), string.Empty,
                     new Color(0.13f, 0.50f, 0.30f)),
 
                 results = CreateText("Txt_Results", canvas.transform, new Vector2(0f, 280f),

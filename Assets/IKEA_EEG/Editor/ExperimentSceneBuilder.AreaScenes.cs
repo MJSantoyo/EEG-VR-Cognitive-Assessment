@@ -307,7 +307,7 @@ namespace IkeaEeg.EditorTools
 
             var anchorA = new GameObject("Anchor_Recognition_AreaA");
             anchorA.transform.SetParent(environment.transform, false);
-            anchorA.transform.position = k_AreaAOrigin + new Vector3(0f, 0.95f, 1.18f);
+            anchorA.transform.position = k_AreaAOrigin + new Vector3(0f, 0.50f, 1.18f);
 
             LocalizeRoomCaptions(ui0, uiA, null, null);
 
@@ -372,7 +372,9 @@ namespace IkeaEeg.EditorTools
 
             var anchorC = new GameObject("Anchor_Recognition_AreaC");
             anchorC.transform.SetParent(environment.transform, false);
-            anchorC.transform.position = k_AreaCOrigin + new Vector3(0f, 0.95f, 1.18f);
+            // 0.92 m (was 0.72): box top 1.05 m sits just under the delayed word (box bottom 1.16 m),
+            // so word and answers read as one block; Recenter moves to -720 px below them.
+            anchorC.transform.position = k_AreaCOrigin + new Vector3(0f, 0.92f, 1.18f);
 
             LocalizeRoomCaptions(null, null, null, uiC);
 
