@@ -192,6 +192,17 @@ namespace IkeaEeg.Localization
                     "あとでこれらの単語について質問しますので、覚えておいてください。")
             },
             {
+                // Round 1 only (ExperimentManager.RecognitionEncodingInstructionText).
+                LocKeys.RecognitionEncodingRepeatNote,
+                new Entry("This sequence will be repeated three times during the experiment.",
+                    "Esta secuencia se repetirá tres veces durante el experimento.",
+                    "この流れは実験中に3回くり返されます。")
+            },
+            {
+                LocKeys.ResultsRoundPage,
+                new Entry("ROUND {N} / LIST {LIST}", "RONDA {N} / LISTA {LIST}", "第{N}ラウンド / リスト {LIST}")
+            },
+            {
                 // Visual, never auditory (cf. EncodingListen). ES/JA draft, pending review.
                 LocKeys.RecognitionEncodingWatch,
                 new Entry("Watch carefully.", "Observe con atención.", "よく見てください。")
@@ -556,6 +567,34 @@ namespace IkeaEeg.Localization
             {
                 LocKeys.EndSubtitle,
                 new Entry("Save and finish", "Guardar y terminar", "保存して終わります")
+            },
+            {
+                LocKeys.ConfirmRestartPrompt,
+                new Entry("Are you sure you want to restart the session?\nCurrent progress will be lost.",
+                    "¿Seguro que desea reiniciar la sesión?\nSe perderá el progreso actual.",
+                    "セッションを最初からやり直しますか？\n現在の進行状況は失われます。")
+            },
+            { LocKeys.ConfirmRestart, new Entry("YES, RESTART", "SÍ, REINICIAR", "はい、やり直す") },
+            {
+                LocKeys.ConfirmEndPrompt,
+                new Entry("Are you sure you want to end the session now?",
+                    "¿Seguro que desea finalizar la sesión ahora?",
+                    "今すぐセッションを終了しますか？")
+            },
+            { LocKeys.ConfirmEnd, new Entry("YES, END", "SÍ, FINALIZAR", "はい、終了する") },
+            { LocKeys.Cancel, new Entry("CANCEL", "CANCELAR", "キャンセル") },
+            {
+                // Shown briefly after Post Baseline of rounds 1 and 2, before the next Encoding.
+                LocKeys.RoundOneComplete,
+                new Entry("Round 1 completed.\nRound 2 will begin next.",
+                    "Ronda 1 completada.\nA continuación comenzará la ronda 2.",
+                    "第1ラウンドが終了しました。\n次に第2ラウンドを始めます。")
+            },
+            {
+                LocKeys.RoundTwoComplete,
+                new Entry("Round 2 completed.\nRound 3 will begin next.",
+                    "Ronda 2 completada.\nA continuación comenzará la ronda 3.",
+                    "第2ラウンドが終了しました。\n次に第3ラウンドを始めます。")
             },
             {
                 LocKeys.ExperimentAborted,

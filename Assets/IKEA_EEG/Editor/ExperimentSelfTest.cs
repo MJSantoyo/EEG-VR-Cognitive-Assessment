@@ -713,6 +713,7 @@ namespace IkeaEeg.EditorTools
             RunSection("DEVELOPER JUMP TO AREA 0 / A FROM ANOTHER ROOM", CheckDeveloperJumpLoadsAreaA);
             RunSection("RECENTER CAPTION FITS ONE LINE", CheckRecenterCaptionFit);
             RunSection("NEW TRIAL RUN TRACKING", CheckNewTrialRunTracking);
+            RunSection("AUTOMATIC 3-ROUND LOOP (A → B → C)", CheckAutomaticRoundLoop);
 
             // Deliberately AFTER the run-lifecycle sections: ABORT closes the run's files, and a
             // section that then expected an open session would fail for the wrong reason.
@@ -3610,7 +3611,7 @@ namespace IkeaEeg.EditorTools
             {
                 LocKeys.PreTaskRestInstructions, LocKeys.PostTaskRestInstructions,
                 LocKeys.RecognitionEncodingInstructions, LocKeys.RecognitionEncodingWatch,
-                LocKeys.RecognitionDelayedInstructions,
+                LocKeys.RecognitionEncodingRepeatNote, LocKeys.RecognitionDelayedInstructions,
                 LocKeys.RecognitionSeenBefore, LocKeys.RecognitionNotSeenBefore,
                 LocKeys.RecognitionPrompt,
             };
@@ -3630,6 +3631,36 @@ namespace IkeaEeg.EditorTools
             LocalizationTable.TryGet(LocKeys.RecognitionEncodingInstructions, out var enc);
             Assert(enc.spanish.Contains("15") && enc.japanese.Contains("15"),
                 "the ES/JA encoding instruction still states 15 words");
+            // The "repeated three times" note is its own key, appended for round 1 only.
+            LocalizationTable.TryGet(LocKeys.RecognitionEncodingRepeatNote, out var note);
+            Assert(note.english.Contains("repeated three times") &&
+                   note.spanish.Contains("tres veces") && note.japanese.Contains("3回") &&
+                   !enc.english.Contains("three times"),
+                "the EN/ES/JA repeat note exists and is no longer baked into the encoding instruction");
+
+            var composeEncoding = typeof(ExperimentManager).GetMethod("RecognitionEncodingInstructionText",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            var languageBefore = ExperimentLocalization.language;
+            try
+            {
+                foreach (var language in ExperimentLanguages.Selectable)
+                {
+                    ExperimentLocalization.SetLanguage(language);
+                    var noteText = note.For(language);
+                    var run1 = (string)composeEncoding?.Invoke(null, new object[] { 1 }) ?? "";
+                    var run2 = (string)composeEncoding?.Invoke(null, new object[] { 2 }) ?? "";
+                    var run3 = (string)composeEncoding?.Invoke(null, new object[] { 3 }) ?? "";
+                    Assert(run1.Contains(noteText) && run1.StartsWith(enc.For(language)) &&
+                           !run2.Contains(noteText) && !run3.Contains(noteText) &&
+                           run2 == enc.For(language) && run3 == enc.For(language),
+                        $"{ExperimentLanguages.ToCode(language)}: the repeat note is shown in round 1 only, " +
+                        "as its own paragraph after the normal instruction");
+                }
+            }
+            finally
+            {
+                ExperimentLocalization.SetLanguage(languageBefore);
+            }
 
             // Visual, never auditory, in every language.
             LocalizationTable.TryGet(LocKeys.RecognitionEncodingWatch, out var watch);
@@ -4467,6 +4498,131 @@ namespace IkeaEeg.EditorTools
 
             Assert(ui != null, "the UI controller is in the scene");
 
+            // ---- A2b: Area C swaps to the original Results layout only while Results show ----
+            var canvasC = FindInSceneIncludingInactive("UI_C_Canvas");
+            var instructionC = canvasC != null ? canvasC.transform.Find("Txt_Instruction") as RectTransform : null;
+            var resultsT = canvasC != null ? canvasC.transform.Find("Txt_Results") : null;
+            var resultsC = resultsT != null ? resultsT.GetComponent<TMP_Text>() : null;
+
+            if (ui != null && instructionC != null && resultsC != null)
+            {
+                var canvasRtC = (RectTransform)canvasC.transform;
+                var authoredY = canvasRtC.anchoredPosition.y;
+                var authoredPos = instructionC.anchoredPosition;
+                var oldInstruction = instructionC.GetComponent<TMP_Text>().text;
+                var oldResults = resultsC.text;
+
+                var recenterC = canvasC.transform.Find("Btn_Recenter_C") as RectTransform;
+                // The layout pass moves scene objects; put them back so later static checks
+                // (CheckAreaCLayout) still read the authored Results geometry.
+                var bgC = canvasC.transform.Find("Background") as RectTransform;
+                var savedRecenter = recenterC != null ? recenterC.anchoredPosition : Vector2.zero;
+                var savedBg = bgC != null ? (bgC.anchorMin, bgC.anchorMax, bgC.anchoredPosition, bgC.sizeDelta) : default;
+                var dividers = new[] { "Divider_Summary", "Divider_RunActions" }
+                    .Select(n => canvasC.transform.Find(n)?.gameObject).Where(g => g != null)
+                    .Select(g => (g, g.activeSelf)).ToArray();
+                ui.SetResults("self-test results");
+                var resultsPanelHeight = ui.AreaCBackgroundHeight;
+                Assert(Mathf.Abs(resultsPanelHeight - canvasRtC.rect.height) < 1f &&
+                       recenterC != null && recenterC.anchoredPosition == new Vector2(0f, -900f) &&
+                       canvasC.transform.Find("Divider_RunActions").gameObject.activeSelf,
+                    $"Results keep the full-height panel ({resultsPanelHeight:F0} px), Recenter at -900 " +
+                    "and the run-action divider");
+                Assert(Mathf.Abs(canvasRtC.anchoredPosition.y - 1.55f) < 1e-4f &&
+                       instructionC.anchoredPosition == new Vector2(0f, 975f),
+                    $"Results restore the original Area C layout (canvas y {canvasRtC.anchoredPosition.y:F2}, " +
+                    $"instruction {instructionC.anchoredPosition})");
+
+                ui.SetResults(string.Empty);
+                var participantPanelHeight = ui.AreaCBackgroundHeight;
+                var bgFix = canvasC.transform.Find("Background") as RectTransform;
+                var participantPanel = bgFix != null ? (bgFix.anchoredPosition, bgFix.sizeDelta) : default;
+                ui.ShowFixationPoint(true);
+                var fixationPanelHeight = ui.AreaCBackgroundHeight;
+                var fixationPanel = bgFix != null ? (bgFix.anchoredPosition, bgFix.sizeDelta) : default;
+                var crossC = ui.areaCFixation != null ? ui.areaCFixation.rectTransform : null;
+                bool crossInPanel = bgFix != null && crossC != null &&
+                    bgFix.rect.Contains(bgFix.InverseTransformPoint(crossC.position));
+                ui.ShowFixationPoint(false);
+                Assert(participantPanelHeight < resultsPanelHeight * 0.6f,
+                    $"Area C panel is compact outside Results (participant {participantPanelHeight:F0} px, " +
+                    $"Results {resultsPanelHeight:F0} px)");
+                Assert(bgFix != null && fixationPanel == participantPanel && crossInPanel,
+                    $"the post-baseline fixation cross uses the standard non-results panel " +
+                    $"({fixationPanel.Item2} at {fixationPanel.Item1}; standard {participantPanel.Item2} at " +
+                    $"{participantPanel.Item1}; cross inside {crossInPanel})");
+                Assert(Mathf.Abs(ui.AreaCBackgroundHeight - participantPanelHeight) < 1f,
+                    "hiding the fixation point returns the participant panel");
+
+                // Between-round message: participant-sized panel, large text centred in it,
+                // Recenter below its edge, and the text fits in every language.
+                var bgRt = canvasC.transform.Find("Background") as RectTransform;
+                var participantBg = bgRt != null ? (bgRt.anchoredPosition, bgRt.sizeDelta) : default;
+                ui.SetAreaCTransition("self-test transition");
+                var transitionPanelHeight = ui.AreaCBackgroundHeight;
+                var instructionTmp = instructionC.GetComponent<TMP_Text>();
+                var recenterRt = canvasC.transform.Find("Btn_Recenter_C") as RectTransform;
+                Assert(ui.AreaCTransitionLayoutActive && bgRt != null &&
+                       bgRt.anchoredPosition == participantBg.Item1 && bgRt.sizeDelta == participantBg.Item2,
+                    $"the round message uses the normal instruction panel ({bgRt?.sizeDelta} at {bgRt?.anchoredPosition}; " +
+                    $"participant {participantBg.Item2} at {participantBg.Item1})");
+                Assert(instructionTmp.fontSizeMax >= 80f &&
+                       Vector2.Distance(instructionC.anchoredPosition, bgRt.anchoredPosition) < 1f &&
+                       instructionTmp.alignment == TextAlignmentOptions.Center &&
+                       instructionC.sizeDelta.y < transitionPanelHeight && recenterRt != null &&
+                       recenterRt.anchoredPosition.y + recenterRt.sizeDelta.y * 0.5f <
+                       instructionC.anchoredPosition.y - instructionC.sizeDelta.y * 0.5f,
+                    $"the round message is {instructionTmp.fontSizeMax:F0} pt, centred in the panel both ways, " +
+                    "and Recenter sits below the text");
+
+                foreach (var key in new[] { LocKeys.RoundOneComplete, LocKeys.RoundTwoComplete })
+                {
+                    LocalizationTable.TryGet(key, out var entry);
+                    foreach (var text in new[] { entry.english, entry.spanish, entry.japanese })
+                    {
+                        var needed = instructionTmp.GetPreferredValues(text, instructionC.sizeDelta.x, 0f).y;
+                        Assert(needed <= instructionC.sizeDelta.y,
+                            $"{key} fits the transition text box at {instructionTmp.fontSize:F0} pt " +
+                            $"({needed:F0} of {instructionC.sizeDelta.y:F0} px): \"{text.Replace("\n", " / ")}\"");
+                    }
+                }
+
+                ui.SetAreaCInstruction("self-test instruction");
+                Assert(!ui.AreaCTransitionLayoutActive &&
+                       Mathf.Abs(ui.AreaCBackgroundHeight - participantPanelHeight) < 1f &&
+                       instructionC.anchoredPosition == authoredPos,
+                    "the next instruction returns the normal participant layout");
+                Assert(Mathf.Abs(canvasRtC.anchoredPosition.y - authoredY) < 1e-4f &&
+                       instructionC.anchoredPosition == authoredPos,
+                    $"clearing Results returns Area C to its authored instruction layout " +
+                    $"(canvas y {canvasRtC.anchoredPosition.y:F2}, authored {authoredY:F2})");
+
+                // Instruction/recognition layout: the instruction box overlaps nothing it shares
+                // a screen with (post-rest READY; the delayed counter and word).
+                Rect RectOf(RectTransform rt) => new Rect(rt.anchoredPosition - rt.sizeDelta * 0.5f, rt.sizeDelta);
+                var instructionRect = RectOf(instructionC);
+
+                foreach (var other in new[] { "Btn_RestReady_C", "Txt_RecognitionCounter_C", "Txt_WordDisplay_C" })
+                {
+                    var rt = canvasC.transform.Find(other) as RectTransform;
+                    Assert(rt != null && !instructionRect.Overlaps(RectOf(rt)),
+                        $"Area C instruction box {instructionRect} does not overlap {other} " +
+                        $"({(rt != null ? RectOf(rt).ToString() : "missing")})");
+                }
+
+                ui.SetAreaCInstruction(oldInstruction);
+                ui.SetResults(oldResults);
+
+                if (recenterC != null) recenterC.anchoredPosition = savedRecenter;
+                if (bgC != null)
+                    (bgC.anchorMin, bgC.anchorMax, bgC.anchoredPosition, bgC.sizeDelta) = savedBg;
+                foreach (var (g, active) in dividers) g.SetActive(active);
+            }
+            else
+            {
+                Assert(false, "UI_C_Canvas, its Txt_Instruction and Txt_Results were found for the layout check");
+            }
+
             if (ui != null)
             {
                 var displaced = ui.recenterDisplacedPosition;
@@ -4490,8 +4646,10 @@ namespace IkeaEeg.EditorTools
                     "the periphery");
 
                 // The centred position must still clear the response buttons in front of the
-                // panel. Canvas metres-per-pixel is 0.00095 and the Area A canvas sits at 1.65 m.
-                var centeredWorldY = 1.65f + centered.y * 0.00095f;
+                // panel. Canvas metres-per-pixel is 0.00095; read the Area A canvas height from the scene.
+                var canvasA = FindInSceneIncludingInactive("UI_A_Canvas");
+                var centeredWorldY = (canvasA != null ? canvasA.transform.position.y : 1.20f) +
+                                     centered.y * 0.00095f;
                 var anchor = FindInSceneIncludingInactive("Anchor_Recognition_AreaA");
 
                 if (anchor != null)
@@ -4823,17 +4981,28 @@ namespace IkeaEeg.EditorTools
                     $"(READY bottom {readyY - readyHalf:F2} > legend top {legendY + legendHalf:F2})");
 
                 // The whole point of moving it: it must be within a comfortable downward glance
-                // from a seated eye height of ~1.6 m, not down near the floor.
-                Assert(legendY > 0.85f,
-                    $"the legend is lifted into the useful field of view (y {legendY:F2}; it " +
-                    "was 0.25 m, roughly 45 degrees below the eye line)");
+                // from a seated eye (~1.2 m, measured head_height 1.12-1.23 m), not down near the floor.
+                var spawnBGo = FindInSceneIncludingInactive("Spawn_B");
+                var eyeB = (spawnBGo != null ? spawnBGo.transform.position : new Vector3(100f, 0f, -2.6f)) +
+                           Vector3.up * 1.2f;
+                float PitchDeg(Vector3 p) =>
+                    Mathf.Atan2(p.y - eyeB.y, Mathf.Max(0.01f, p.z - eyeB.z)) * Mathf.Rad2Deg;
+                var legendPitch = PitchDeg(legend.transform.position);
+                var legendDepth = Mathf.Max(0.01f, legend.transform.position.z - eyeB.z);
+                var legendHalfDeg = Mathf.Atan2(legendHalf, legendDepth) * Mathf.Rad2Deg;
+
+                Assert(legendPitch > -20f,
+                    $"the legend is within a comfortable downward glance from a seated eye " +
+                    $"({legendPitch:F1} deg; it was once ~45 deg below the eye line)");
 
                 if (recenterB != null)
                 {
-                    Assert(Mathf.Abs(recenterB.transform.position.y - legendY) >
-                           legendHalf + 0.05f,
-                        $"the legend does not overlap the Area B Recenter " +
-                        $"(recenter y {recenterB.transform.position.y:F2}, legend y {legendY:F2})");
+                    var recenterPitch = PitchDeg(recenterB.transform.position);
+                    // Legacy combined scene keeps the old layout, separated in height rather than angle.
+                    Assert(Mathf.Abs(recenterPitch - legendPitch) > legendHalfDeg + 1f ||
+                           Mathf.Abs(recenterB.transform.position.y - legendY) > legendHalf + 0.05f,
+                        $"the legend does not overlap the Area B Recenter in the participant's view " +
+                        $"(recenter {recenterPitch:F1} deg, legend {legendPitch:F1} +/- {legendHalfDeg:F1} deg)");
                 }
             }
 
@@ -5683,10 +5852,13 @@ namespace IkeaEeg.EditorTools
 
                 Info($"Area C zones — delayed word y {wordY:F3}, response pair y {buttonY:F3}");
 
-                // The same 0.5 m separation already required in Area A, applied to Area C.
-                Assert(wordY - buttonY > 0.5f,
+                // Area C pulls the answers up under the word: the 0.26 m boxes' top must stay
+                // below the word's 200 px box (0.19 m) with a clear gap.
+                var wordBottom = wordY - 100f * 0.00095f;
+                var buttonTop = buttonY + 0.13f;
+                Assert(wordBottom - buttonTop > 0.08f,
                     $"the response buttons cannot occlude the delayed word " +
-                    $"({wordY - buttonY:F2} m apart)");
+                    $"(button top {buttonTop:F2} m, word box bottom {wordBottom:F2} m)");
             }
 
             // The immediate and delayed stimuli should be the same size at the same eye height,
@@ -6794,7 +6966,7 @@ namespace IkeaEeg.EditorTools
                 if (anchorA != null && anchorC != null)
                 {
                     Assert(counterA.transform.position.y - anchorA.transform.position.y > 0.5f &&
-                           counterC.transform.position.y - anchorC.transform.position.y > 0.5f,
+                           counterC.transform.position.y - anchorC.transform.position.y > 0.3f,
                         "the counter clears the response buttons in both areas");
                 }
 
@@ -8178,7 +8350,7 @@ namespace IkeaEeg.EditorTools
                 "the skip flag is never set unconditionally");
 
             Assert(Occurrences(managerSource, "beginEncodingDirectly: true") == 1 &&
-                   MemberBody(managerSource, "public void StartNewRun()")
+                   MemberBody(managerSource, "public void StartNewRun(")
                        .Contains("beginEncodingDirectly: true"),
                 "only NEW TRIAL asks to begin Encoding without a PRE_TASK_REST");
 
@@ -14518,6 +14690,13 @@ namespace IkeaEeg.EditorTools
             if (panel == null)
                 return;
 
+            // Outside Results the controller moves Recenter up (-720); this checks the final
+            // screen, so lay it out as Results, as the runtime does when the summary shows.
+            var layoutUi = Object.FindAnyObjectByType<ExperimentUIController>();
+            var resultsLabel = panel.Find("Txt_Results")?.GetComponent<TMP_Text>();
+            var savedResults = resultsLabel != null ? resultsLabel.text : string.Empty;
+            layoutUi?.SetResults("self-test results");
+
             var buttons = panel.GetComponentsInChildren<Button>(true)
                 .Where(b => b.name.StartsWith("Btn_"))
                 .ToArray();
@@ -14580,6 +14759,8 @@ namespace IkeaEeg.EditorTools
             });
 
             Assert(outside == 0, $"every button fits inside the panel ({outside} outside)");
+
+            layoutUi?.SetResults(savedResults);
         }
 
         // ---------------------------------------------------------------------------------
@@ -15037,7 +15218,7 @@ namespace IkeaEeg.EditorTools
                 "starting another run clears the previous run's stored duration");
 
             var newRun = source.Substring(
-                source.IndexOf("public void StartNewRun()", System.StringComparison.Ordinal));
+                source.IndexOf("public void StartNewRun(", System.StringComparison.Ordinal));
             newRun = newRun.Substring(0,
                 newRun.IndexOf("\n        }", System.StringComparison.Ordinal));
 
@@ -16946,6 +17127,258 @@ namespace IkeaEeg.EditorTools
             {
                 if (logger.sessionActive)
                     logger.EndSession("self test new-trial check");
+            }
+        }
+
+        // ---------------------------------------------------------------------------------
+        // Automatic 3-round recognition loop (A → B → C)
+        // ---------------------------------------------------------------------------------
+
+        /// <summary>
+        /// Rounds 1 and 2 end by starting the next round themselves; round 3 ends at Results and
+        /// nothing creates a run 4. Drives the REAL manager through the same private steps
+        /// RunAreaC takes after POST_TASK_REST; the source scan proves RunAreaC takes them.
+        /// </summary>
+        static void CheckAutomaticRoundLoop()
+        {
+            // ---- Source: where the branch sits, and what it does not touch -----------------
+            var source = ManagerSource();
+            var areaC = MemberBody(source, "IEnumerator RunAreaC()");
+            var restAt = areaC.IndexOf("RunPostTaskRest()", System.StringComparison.Ordinal);
+            var branchAt = areaC.IndexOf("AutoAdvancesToNextRound()", System.StringComparison.Ordinal);
+            var finishAt = areaC.IndexOf("FinishAreaC();", System.StringComparison.Ordinal);
+
+            Assert(restAt >= 0 && branchAt > restAt && finishAt > branchAt,
+                "POST_TASK_REST runs in EVERY round, before the next-round branch, which runs " +
+                "before Results");
+
+            Assert(!areaC.Contains("runIndex"),
+                "RunAreaC has no run-specific path: post baseline cannot be skipped in any round");
+
+            var advance = MemberBody(source, "void AdvanceToNextRound()");
+            var newRun = MemberBody(source, "public void StartNewRun(");
+
+            Assert(advance.Contains("StartNewRun(automaticRound: true)") &&
+                   newRun.Contains("returnToFamiliarization: false") &&
+                   newRun.Contains("returnToLanguageSelection: false") &&
+                   newRun.Contains("beginEncodingDirectly: true"),
+                "the automatic step is NEW TRIAL's path: no language screen, no Familiarization, " +
+                "no PRE_TASK_REST — those happen only before run 1");
+
+            var loopCode = advance + MemberBody(source, "bool AutoAdvancesToNextRound()") +
+                           MemberBody(source, "bool IsFinalProtocolRound()");
+
+            Assert(!Regex.IsMatch(loopCode, "Eeg|Theta|Adapt|Workload|Shadow"),
+                "the round loop touches no EEG, workload or adaptation code");
+
+            Assert(MemberBody(source, "void FinishAreaC()")
+                    .Contains("ShowNewTrialButton(!IsFinalProtocolRound())"),
+                "NEW TRIAL is hidden on the round-3 Results screen");
+
+            // ---- Between-round message: rounds 1 and 2 only, inside the auto-advance branch --
+            var transitionAt = areaC.IndexOf("ShowRoundTransition()", System.StringComparison.Ordinal);
+            var advanceAt = areaC.IndexOf("AdvanceToNextRound()", System.StringComparison.Ordinal);
+            Assert(transitionAt > branchAt && transitionAt < advanceAt && advanceAt < finishAt,
+                "the between-round message shows only in the auto-advance branch, before the next round");
+
+            var keyFor = typeof(ExperimentManager).GetMethod("RoundTransitionKey",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            Assert(keyFor != null &&
+                   (string)keyFor.Invoke(null, new object[] { 1 }) == LocKeys.RoundOneComplete &&
+                   (string)keyFor.Invoke(null, new object[] { 2 }) == LocKeys.RoundTwoComplete &&
+                   keyFor.Invoke(null, new object[] { 3 }) == null,
+                "transition text exists for 1->2 and 2->3, and none follows round 3");
+
+            foreach (var (key, done, next) in new[] { (LocKeys.RoundOneComplete, "1", "2"),
+                                                      (LocKeys.RoundTwoComplete, "2", "3") })
+            {
+                Assert(LocalizationTable.TryGet(key, out var t) &&
+                       new[] { t.english, t.spanish, t.japanese }.All(x =>
+                           !string.IsNullOrWhiteSpace(x) && x.Contains(done) && x.Contains(next)) &&
+                       t.spanish != t.english && t.japanese != t.english,
+                    $"{key} is translated in EN/ES/JA and names rounds {done} and {next}");
+            }
+
+            // ---- Runtime: the real manager ------------------------------------------------
+            var manager = Object.FindAnyObjectByType<ExperimentManager>();
+            var logger = Object.FindAnyObjectByType<EventLogger>();
+
+            if (manager == null || logger == null)
+            {
+                Info("no ExperimentManager/EventLogger in the open scene — round loop not run");
+                return;
+            }
+
+            var type = typeof(ExperimentManager);
+            const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+            var beginSession = type.GetMethod("BeginSession", flags, null,
+                new[] { typeof(long), typeof(bool) }, null);
+            var autoAdvances = type.GetMethod("AutoAdvancesToNextRound", flags);
+            var advanceRound = type.GetMethod("AdvanceToNextRound", flags);
+            var finishAreaC = type.GetMethod("FinishAreaC", flags);
+            var newTrialPressed = type.GetMethod("OnNewTrialPressed", flags);
+
+            if (beginSession == null || autoAdvances == null || advanceRound == null ||
+                finishAreaC == null || newTrialPressed == null)
+            {
+                Assert(false, "the round-loop entry points were found");
+                return;
+            }
+
+            var previousLanguage = ExperimentLocalization.language;
+
+            try
+            {
+                ExperimentLocalization.SetLanguage(ExperimentLanguage.Spanish);
+                logger.BeginExperimentSession();
+                beginSession.Invoke(manager, new object[] { 4242L, false });
+
+                var experimentId = logger.experimentSessionId;
+
+                // End of each round, exactly as RunAreaC: advance if a next round exists.
+                for (var run = 1; run <= 2; run++)
+                {
+                    Assert(logger.runIndex == run && (bool)autoAdvances.Invoke(manager, null),
+                        $"run {run} (list {ExperimentConfig.RecognitionListIdForRun(run)}) " +
+                        "advances automatically after its post baseline");
+
+                    advanceRound.Invoke(manager, null);
+
+                    Assert(logger.runIndex == run + 1 && logger.experimentSessionId == experimentId,
+                        $"→ run {run + 1} (list {ExperimentConfig.RecognitionListIdForRun(run + 1)}) " +
+                        $"in the same experiment session (run_index {logger.runIndex})");
+
+                    Assert(ExperimentLocalization.language == ExperimentLanguage.Spanish,
+                        $"the session language survives the step into run {run + 1}");
+
+                    Assert(manager.state != ExperimentState.Results &&
+                           manager.state != ExperimentState.Familiarization &&
+                           manager.state != ExperimentState.LanguageSelection &&
+                           manager.state != ExperimentState.PreTaskRest,
+                        $"no Results, Familiarization, language screen or pre baseline between " +
+                        $"rounds (state {manager.state})");
+                }
+
+                Assert(!(bool)autoAdvances.Invoke(manager, null),
+                    "run 3 (list C) does NOT advance — it ends at Results");
+
+                finishAreaC.Invoke(manager, null);
+
+                Assert(manager.state == ExperimentState.Results && logger.runIndex == 3,
+                    $"run 3 reaches Results (state {manager.state}, run {logger.runIndex})");
+
+                // ---- Final Results page through all three rounds ---------------------------
+                var pagerUi = Object.FindAnyObjectByType<ExperimentUIController>();
+                Assert(manager.completedRoundSummaryCount == 2,
+                    $"rounds 1 and 2 are retained through the experiment session ({manager.completedRoundSummaryCount} kept)");
+
+                if (pagerUi != null)
+                {
+                    var statusLabel = FindInSceneIncludingInactive("Txt_RecallStatus")?.GetComponent<TMP_Text>();
+                    Assert(pagerUi.resultsPageCount == 3 && pagerUi.resultsPageIndex == 2 &&
+                           statusLabel != null && statusLabel.text.Contains("3") && statusLabel.text.EndsWith(" C"),
+                        $"final Results expose rounds 1-3 and open on round 3 / list C " +
+                        $"({pagerUi.resultsPageCount} pages, page {pagerUi.resultsPageIndex + 1}, \"{statusLabel?.text}\")");
+
+                    Transform[] fixedControls = { FindInSceneIncludingInactive("Btn_Restart")?.transform,
+                        FindInSceneIncludingInactive("Btn_End")?.transform,
+                        FindInSceneIncludingInactive("Btn_Recenter_C")?.transform };
+                    string Snapshot() => string.Join("|", fixedControls.Select(t => t == null ? "null"
+                        : $"{((RectTransform)t).anchoredPosition}/{t.gameObject.activeSelf}"));
+                    var before = Snapshot();
+
+                    pagerUi.ShowResultsPage(-5);
+                    Assert(pagerUi.resultsPageIndex == 0 && !pagerUi.resultsPrevButton.interactable &&
+                           pagerUi.resultsNextButton.interactable && statusLabel.text.Contains("1") &&
+                           statusLabel.text.EndsWith(" A"),
+                        $"LEFT stops at round 1 / list A (\"{statusLabel.text}\")");
+                    pagerUi.resultsNextButton.onClick.Invoke();
+                    Assert(pagerUi.resultsPageIndex == 1 && statusLabel.text.EndsWith(" B"),
+                        $"RIGHT moves to round 2 / list B (\"{statusLabel.text}\")");
+                    pagerUi.ShowResultsPage(9);
+                    Assert(pagerUi.resultsPageIndex == 2 && pagerUi.resultsPrevButton.interactable &&
+                           !pagerUi.resultsNextButton.interactable,
+                        "RIGHT stops at round 3");
+                    Assert(Snapshot() == before,
+                        $"changing the result page leaves RESTART / END / RECENTER untouched ({before})");
+                }
+
+                newTrialPressed.Invoke(manager, null);
+                manager.StartNewRun();
+
+                Assert(logger.runIndex == 3 && logger.experimentSessionId == experimentId,
+                    $"NEW TRIAL on the final Results creates no run 4 (run {logger.runIndex})");
+
+                // RESTART / END need a confirming second press; the other button cancels.
+                var ui = Object.FindAnyObjectByType<ExperimentUIController>();
+                var uiType = typeof(ExperimentUIController);
+                var pressRestart = uiType.GetMethod("RaiseRestart", flags);
+                var pressEnd = uiType.GetMethod("RaiseEnd", flags);
+
+                if (ui == null || pressRestart == null || pressEnd == null)
+                {
+                    Assert(false, "the UI controller and its RESTART/END handlers were found");
+                    return;
+                }
+
+                pressRestart.Invoke(ui, null);
+                Assert(ui.runActionConfirmPending && logger.runIndex == 3 &&
+                       logger.experimentSessionId == experimentId,
+                    "one RESTART press only asks for confirmation — nothing is restarted yet");
+
+                pressEnd.Invoke(ui, null);
+                Assert(!ui.runActionConfirmPending && !manager.sessionEnded &&
+                       logger.experimentSessionId == experimentId,
+                    "END while RESTART is pending acts as CANCEL — the session neither restarts nor ends");
+
+                // RESTART, confirmed: a new experiment session, run 1 again, list A.
+                pressRestart.Invoke(ui, null);
+                pressRestart.Invoke(ui, null);
+
+                Assert(logger.runIndex == 1 && logger.experimentSessionId != experimentId,
+                    $"a confirmed RESTART opens a new experiment session at run 1 / list A " +
+                    $"(run {logger.runIndex})");
+
+                Assert(manager.completedRoundSummaryCount == 0 && ui.resultsPageCount == 0 &&
+                       (ui.resultsPrevButton == null || !ui.resultsPrevButton.gameObject.activeSelf),
+                    "RESTART clears the previous session's round summaries and the Results pager");
+
+                // A developer rest skip only shortens a block: the round still advances.
+                logger.MarkDeveloperInterrupted("self test rest skip");
+
+                Assert((bool)autoAdvances.Invoke(manager, null),
+                    "a run whose only developer action was a rest skip still advances to the next round");
+
+                // Developer Navigation (or an abort) reroutes the run: it goes to Results.
+                type.GetMethod("MarkDeveloperInterruptedByNavigation", flags)
+                    ?.Invoke(manager, new object[] { "self test round loop" });
+
+                Assert(!(bool)autoAdvances.Invoke(manager, null),
+                    "a run rerouted by Developer Navigation goes to Results, not into the next round");
+
+                // END asks first too; RESTART cancels it. (Not confirmed here: a real END is
+                // terminal and would leak into the sections after this one.)
+                pressEnd.Invoke(ui, null);
+                Assert(ui.runActionConfirmPending && !manager.sessionEnded,
+                    "one END press only asks for confirmation — the session is not ended yet");
+
+                pressRestart.Invoke(ui, null);
+                Assert(!ui.runActionConfirmPending && !manager.sessionEnded && logger.runIndex == 1,
+                    "RESTART while END is pending acts as CANCEL");
+            }
+            finally
+            {
+                if (logger.sessionActive)
+                    logger.EndSession("self test round-loop check");
+
+                // The pager arrows are runtime clones; remove them from the open test scene.
+                foreach (var name in new[] { "Btn_ResultsPrev_C", "Btn_ResultsNext_C" })
+                {
+                    var clone = FindInSceneIncludingInactive(name);
+                    if (clone != null) Object.DestroyImmediate(clone);
+                }
+
+                ExperimentLocalization.SetLanguage(previousLanguage);
             }
         }
 

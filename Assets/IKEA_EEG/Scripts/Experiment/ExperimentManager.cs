@@ -683,6 +683,13 @@ namespace IkeaEeg.Experiment
             m_SeedIsReplay = isReplay;
             m_Logger.randomizationSeed = seed;
             m_Logger.BeginSession();
+            m_DeveloperNavigatedThisRun = false;
+
+            if (m_RoundSummariesSessionId != m_Logger.experimentSessionId)
+            {
+                m_CompletedRoundSummaries.Clear();
+                m_RoundSummariesSessionId = m_Logger.experimentSessionId;
+            }
 
             m_SessionResults.Reset();
             m_SessionResults.sessionId = m_Logger.sessionId;
@@ -2623,7 +2630,7 @@ namespace IkeaEeg.Experiment
             // developer run of a NEW experiment session; the language is kept.
             var endedRunId = m_SessionEnded ? OpenDeveloperRunAfterEnd(area) : null;
 
-            m_Logger?.MarkDeveloperInterrupted($"developer jumped to {area} from {fromState}");
+            MarkDeveloperInterruptedByNavigation($"developer jumped to {area} from {fromState}");
 
             Log(EventTypes.DeveloperAreaJump, e =>
             {
@@ -2724,7 +2731,7 @@ namespace IkeaEeg.Experiment
                 BeginSession(ChooseSeed(), isReplay: false);
 
                 // Marked before the first row of the new run is anything but session setup.
-                m_Logger.MarkDeveloperInterrupted(
+                MarkDeveloperInterruptedByNavigation(
                     $"developer run opened after END to jump to {area}");
             }
 
@@ -2856,7 +2863,7 @@ namespace IkeaEeg.Experiment
 
             if (wasRunning)
             {
-                m_Logger.MarkDeveloperInterrupted(
+                MarkDeveloperInterruptedByNavigation(
                     "developer returned to the language screen mid-run");
             }
 
@@ -3000,7 +3007,7 @@ namespace IkeaEeg.Experiment
             // ---- 6. Mark the run through the EXISTING invalid/interrupted architecture -------
             // Same mechanism a developer area jump uses: every subsequent row carries it, so an
             // aborted run can never be mistaken for a clean participant run.
-            m_Logger?.MarkDeveloperInterrupted($"run aborted: {reason}");
+            MarkDeveloperInterruptedByNavigation($"run aborted: {reason}");
 
             SetState(ExperimentState.Aborted);
 
@@ -3132,7 +3139,9 @@ namespace IkeaEeg.Experiment
             {
                 m_UI.ShowStartButton(false);
                 m_UI.ClearWordDisplay();
-                m_UI.SetAreaAInstruction(ExperimentLocalization.Get(instructionKey));
+                m_UI.SetAreaAInstruction(isRecognition
+                    ? RecognitionEncodingInstructionText(m_Logger != null ? m_Logger.runIndex : 1)
+                    : ExperimentLocalization.Get(instructionKey));
                 m_UI.SetAreaAStatus(string.Empty);
             }
 
@@ -4667,7 +4676,127 @@ namespace IkeaEeg.Experiment
             // this run's value BEFORE that call, not after it.
             CaptureRecognitionResults();
 
+            // Rounds 1 and 2 of the A/B/C recognition protocol roll straight into the next
+            // round: no Results screen and no NEW TRIAL press between rounds.
+            if (AutoAdvancesToNextRound())
+            {
+                yield return ShowRoundTransition();
+
+                if (m_State == ExperimentState.Aborted)
+                {
+                    m_Flow = null;
+                    yield break;
+                }
+
+                AdvanceToNextRound();
+                yield break;
+            }
+
             FinishAreaC();
+        }
+
+        /// <summary>
+        /// True at the end of a recognition round that has a next round (runs 1 and 2). A run
+        /// rerouted by Developer Navigation or an abort goes to Results instead. A developer rest
+        /// skip only shortens a block, so it still advances; its rows stay DEVELOPER_INTERRUPTED.
+        /// </summary>
+        bool AutoAdvancesToNextRound()
+        {
+            return m_Config != null && m_Config.protocolMode == VerbalProtocolMode.Recognition &&
+                   m_Logger != null && !m_DeveloperNavigatedThisRun &&
+                   ExperimentConfig.RecognitionListIdForRun(m_Logger.runIndex + 1) != null;
+        }
+
+        const float RoundTransitionSeconds = 4f;
+
+        /// <summary>
+        /// Participant summaries of the rounds already completed in THIS experiment session, kept
+        /// as built text (immutable) because m_SessionResults is reset at every run start.
+        /// Cleared when a new experiment session begins (RESTART, language reset).
+        /// </summary>
+        readonly List<(int runIndex, string summary)> m_CompletedRoundSummaries = new List<(int, string)>();
+        string m_RoundSummariesSessionId;
+
+        public int completedRoundSummaryCount => m_CompletedRoundSummaries.Count;
+
+        string BuildRunSummaryText()
+        {
+            return m_SessionResults.BuildParticipantRunSummary(
+                ExperimentLocalization.Get(LocKeys.ExecutiveTaskComplete),
+                m_Logger != null ? m_Logger.runIndex : 0,
+                0);
+        }
+
+        /// <summary>The Recognition Encoding instruction; the "repeated three times" note is round 1 only.</summary>
+        static string RecognitionEncodingInstructionText(int runIndex)
+        {
+            var text = ExperimentLocalization.Get(LocKeys.RecognitionEncodingInstructions);
+            return runIndex <= 1
+                ? text + "\n\n<size=85%><i>" + ExperimentLocalization.Get(LocKeys.RecognitionEncodingRepeatNote) + "</i></size>"
+                : text;
+        }
+
+        /// <summary>Tells the participant the next round is coming: no input, a short timed hold.</summary>
+        IEnumerator ShowRoundTransition()
+        {
+            m_UI?.SetAreaCStatus(string.Empty);
+            m_UI?.SetAreaCTransition(ExperimentLocalization.Get(RoundTransitionKey(m_Logger.runIndex)));
+            yield return new WaitForSeconds(RoundTransitionSeconds);
+        }
+
+        /// <summary>The between-round message after round 1 or 2; null after the last round.</summary>
+        static string RoundTransitionKey(int completedRunIndex)
+        {
+            switch (completedRunIndex)
+            {
+                case 1: return LocKeys.RoundOneComplete;
+                case 2: return LocKeys.RoundTwoComplete;
+                default: return null;
+            }
+        }
+
+        /// <summary>Set when Developer Navigation or an abort reroutes this run; cleared per run.</summary>
+        bool m_DeveloperNavigatedThisRun;
+
+        void MarkDeveloperInterruptedByNavigation(string reason)
+        {
+            m_DeveloperNavigatedThisRun = true;
+            m_Logger?.MarkDeveloperInterrupted(reason);
+        }
+
+        /// <summary>
+        /// The recognition protocol is three rounds (A/B/C): a run with no next list is the last,
+        /// and no participant control may create a run after it.
+        /// </summary>
+        bool IsFinalProtocolRound()
+        {
+            return m_Config != null && m_Config.protocolMode == VerbalProtocolMode.Recognition &&
+                   m_Logger != null &&
+                   ExperimentConfig.RecognitionListIdForRun(m_Logger.runIndex + 1) == null;
+        }
+
+        /// <summary>
+        /// End of round 1 or 2: closes the trial, then starts the next round through NEW TRIAL's
+        /// own path — the run is finalised, run_index advances (so the next list resolves), the
+        /// experiment session and language are kept, and Familiarization and PRE_TASK_REST are
+        /// skipped. The run-management buttons are never raised.
+        /// </summary>
+        void AdvanceToNextRound()
+        {
+            ResetDeveloperCheatsheet();
+
+            // BeginSession resets m_SessionResults for the next run, so keep this round's
+            // summary now; only auto-advanced (completed, non-rerouted) rounds get here.
+            m_CompletedRoundSummaries.Add((m_Logger != null ? m_Logger.runIndex : 0, BuildRunSummaryText()));
+
+            if (m_Logger != null)
+                m_Logger.EndTrial();
+
+            // NEW TRIAL normally runs from the results screen with no flow running; match that,
+            // so its StopFlow does not stop this coroutine part-way through.
+            m_Flow = null;
+
+            StartNewRun(automaticRound: true);
         }
 
         // ---------------------------------------------------------------------------------
@@ -5151,14 +5280,26 @@ namespace IkeaEeg.Experiment
                 // as a repeat of run 1.
                 // runsInSession is 0: the participant is told which run they just finished, not
                 // how many the sitting will eventually contain (which is not decided yet).
-                m_UI.SetResults(m_SessionResults.BuildParticipantRunSummary(
-                    ExperimentLocalization.Get(LocKeys.ExecutiveTaskComplete),
-                    m_Logger != null ? m_Logger.runIndex : 0,
-                    0));
+                // After the last round, page through every round of this experiment session
+                // (opening on this one); otherwise just this run, as before.
+                if (IsFinalProtocolRound() && m_CompletedRoundSummaries.Count > 0)
+                {
+                    var pages = new List<(int, string)>(m_CompletedRoundSummaries)
+                        { (m_Logger.runIndex, BuildRunSummaryText()) };
+                    m_UI.SetResultsPages(pages.ConvertAll(p => ExperimentLocalization.Format(
+                            LocKeys.ResultsRoundPage, "N", p.Item1.ToString(),
+                            "LIST", ExperimentConfig.RecognitionListIdForRun(p.Item1) ?? "-")),
+                        pages.ConvertAll(p => p.Item2));
+                }
+                else
+                {
+                    m_UI.SetResults(BuildRunSummaryText());
+                }
 
                 // Three distinct actions, each with its own meaning spelled out on the button.
                 m_UI.ShowRestartButton(true);
-                m_UI.ShowNewTrialButton(true);
+                // Hidden after the last recognition round: a run 4 has no list of its own.
+                m_UI.ShowNewTrialButton(!IsFinalProtocolRound());
                 m_UI.ShowEndButton(true);
             }
 
@@ -5486,8 +5627,11 @@ namespace IkeaEeg.Experiment
         /// run begins in the SAME experiment session with the next run_index and a new seed,
         /// starting directly at Area A. Familiarization is not repeated — the participant has
         /// already done it.
+        ///
+        /// Also the automatic step between recognition rounds (automaticRound), which differs
+        /// only in what it records as the reason and trigger.
         /// </summary>
-        public void StartNewRun()
+        public void StartNewRun(bool automaticRound = false)
         {
             if (m_Logger == null)
                 return;
@@ -5509,10 +5653,17 @@ namespace IkeaEeg.Experiment
                 return;
             }
 
+            if (IsFinalProtocolRound())
+            {
+                Debug.Log($"[IKEA_EEG] NEW TRIAL ignored: run {m_Logger.runIndex} completed the " +
+                          "3-round recognition protocol. No run was created.");
+                return;
+            }
+
             var previousRunId = m_Logger.sessionId;
             var previousRunIndex = m_Logger.runIndex;
 
-            FinalizeCurrentRun("new trial requested");
+            FinalizeCurrentRun(automaticRound ? "automatic next round" : "new trial requested");
 
             // New run, same sitting. The seed is new so the chair block differs from the
             // previous run; the experiment session id is preserved so the runs stay related.
@@ -5520,11 +5671,13 @@ namespace IkeaEeg.Experiment
             // The LANGUAGE is deliberately preserved too: it belongs to the experiment session,
             // and the participant has already answered that question. NEW TRIAL never returns
             // to the language screen.
-            RestartSession(ChooseSeed(), isReplay: false, reason: "new trial",
+            RestartSession(ChooseSeed(), isReplay: false,
+                reason: automaticRound ? "automatic next round" : "new trial",
                 returnToFamiliarization: false, returnToLanguageSelection: false,
                 beginEncodingDirectly: true);
 
             Log(EventTypes.NewRunStarted, e => e.notes =
+                $"start_trigger={(automaticRound ? "AUTOMATIC_NEXT_ROUND" : "NEW_TRIAL")}; " +
                 $"previous_run_session_id={previousRunId}; previous_run_index={previousRunIndex}; " +
                 $"new_run_index={m_Logger.runIndex}; " +
                 $"experiment_session_id={m_Logger.experimentSessionId}; " +

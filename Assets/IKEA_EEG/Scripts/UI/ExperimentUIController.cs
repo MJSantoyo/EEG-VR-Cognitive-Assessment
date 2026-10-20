@@ -328,9 +328,74 @@ namespace IkeaEeg.UI
         void RaiseReady() => readyPressed?.Invoke();
         void RaiseRestReady() => restReadyPressed?.Invoke();
         void RaiseExitToAreaC() => exitToAreaCPressed?.Invoke();
-        void RaiseRestart() => restartPressed?.Invoke();
+        void RaiseRestart() => OnRunActionPressed(PendingRunAction.Restart);
         void RaiseNewTrial() => newTrialPressed?.Invoke();
-        void RaiseEnd() => endPressed?.Invoke();
+        void RaiseEnd() => OnRunActionPressed(PendingRunAction.End);
+
+        // RESTART and END need a confirming second press. While one is pending, the OTHER button
+        // reads CANCEL and NEW TRIAL is hidden, so no new controls or scene objects are needed.
+        enum PendingRunAction { None, Restart, End }
+        PendingRunAction m_PendingRunAction;
+        string m_InstructionBeforeConfirm;
+        bool m_NewTrialVisibleBeforeConfirm;
+
+        public bool runActionConfirmPending => m_PendingRunAction != PendingRunAction.None;
+
+        void OnRunActionPressed(PendingRunAction action)
+        {
+            var pending = m_PendingRunAction;
+
+            if (pending == PendingRunAction.None)
+            {
+                ArmRunActionConfirm(action);
+                return;
+            }
+
+            CancelRunActionConfirm();
+
+            if (pending != action)
+                return;   // the other button was CANCEL
+
+            if (action == PendingRunAction.Restart)
+                restartPressed?.Invoke();
+            else
+                endPressed?.Invoke();
+        }
+
+        void ArmRunActionConfirm(PendingRunAction action)
+        {
+            var restart = action == PendingRunAction.Restart;
+
+            m_PendingRunAction = action;
+            m_InstructionBeforeConfirm = m_AreaCInstruction != null ? m_AreaCInstruction.text : null;
+            m_NewTrialVisibleBeforeConfirm = m_NewTrialButton != null && m_NewTrialButton.gameObject.activeSelf;
+
+            SetAreaCInstruction(ExperimentLocalization.Get(
+                restart ? LocKeys.ConfirmRestartPrompt : LocKeys.ConfirmEndPrompt));
+            SetButtonKey(m_RestartButton, restart ? LocKeys.ConfirmRestart : LocKeys.Cancel);
+            SetButtonKey(m_EndButton, restart ? LocKeys.Cancel : LocKeys.ConfirmEnd);
+            SetActive(m_NewTrialButton, false);
+        }
+
+        /// <summary>Drops a pending RESTART/END confirmation and restores the normal buttons.</summary>
+        public void CancelRunActionConfirm()
+        {
+            if (m_PendingRunAction == PendingRunAction.None)
+                return;
+
+            m_PendingRunAction = PendingRunAction.None;
+            SetAreaCInstruction(m_InstructionBeforeConfirm);
+            SetButtonKey(m_RestartButton, LocKeys.Restart, LocKeys.RestartSubtitle);
+            SetButtonKey(m_EndButton, LocKeys.End, LocKeys.EndSubtitle);
+            SetActive(m_NewTrialButton, m_NewTrialVisibleBeforeConfirm);
+        }
+
+        static void SetButtonKey(Button button, string key, string subtitleKey = "")
+        {
+            var label = button != null ? button.GetComponentInChildren<LocalizedText>(true) : null;
+            if (label != null)
+                label.SetKey(key, subtitleKey);
+        }
         void RaiseRecenter() => recenterPressed?.Invoke();
 
         /// <summary>
@@ -679,6 +744,7 @@ namespace IkeaEeg.UI
 
             SetActive(m_AreaAFixation, visible);
             SetActive(m_AreaCFixation, visible);
+            ApplyAreaCLayout();
         }
 
         /// <summary>
@@ -815,12 +881,200 @@ namespace IkeaEeg.UI
         // Area C
         // ---------------------------------------------------------------------------------
 
-        public void SetAreaCInstruction(string text) => SetText(m_AreaCInstruction, text);
+        public void SetAreaCInstruction(string text) { m_AreaCTransition = false; SetText(m_AreaCInstruction, text); ApplyAreaCLayout(); }
+
+        /// <summary>The between-round message: large, centred text in its own panel until the next instruction.</summary>
+        public void SetAreaCTransition(string text) { m_AreaCTransition = true; SetText(m_AreaCInstruction, text); ApplyAreaCLayout(); }
+
+        bool m_AreaCTransition;
+        public bool AreaCTransitionLayoutActive => m_AreaCTransition && !AreaCResultsLayoutActive;
         public void SetAreaCStatus(string text) => SetText(m_AreaCStatus, text);
-        public void SetResults(string text) => SetText(m_AreaCResults, text);
-        public void ShowRestartButton(bool visible) => SetActive(m_RestartButton, visible);
-        public void ShowNewTrialButton(bool visible) => SetActive(m_NewTrialButton, visible);
-        public void ShowEndButton(bool visible) => SetActive(m_EndButton, visible);
+        public void SetResults(string text) { HideResultsPager(); SetText(m_AreaCResults, text); ApplyAreaCLayout(); }
+
+        // ---- Final Results pager: one page per completed round, < ROUND N / LIST X > -------
+        // Only the results text and the status-line label change; RESTART / END / RECENTER are
+        // untouched. The two arrows are clones of Recenter made once per Area C load, so no scene
+        // object, raycaster or interactable is added to the authored rooms.
+        static readonly Vector2 ResultsPagerArrowSize = new Vector2(130f, 100f);
+        const float ResultsPagerArrowX = 700f;   // beside the label at the status line (+830)
+
+        List<string> m_ResultsPageLabels, m_ResultsPages;
+        int m_ResultsPage;
+        Button m_ResultsPrevButton, m_ResultsNextButton;
+
+        public int resultsPageCount => m_ResultsPages == null ? 0 : m_ResultsPages.Count;
+        public int resultsPageIndex => m_ResultsPage;
+        public Button resultsPrevButton => m_ResultsPrevButton;
+        public Button resultsNextButton => m_ResultsNextButton;
+
+        /// <summary>Shows paged Results, opening on the last page (the round just finished).</summary>
+        public void SetResultsPages(List<string> labels, List<string> pages)
+        {
+            m_ResultsPageLabels = labels;
+            m_ResultsPages = pages;
+            EnsureResultsPagerArrows();
+            ShowResultsPage(pages.Count - 1);
+        }
+
+        /// <summary>Clamped: no page below the first or above the last.</summary>
+        public void ShowResultsPage(int index)
+        {
+            if (resultsPageCount == 0) return;
+            m_ResultsPage = Mathf.Clamp(index, 0, m_ResultsPages.Count - 1);
+            SetText(m_AreaCResults, m_ResultsPages[m_ResultsPage]);
+            SetText(m_AreaCStatus, m_ResultsPageLabels[m_ResultsPage]);
+            ApplyAreaCLayout();
+
+            bool paged = m_ResultsPages.Count > 1;
+            SetActive(m_ResultsPrevButton, paged);
+            SetActive(m_ResultsNextButton, paged);
+            if (m_ResultsPrevButton != null) m_ResultsPrevButton.interactable = m_ResultsPage > 0;
+            if (m_ResultsNextButton != null) m_ResultsNextButton.interactable = m_ResultsPage < m_ResultsPages.Count - 1;
+        }
+
+        void HideResultsPager()
+        {
+            if (resultsPageCount > 0) SetText(m_AreaCStatus, string.Empty);
+            m_ResultsPages = null;
+            m_ResultsPageLabels = null;
+            SetActive(m_ResultsPrevButton, false);
+            SetActive(m_ResultsNextButton, false);
+        }
+
+        void EnsureResultsPagerArrows()
+        {
+            if (m_RecenterButtonC == null || m_AreaCPanel == null) return;
+            if (m_ResultsPrevButton == null || m_ResultsPrevButton.transform.parent != m_AreaCPanel.transform)
+                m_ResultsPrevButton = CreateResultsPagerArrow("Btn_ResultsPrev_C", "<", -ResultsPagerArrowX, -1);
+            if (m_ResultsNextButton == null || m_ResultsNextButton.transform.parent != m_AreaCPanel.transform)
+                m_ResultsNextButton = CreateResultsPagerArrow("Btn_ResultsNext_C", ">", ResultsPagerArrowX, +1);
+        }
+
+        Button CreateResultsPagerArrow(string name, string glyph, float x, int step)
+        {
+            var arrow = Instantiate(m_RecenterButtonC, m_AreaCPanel.transform);
+            arrow.name = name;
+            arrow.onClick.RemoveAllListeners();
+            arrow.onClick.AddListener(() => ShowResultsPage(m_ResultsPage + step));
+
+            // The glyph is language-neutral, so drop Recenter's localization binding.
+            foreach (var localized in arrow.GetComponentsInChildren<LocalizedText>(true))
+                DestroyImmediate(localized);
+
+            var label = arrow.GetComponentInChildren<TMP_Text>(true);
+            if (label != null)
+            {
+                label.enableAutoSizing = false;
+                label.fontSize = 64f;
+                label.richText = false;   // "<" / ">" are glyphs, not tags
+                label.fontStyle = FontStyles.Bold;
+                label.text = glyph;
+            }
+
+            var rt = (RectTransform)arrow.transform;
+            rt.anchoredPosition = new Vector2(x, 830f);
+            rt.sizeDelta = ResultsPagerArrowSize;
+            arrow.gameObject.SetActive(false);
+            return arrow;
+        }
+
+        // Results keep their original tall layout (canvas 1.55 m, instruction strip at +975);
+        // every other Area C screen uses the scene-authored, seated-eye-level instruction layout.
+        const float AreaCResultsCanvasY = 1.55f;
+        static readonly Vector2 AreaCResultsInstructionPos = new Vector2(0f, 975f);
+        static readonly Vector2 AreaCResultsInstructionSize = new Vector2(1520f, 170f);
+        const float AreaCResultsInstructionFont = 56f;
+        const float AreaCResultsInstructionFontMin = 36f;
+
+        // Outside Results the grey background shrinks to the content of the phase instead of the
+        // 2300 px Results wall: every non-Results screen (instruction, READY, recognition word,
+        // round message, fixation cross at -126, Recenter) shares one +510..-790 panel.
+        static readonly Vector2 AreaCParticipantPanelPos = new Vector2(0f, -140f);
+        static readonly Vector2 AreaCParticipantPanelSize = new Vector2(1600f, 1300f);
+        // Between-round message: the normal participant panel, with large text centred in it
+        // (box -440..+160) and Recenter (-720) below the text, as on every instruction screen.
+        static readonly Vector2 AreaCTransitionTextSize = new Vector2(1400f, 600f);
+        const float AreaCTransitionFont = 84f;
+        const float AreaCTransitionFontMin = 56f;
+        // Recenter sits inside the participant panel, below the SEEN/NOT SEEN boxes (world ~0.79 m).
+        static readonly Vector2 AreaCParticipantRecenterPos = new Vector2(0f, -720f);
+
+        GameObject m_AreaCLayoutPanel;
+        RectTransform m_AreaCBackground;
+        GameObject m_AreaCDividerSummary, m_AreaCDividerRunActions;
+        Vector2 m_AreaCAuthoredRecenterPos;
+        float m_AreaCAuthoredCanvasY;
+        Vector2 m_AreaCAuthoredInstructionPos, m_AreaCAuthoredInstructionSize;
+        float m_AreaCAuthoredInstructionFont, m_AreaCAuthoredInstructionFontMin, m_AreaCAuthoredInstructionFontMax;
+
+        public bool AreaCResultsLayoutActive =>
+            m_AreaCResults != null && !string.IsNullOrEmpty(m_AreaCResults.text);
+
+        void ApplyAreaCLayout()
+        {
+            if (m_AreaCPanel == null || m_AreaCInstruction == null) return;
+            var canvasRt = m_AreaCPanel.transform as RectTransform;
+            var textRt = m_AreaCInstruction.rectTransform;
+            if (canvasRt == null) return;
+
+            // Split scenes reload Area C each round, so re-cache whenever the bound panel changes.
+            if (m_AreaCLayoutPanel != m_AreaCPanel)
+            {
+                m_AreaCLayoutPanel = m_AreaCPanel;
+                m_AreaCTransition = false;   // a freshly loaded Area C never opens on the message
+                m_AreaCAuthoredCanvasY = canvasRt.anchoredPosition.y;
+                m_AreaCAuthoredInstructionPos = textRt.anchoredPosition;
+                m_AreaCAuthoredInstructionSize = textRt.sizeDelta;
+                m_AreaCAuthoredInstructionFont = m_AreaCInstruction.fontSize;
+                m_AreaCAuthoredInstructionFontMin = m_AreaCInstruction.fontSizeMin;
+                m_AreaCAuthoredInstructionFontMax = m_AreaCInstruction.fontSizeMax;
+                m_AreaCBackground = canvasRt.Find("Background") as RectTransform;
+                m_AreaCDividerSummary = canvasRt.Find("Divider_Summary")?.gameObject;
+                m_AreaCDividerRunActions = canvasRt.Find("Divider_RunActions")?.gameObject;
+                if (m_RecenterButtonC != null)
+                    m_AreaCAuthoredRecenterPos = ((RectTransform)m_RecenterButtonC.transform).anchoredPosition;
+            }
+
+            bool results = AreaCResultsLayoutActive;
+            canvasRt.anchoredPosition = new Vector2(canvasRt.anchoredPosition.x,
+                results ? AreaCResultsCanvasY : m_AreaCAuthoredCanvasY);
+            textRt.anchoredPosition = results ? AreaCResultsInstructionPos : m_AreaCAuthoredInstructionPos;
+            textRt.sizeDelta = results ? AreaCResultsInstructionSize : m_AreaCAuthoredInstructionSize;
+            m_AreaCInstruction.fontSizeMin = results ? AreaCResultsInstructionFontMin : m_AreaCAuthoredInstructionFontMin;
+            m_AreaCInstruction.fontSizeMax = results ? AreaCResultsInstructionFont : m_AreaCAuthoredInstructionFontMax;
+            m_AreaCInstruction.fontSize = results ? AreaCResultsInstructionFont : m_AreaCAuthoredInstructionFont;
+
+            bool transition = AreaCTransitionLayoutActive;
+            if (transition)
+            {
+                textRt.anchoredPosition = AreaCParticipantPanelPos;
+                textRt.sizeDelta = AreaCTransitionTextSize;
+                m_AreaCInstruction.fontSizeMin = AreaCTransitionFontMin;
+                m_AreaCInstruction.fontSizeMax = AreaCTransitionFont;
+                m_AreaCInstruction.fontSize = AreaCTransitionFont;
+            }
+
+            if (m_AreaCBackground != null)
+            {
+                // Results: the authored full-canvas stretch. Otherwise the standard centred panel.
+                var anchor = results ? Vector2.zero : new Vector2(0.5f, 0.5f);
+                m_AreaCBackground.anchorMin = anchor;
+                m_AreaCBackground.anchorMax = results ? Vector2.one : anchor;
+                m_AreaCBackground.anchoredPosition = results ? Vector2.zero : AreaCParticipantPanelPos;
+                m_AreaCBackground.sizeDelta = results ? Vector2.zero : AreaCParticipantPanelSize;
+            }
+
+            SetActive(m_AreaCDividerSummary, results);
+            SetActive(m_AreaCDividerRunActions, results);
+            MoveRecenter(m_RecenterButtonC, results ? m_AreaCAuthoredRecenterPos : AreaCParticipantRecenterPos);
+        }
+
+        /// <summary>Height in canvas px of the Area C grey background as currently laid out.</summary>
+        public float AreaCBackgroundHeight => m_AreaCBackground == null ? 0f : m_AreaCBackground.rect.height;
+        // Any change the manager makes to the run buttons supersedes a pending confirmation.
+        public void ShowRestartButton(bool visible) { CancelRunActionConfirm(); SetActive(m_RestartButton, visible); }
+        public void ShowNewTrialButton(bool visible) { CancelRunActionConfirm(); SetActive(m_NewTrialButton, visible); }
+        public void ShowEndButton(bool visible) { CancelRunActionConfirm(); SetActive(m_EndButton, visible); }
 
         // ---------------------------------------------------------------------------------
         // Reset

@@ -60,6 +60,10 @@
 
         /// <summary>Shown during the visual encoding sequence itself. Replaces "Listen carefully."</summary>
         public const string RecognitionEncodingWatch = "RECOGNITION_ENCODING_WATCH";
+        // Round 1 only: appended to RecognitionEncodingInstructions as its own paragraph.
+        public const string RecognitionEncodingRepeatNote = "RECOGNITION_ENCODING_REPEAT_NOTE";
+        // Final Results pager label. {N} round, {LIST} recognition list id.
+        public const string ResultsRoundPage = "RESULTS_ROUND_PAGE";
 
         /// <summary>
         /// Area C instructions for the RECOGNITION protocol, shown before delayed recognition.
@@ -209,6 +213,13 @@
         public const string RestartSubtitle = "RESTART_SUBTITLE";
         public const string End = "END";
         public const string EndSubtitle = "END_SUBTITLE";
+        public const string ConfirmRestartPrompt = "CONFIRM_RESTART_PROMPT";
+        public const string ConfirmRestart = "CONFIRM_RESTART";
+        public const string ConfirmEndPrompt = "CONFIRM_END_PROMPT";
+        public const string ConfirmEnd = "CONFIRM_END";
+        public const string Cancel = "CANCEL";
+        public const string RoundOneComplete = "ROUND_ONE_COMPLETE";
+        public const string RoundTwoComplete = "ROUND_TWO_COMPLETE";
         public const string SessionComplete = "SESSION_COMPLETE";
         public const string SessionCompleteThanks = "SESSION_COMPLETE_THANKS";
 
