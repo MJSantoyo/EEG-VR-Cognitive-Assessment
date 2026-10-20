@@ -24,7 +24,7 @@ namespace IkeaEeg.EditorTools
     /// be an interior. That single omission did more to make the room feel unfinished than any
     /// missing prop, and closing it costs three renderers.
     ///
-    /// WHAT IT MUST NEVER TOUCH. Spawn_C, UI_C_Canvas, the recognition anchor at (0, 0.72,
+    /// WHAT IT MUST NEVER TOUCH. Spawn_C, UI_C_Canvas, the recognition anchor at (0, 0.92,
     /// 1.18) where the shared response panel parks, and every collider the shell already has.
     /// Everything created here hangs under one root and carries no collider, no rigidbody and
     /// no light.

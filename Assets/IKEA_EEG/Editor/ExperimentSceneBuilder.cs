@@ -193,7 +193,7 @@ namespace IkeaEeg.EditorTools
 
                 var anchorC = new GameObject("Anchor_Recognition_AreaC");
                 anchorC.transform.SetParent(environment.transform, false);
-                anchorC.transform.position = k_AreaCOrigin + new Vector3(0f, 0.72f, 1.18f);
+                anchorC.transform.position = k_AreaCOrigin + new Vector3(0f, 0.92f, 1.18f);
 
                 var recognitionPanel = BuildRecognitionPanel(environment.transform, mats,
                     anchorA.transform, anchorC.transform);
