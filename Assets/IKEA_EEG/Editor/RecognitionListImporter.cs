@@ -235,7 +235,8 @@ namespace IkeaEeg.EditorTools
                     role = r[cRole].Trim(),
                     stableId = r[cId].Trim(),
                     en = r[cEn].Trim(),
-                    es = r[cEs].Trim(),
+                    // Spanish stimuli are displayed in capitals; es-ES culture keeps á→Á, ñ→Ñ.
+                    es = r[cEs].Trim().ToUpper(System.Globalization.CultureInfo.GetCultureInfo("es-ES")),
                     ja = r[cJa].Trim(),
                     reviewStatus = r[cStatus].Trim(),
                 });
