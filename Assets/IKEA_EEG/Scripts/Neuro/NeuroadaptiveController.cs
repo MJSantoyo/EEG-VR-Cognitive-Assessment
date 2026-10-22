@@ -25,9 +25,15 @@ namespace IkeaEeg.Neuro
         /// <summary>The event's lsl_timestamp; NaN when liblsl was absent and the column was empty.</summary>
         public readonly double lslTimestamp;
 
+        /// <summary>
+        /// Meaningful on PRE_TASK_REST_END only: how the rest ended, read from the event's notes.
+        /// Defaults to Unconfirmed so an END that states nothing is never taken as completed.
+        /// </summary>
+        public readonly RestCompletion restCompletion;
+
         public NeuroPhaseEvent(string eventType, string experimentSessionId, int runIndex,
             int chairTrialIndex, int chairTrialCount, NeuroDifficulty difficulty,
-            double lslTimestamp)
+            double lslTimestamp, RestCompletion restCompletion = RestCompletion.Unconfirmed)
         {
             this.eventType = eventType ?? string.Empty;
             this.experimentSessionId = experimentSessionId ?? string.Empty;
@@ -36,12 +42,14 @@ namespace IkeaEeg.Neuro
             this.chairTrialCount = chairTrialCount;
             this.difficulty = difficulty;
             this.lslTimestamp = lslTimestamp;
+            this.restCompletion = restCompletion;
         }
 
         public static NeuroPhaseEvent From(ExperimentEvent evt) =>
             new NeuroPhaseEvent(evt.eventType, evt.experimentSessionId, ParseInt(evt.runIndex),
                 ParseInt(evt.chairTrialIndex), ParseInt(evt.chairTrialCount),
-                NeuroDifficultyLabels.Parse(evt.difficulty), ParseDouble(evt.lslTimestamp));
+                NeuroDifficultyLabels.Parse(evt.difficulty), ParseDouble(evt.lslTimestamp),
+                RestCompletionLabels.FromEndNotes(evt.notes));
 
         static int ParseInt(string s) =>
             int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) ? v : 0;
@@ -84,7 +92,7 @@ namespace IkeaEeg.Neuro
     public sealed class NeuroadaptiveController
     {
         /// <summary>Bump on any change to how rows are produced. Written into every row.</summary>
-        public const string Version = "neuroadaptive-0.1.1-shadow";
+        public const string Version = "neuroadaptive-0.1.2-shadow";
 
         readonly BaselineAggregator m_Baseline = new BaselineAggregator();
         readonly TrialFeatureAggregator m_Trial = new TrialFeatureAggregator();
@@ -284,7 +292,7 @@ namespace IkeaEeg.Neuro
         {
             FinaliseOutstanding("PRE_TASK_REST started");
 
-            if (m_Baseline.hasCompletedSummary)
+            if (m_Baseline.hasAcceptedSummary)
             {
                 // The baseline belongs to the session and is already taken. This rest is
                 // recorded, not used.
@@ -308,13 +316,14 @@ namespace IkeaEeg.Neuro
                     intervalStartLsl = m_RepeatRestStart,
                     intervalEndLsl = e.lslTimestamp,
                     baseline = m_Baseline.summary,
-                    notes = "a completed session baseline already exists; this rest was not used",
+                    notes = "an accepted session baseline already exists; this rest was not used; " +
+                            $"rest_completion={RestCompletionLabels.ToLabel(e.restCompletion)}",
                 });
 
                 return;
             }
 
-            m_Baseline.End(e.lslTimestamp);
+            m_Baseline.End(e.lslTimestamp, e.restCompletion);
             FinaliseSettled();
         }
 
@@ -322,6 +331,8 @@ namespace IkeaEeg.Neuro
         {
             var result = m_Baseline.Finalise();
 
+            // BASELINE = the END confirmed completion (as before); BASELINE_INCOMPLETE = it did
+            // not. Acceptance is session_baseline_collected, with the reason in notes.
             Emit(new NeuroTrialRecord
             {
                 recordType = result.restCompleted
@@ -331,9 +342,10 @@ namespace IkeaEeg.Neuro
                 intervalEndLsl = result.intervalEndLsl,
                 windows = result.windows,
                 baseline = m_Baseline.summary,
-                notes = (result.restCompleted
+                notes = $"rest_completion={RestCompletionLabels.ToLabel(result.restCompletion)}; " +
+                        (result.collected
                             ? "session baseline summary; validity NOT assessed (no approved criterion)"
-                            : "PRE_TASK_REST_END never observed; not used as the session baseline") +
+                            : $"baseline_rejected={result.rejectionReason}; not used as the session baseline") +
                         (string.IsNullOrEmpty(forcedBy) ? string.Empty : $"; finalised by {forcedBy}") +
                         (double.IsNaN(result.intervalStartLsl) ? "; no lsl_timestamp on events" : string.Empty),
             });

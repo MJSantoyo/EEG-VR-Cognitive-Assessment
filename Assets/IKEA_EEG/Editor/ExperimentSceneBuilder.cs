@@ -1827,6 +1827,8 @@ namespace IkeaEeg.EditorTools
             eegGo.transform.SetParent(expRoot.transform);
             var eegReceiver = eegGo.AddComponent<AuraLslReceiver>();
             eegReceiver.Configure(resolveTimeoutSeconds: 3f, receiveContinuously: true);
+            // Lab computer A. Another machine on the LAN also publishes "AURA" (2026-10-22).
+            eegReceiver.ConfigureSourceHost("laptop-san");
             eegReceiver.ConfigureBuffer(bufferSamples: true, bufferSeconds: 60f);
             var eegRecorder = eegGo.AddComponent<EegRunRecorder>();
             eegRecorder.Configure(connectOnStart: true, recordToDisk: true, fileName: "raw_eeg.csv");

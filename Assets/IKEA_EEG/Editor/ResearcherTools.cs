@@ -193,6 +193,35 @@ namespace IkeaEeg.EditorTools
         /// <summary>How many samples the diagnostic prints. Never the whole stream.</summary>
         const int k_AuraDiagnosticSamples = 5;
 
+        /// <summary>
+        /// The preferred AURA source host exactly as the runtime receiver holds it, so this check
+        /// applies the same preference as Play Mode instead of a second copy of the setting.
+        /// An open scene's receiver wins (Play Mode, or Bootstrap open); otherwise the value
+        /// serialized in the Bootstrap scene file is read without opening that scene.
+        /// </summary>
+        public static string RuntimeSourceHostname(out string from)
+        {
+            var live = Object.FindAnyObjectByType<AuraLslReceiver>();
+            if (live != null)
+            {
+                from = $"receiver in open scene '{live.gameObject.scene.name}'";
+                return live.preferredSourceHostname;
+            }
+
+            var path = ExperimentSceneBuilder.BootstrapScenePath;
+            from = path;
+
+            if (!System.IO.File.Exists(path))
+                return string.Empty;
+
+            // Bootstrap holds exactly one AuraLslReceiver (the scene validator enforces it).
+            var m = System.Text.RegularExpressions.Regex.Match(System.IO.File.ReadAllText(path),
+                @"^\s*m_PreferredSourceHostname:[ \t]*(.*?)\s*$",
+                System.Text.RegularExpressions.RegexOptions.Multiline);
+
+            return m.Success ? m.Groups[1].Value.Trim('\'', '"') : string.Empty;
+        }
+
         public static string AuraStreamReport()
         {
             var sb = new StringBuilder();
@@ -221,12 +250,29 @@ namespace IkeaEeg.EditorTools
                 var receiver = host.AddComponent<AuraLslReceiver>();
                 receiver.Configure(resolveTimeoutSeconds: 3f, receiveContinuously: false);
 
-                if (!receiver.Connect(out var problem))
+                var requestedHost = RuntimeSourceHostname(out var hostFrom);
+                receiver.ConfigureSourceHost(requestedHost);
+                sb.AppendLine($"  requested host: " +
+                              (string.IsNullOrEmpty(requestedHost) ? "(none configured)" : requestedHost) +
+                              $"  (from {hostFrom})");
+
+                var connected = receiver.Connect(out var problem);
+
+                sb.AppendLine($"  candidates named '{AuraLslReceiver.StreamName}': {receiver.lastCandidates.Length}");
+                foreach (var candidate in receiver.lastCandidates)
+                    sb.AppendLine($"    {candidate}");
+
+                if (!connected)
                 {
                     sb.AppendLine($"  FAIL — {problem}");
                     sb.AppendLine();
                     sb.AppendLine($"  Looked for a stream named exactly '{AuraLslReceiver.StreamName}'.");
                     sb.AppendLine();
+
+                    // Same-named streams WERE found; the selection rule refused them. Listing the
+                    // whole network below would only repeat them.
+                    if (receiver.lastCandidates.Length > 0)
+                        return sb.ToString();
 
                     // What IS visible. "AURA is off", "AURA publishes under another name" and
                     // "this machine sees no LSL traffic at all" need completely different
@@ -274,6 +320,8 @@ namespace IkeaEeg.EditorTools
                 sb.AppendLine($"  format:        {meta.channelFormat}");
                 sb.AppendLine($"  source id:     " +
                               (string.IsNullOrEmpty(meta.sourceId) ? "(none published)" : meta.sourceId));
+                sb.AppendLine($"  hostname:      {meta.hostname}");
+                sb.AppendLine($"  uid:           {meta.uid}");
                 sb.AppendLine("  =================================");
                 sb.AppendLine();
                 sb.AppendLine($"  Reading as {LslBinding.ChannelElementType(meta.channelFormatValue)?.Name}" +
@@ -299,12 +347,15 @@ namespace IkeaEeg.EditorTools
                     samples.Add(sample);
                 }
 
+                sb.AppendLine($"  samples received: {samples.Count} of {k_AuraDiagnosticSamples} requested");
+
                 if (samples.Count == 0)
                 {
                     sb.AppendLine("  FAIL — AURA_FOUND_BUT_NO_SAMPLES: the stream was resolved and " +
-                                  "an inlet opened, but no sample arrived.");
-                    sb.AppendLine("  The outlet exists but is not currently sending — check that " +
-                                  "the headset is connected and streaming in AURA.");
+                                  "an inlet opened, but no samples were received (no se " +
+                                  "recibieron muestras) within 1 s per pull.");
+                    sb.AppendLine("  The cause is not established by this check: the sender, the " +
+                                  "network path to that host and the firewall are all possible.");
                     return sb.ToString();
                 }
 

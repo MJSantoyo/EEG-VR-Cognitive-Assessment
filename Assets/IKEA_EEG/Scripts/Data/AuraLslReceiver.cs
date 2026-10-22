@@ -134,6 +134,12 @@ namespace IkeaEeg.Data
         [Range(0.5f, 15f)]
         [SerializeField] float m_ResolveTimeoutSeconds = 3f;
 
+        [Tooltip("Hostname of the machine whose AURA stream to use (case-insensitive). Several " +
+                 "machines on the LAN may publish a stream named AURA; if this host is not among " +
+                 "them, connecting FAILS rather than falling back to another one. Empty: accept " +
+                 "only a single, unambiguous AURA stream.")]
+        [SerializeField] string m_PreferredSourceHostname = "";
+
         [Header("Reception")]
         [Tooltip("Poll for samples every frame once connected. Non-blocking: each poll uses a " +
                  "zero timeout, so a quiet stream costs a frame nothing.")]
@@ -198,6 +204,12 @@ namespace IkeaEeg.Data
 
         /// <summary>Human-readable reason for the current state.</summary>
         public string detail { get; private set; } = "not started";
+
+        public string preferredSourceHostname => m_PreferredSourceHostname;
+
+        /// <summary>Every stream named AURA seen by the last Connect, selected or not. Diagnostics.</summary>
+        public LslBinding.StreamMetadata[] lastCandidates { get; private set; } =
+            Array.Empty<LslBinding.StreamMetadata>();
 
         /// <summary>
         /// The offset currently being added to every remote timestamp, in seconds.
@@ -278,20 +290,41 @@ namespace IkeaEeg.Data
                 return false;
             }
 
-            // FINITE timeout. This call does block for up to that long, which is acceptable for
-            // a deliberate connect; it is never FOREVER.
-            m_StreamInfo = LslBinding.ResolveStreamInfo(StreamName, m_ResolveTimeoutSeconds,
-                out var resolveDetail);
+            // FINITE timeout, and now always the FULL timeout: every AURA outlet that answers is
+            // collected, because the first responder may be another machine's AURA.
+            var candidates = LslBinding.ResolveStreamCandidates(StreamName,
+                m_ResolveTimeoutSeconds, out var resolveDetail);
 
-            if (m_StreamInfo == null)
+            var metas = new LslBinding.StreamMetadata[candidates.Length];
+            var readOk = new bool[candidates.Length];
+            var readDetails = new string[candidates.Length];
+
+            for (var i = 0; i < candidates.Length; i++)
+                readOk[i] = LslBinding.TryReadStreamInfo(candidates[i], out metas[i], out readDetails[i]);
+
+            lastCandidates = metas;
+
+            var chosen = SelectCandidate(metas, m_PreferredSourceHostname, out var selectProblem);
+
+            for (var i = 0; i < candidates.Length; i++)
+            {
+                if (i != chosen)
+                    LslBinding.Dispose(candidates[i]);
+            }
+
+            if (chosen < 0)
             {
                 state = AuraReceiverState.NotFound;
-                detail = resolveDetail;
-                problem = $"AURA_NOT_FOUND — {resolveDetail}";
+                detail = candidates.Length == 0 ? resolveDetail : selectProblem;
+                problem = candidates.Length == 0 ? $"AURA_NOT_FOUND — {resolveDetail}" : selectProblem;
                 return false;
             }
 
-            if (!LslBinding.TryReadStreamInfo(m_StreamInfo, out var meta, out var metaDetail))
+            m_StreamInfo = candidates[chosen];
+            var meta = metas[chosen];
+            var metaDetail = readDetails[chosen];
+
+            if (!readOk[chosen])
             {
                 state = AuraReceiverState.InletFailed;
                 detail = metaDetail;
@@ -656,6 +689,80 @@ namespace IkeaEeg.Data
         {
             m_ResolveTimeoutSeconds = resolveTimeoutSeconds;
             m_ReceiveContinuously = receiveContinuously;
+        }
+
+        /// <summary>Editor/builder wiring for which machine's AURA stream to accept.</summary>
+        public void ConfigureSourceHost(string hostname)
+        {
+            m_PreferredSourceHostname = hostname ?? string.Empty;
+        }
+
+        /// <summary>
+        /// THE selection rule, shared by Play Mode and every Editor check that calls Connect.
+        /// Returns the index of the stream to use, or -1 with a coded reason. Never falls back
+        /// to another host: a wrong-but-silent stream is worse than no stream.
+        /// </summary>
+        public static int SelectCandidate(IList<LslBinding.StreamMetadata> candidates,
+            string preferredHostname, out string problem)
+        {
+            var host = (preferredHostname ?? string.Empty).Trim();
+
+            if (candidates.Count == 0)
+            {
+                problem = $"AURA_NOT_FOUND — no stream named '{StreamName}' resolved";
+                return -1;
+            }
+
+            if (host.Length == 0)
+            {
+                if (candidates.Count == 1)
+                {
+                    problem = string.Empty;
+                    return 0;
+                }
+
+                problem = $"AURA_AMBIGUOUS — {candidates.Count} streams named '{StreamName}' and " +
+                          $"no preferred source hostname is configured: {DescribeCandidates(candidates)}";
+                return -1;
+            }
+
+            var match = -1;
+            var matches = 0;
+
+            for (var i = 0; i < candidates.Count; i++)
+            {
+                if (string.Equals((candidates[i].hostname ?? string.Empty).Trim(), host,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    match = i;
+                    matches++;
+                }
+            }
+
+            if (matches == 1)
+            {
+                problem = string.Empty;
+                return match;
+            }
+
+            problem = matches == 0
+                ? $"AURA_HOST_NOT_FOUND — no stream named '{StreamName}' from host '{host}'; " +
+                  $"not falling back to another host. Seen: {DescribeCandidates(candidates)}"
+                : $"AURA_AMBIGUOUS — {matches} streams named '{StreamName}' from host '{host}': " +
+                  DescribeCandidates(candidates);
+            return -1;
+        }
+
+        static string DescribeCandidates(IList<LslBinding.StreamMetadata> candidates)
+        {
+            var parts = new string[candidates.Count];
+            for (var i = 0; i < candidates.Count; i++)
+            {
+                var c = candidates[i];
+                parts[i] = $"[host={c.hostname}, source_id={c.sourceId}, uid={c.uid}]";
+            }
+
+            return string.Join(" ", parts);
         }
 
         /// <summary>Editor/builder wiring for the rolling buffer.</summary>

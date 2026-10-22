@@ -4956,6 +4956,25 @@ namespace IkeaEeg.Experiment
         }
 
         /// <summary>
+        /// The notes of a rest END marker. Static so the self test feeds the neuro layer the
+        /// exact text logged here: its completed/developer_skipped tokens decide whether the
+        /// rest can become the session baseline.
+        /// </summary>
+        public static string FormatRestEndNotes(string label, float durationSeconds,
+            double achieved, bool aborted, bool devSkipped) =>
+            "rest_block=" + label + "; condition=EYES_OPEN_FIXATION; " +
+            "planned_duration_s=" +
+            durationSeconds.ToString("F1", CultureInfo.InvariantCulture) + "; " +
+            "achieved_duration_s=" +
+            achieved.ToString("F3", CultureInfo.InvariantCulture) + "; " +
+            "completed=" + (aborted || devSkipped ? "FALSE" : "TRUE") + "; " +
+            "developer_skipped=" + (devSkipped ? "TRUE" : "FALSE") + "; " +
+            (devSkipped
+                ? "run_is_not_a_valid_participant_protocol_run=TRUE; "
+                : string.Empty) +
+            "task=NONE; response=NONE; narration=NONE";
+
+        /// <summary>
         /// ONE eyes-open resting EEG acquisition block, used by both the pre- and the post-task
         /// recordings.
         ///
@@ -5134,17 +5153,7 @@ namespace IkeaEeg.Experiment
             Log(endEvent, e =>
             {
                 e.protocolMode = ProtocolModeTag();
-                e.notes = "rest_block=" + label + "; condition=EYES_OPEN_FIXATION; " +
-                          "planned_duration_s=" +
-                          durationSeconds.ToString("F1", CultureInfo.InvariantCulture) + "; " +
-                          "achieved_duration_s=" +
-                          achieved.ToString("F3", CultureInfo.InvariantCulture) + "; " +
-                          "completed=" + (aborted || devSkipped ? "FALSE" : "TRUE") + "; " +
-                          "developer_skipped=" + (devSkipped ? "TRUE" : "FALSE") + "; " +
-                          (devSkipped
-                              ? "run_is_not_a_valid_participant_protocol_run=TRUE; "
-                              : string.Empty) +
-                          "task=NONE; response=NONE; narration=NONE";
+                e.notes = FormatRestEndNotes(label, durationSeconds, achieved, aborted, devSkipped);
             });
 
             // ---- Hand the room back --------------------------------------------------------

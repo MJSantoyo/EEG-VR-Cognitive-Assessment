@@ -617,6 +617,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IkeaEeg.Data.AuraLslReceiver
   m_ResolveTimeoutSeconds: 3
+  m_PreferredSourceHostname: laptop-san
   m_ReceiveContinuously: 1
   m_MaxSamplesPerFrame: 64
   m_RecentSampleCapacity: 64

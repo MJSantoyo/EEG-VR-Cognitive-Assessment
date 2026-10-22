@@ -495,6 +495,12 @@ namespace IkeaEeg.Data
 
             public string sourceId;
 
+            /// <summary>The machine publishing the outlet, as liblsl reports it.</summary>
+            public string hostname;
+
+            /// <summary>Per-outlet instance id; changes whenever the outlet is re-created.</summary>
+            public string uid;
+
             /// <summary>True when the stream reports a regular sampling rate.</summary>
             public bool hasRegularRate => nominalSrate > 0d;
 
@@ -506,7 +512,9 @@ namespace IkeaEeg.Data
 
                 return $"name={name}; type={type}; channels={channelCount}; rate={rate}; " +
                        $"format={channelFormat}; source_id=" +
-                       $"{(string.IsNullOrEmpty(sourceId) ? "(none)" : sourceId)}";
+                       $"{(string.IsNullOrEmpty(sourceId) ? "(none)" : sourceId)}; " +
+                       $"host={(string.IsNullOrEmpty(hostname) ? "(none)" : hostname)}; " +
+                       $"uid={(string.IsNullOrEmpty(uid) ? "(none)" : uid)}";
             }
         }
 
@@ -536,6 +544,9 @@ namespace IkeaEeg.Data
                 metadata.type = InvokeGetter(streamInfo, type, "type") as string ?? string.Empty;
                 metadata.sourceId =
                     InvokeGetter(streamInfo, type, "source_id") as string ?? string.Empty;
+                metadata.hostname =
+                    InvokeGetter(streamInfo, type, "hostname") as string ?? string.Empty;
+                metadata.uid = InvokeGetter(streamInfo, type, "uid") as string ?? string.Empty;
 
                 var channels = InvokeGetter(streamInfo, type, "channel_count");
                 var rate = InvokeGetter(streamInfo, type, "nominal_srate");
@@ -967,14 +978,49 @@ namespace IkeaEeg.Data
             }
         }
 
-        /// <summary>Resolves the first stream with the given name, or null on timeout.</summary>
+        /// <summary>
+        /// Resolves the first stream with the given name, or null on timeout. Returns as soon as
+        /// ONE answers, so with several same-named outlets on the network which one is
+        /// arbitrary — use <see cref="ResolveStreamCandidates"/> when that matters.
+        /// </summary>
         public static object ResolveStreamInfo(string streamName, double timeoutSeconds,
+            out string detail)
+        {
+            var results = ResolveByName(streamName, timeoutSeconds, 1, out detail);
+
+            if (results.Length == 0)
+                return null;
+
+            for (var i = 1; i < results.Length; i++)
+                Dispose(results[i]);
+
+            return results[0];
+        }
+
+        /// <summary>
+        /// The installed liblsl's lsl_resolve_byprop asks for at least this many matches; the
+        /// managed wrapper's buffer holds 1024, so asking for that many means "everything that
+        /// answers before the timeout". minimum=1 returns on the FIRST responder instead.
+        /// </summary>
+        const int k_ResolveAllCandidates = 1024;
+
+        /// <summary>
+        /// EVERY stream with the given name that answers within the timeout. Always waits the
+        /// full (finite) timeout. The caller owns, and must dispose, every element returned.
+        /// </summary>
+        public static object[] ResolveStreamCandidates(string streamName, double timeoutSeconds,
+            out string detail)
+        {
+            return ResolveByName(streamName, timeoutSeconds, k_ResolveAllCandidates, out detail);
+        }
+
+        static object[] ResolveByName(string streamName, double timeoutSeconds, int minimum,
             out string detail)
         {
             if (!CanReceiveStreams)
             {
                 detail = "inlet API not bound";
-                return null;
+                return Array.Empty<object>();
             }
 
             try
@@ -987,7 +1033,7 @@ namespace IkeaEeg.Data
                 for (var i = 2; i < parameters.Length; i++)
                 {
                     if (parameters[i].ParameterType == typeof(int))
-                        args[i] = 1;
+                        args[i] = minimum;
                     else if (parameters[i].ParameterType == typeof(double))
                         args[i] = timeoutSeconds;
                     else
@@ -997,21 +1043,21 @@ namespace IkeaEeg.Data
                 if (!(s_ResolveStream.Invoke(null, args) is Array results) || results.Length == 0)
                 {
                     detail = $"no stream named '{streamName}' resolved within {timeoutSeconds:F1} s";
-                    return null;
+                    return Array.Empty<object>();
                 }
 
                 detail = $"resolved {results.Length} stream(s) named '{streamName}'";
-                return results.GetValue(0);
+                return results.Cast<object>().ToArray();
             }
             catch (TargetInvocationException e) when (e.InnerException != null)
             {
                 detail = $"{e.InnerException.GetType().Name}: {e.InnerException.Message}";
-                return null;
+                return Array.Empty<object>();
             }
             catch (Exception e)
             {
                 detail = $"{e.GetType().Name}: {e.Message}";
-                return null;
+                return Array.Empty<object>();
             }
         }
 

@@ -628,6 +628,7 @@ namespace IkeaEeg.EditorTools
             RunSection("RESTART / STATE RESET", CheckResetLogic);
             RunSection("LSL BINDING COMPATIBILITY", CheckLslBindingCompatibility);
             RunSection("LSL MARKER TRANSPORT", CheckLslTransport);
+            RunSection("AURA STREAM SELECTION (SOURCE HOST)", CheckAuraStreamSelection);
             RunSection("AURA RAW EEG RECEIVER", CheckAuraReceiver);
             RunSection("RAW EEG RING BUFFER + WINDOWS", CheckRawEegBuffer);
             RunSection("AURA MONTAGE + ACQUISITION PROVENANCE", CheckAuraMontage);
@@ -2018,6 +2019,64 @@ namespace IkeaEeg.EditorTools
         }
 
         /// <summary>
+        /// The candidate-selection rule alone, on metadata only — no network, no outlet. The
+        /// identities mirror the two AURA publishers observed on 2026-10-22.
+        /// </summary>
+        static void CheckAuraStreamSelection()
+        {
+            LslBinding.StreamMetadata Aura(string host, string sourceId, string uid) =>
+                new LslBinding.StreamMetadata
+                {
+                    name = AuraLslReceiver.StreamName, hostname = host, sourceId = sourceId, uid = uid,
+                    channelCount = 8, nominalSrate = 250d, channelFormat = "cf_float32",
+                };
+
+            var msi = Aura("MSI", "AuraLSL-20261022-13;24;28", "msi-uid");
+            var san = Aura("laptop-san", "AuraLSL-20261022-16;32;55",
+                "f44ee346-25af-4b5d-8c85-7bb1191d67d4");
+            var san2 = Aura("LAPTOP-SAN", "AuraLSL-20261022-17;00;00", "second-uid");
+
+            var i = AuraLslReceiver.SelectCandidate(new[] { msi, san }, "laptop-san", out var p);
+            Assert(i == 1, $"MSI first, laptop-san second, laptop-san preferred -> laptop-san ({i}; {p})");
+
+            i = AuraLslReceiver.SelectCandidate(new[] { msi }, "laptop-san", out p);
+            Assert(i == -1 && p.StartsWith("AURA_HOST_NOT_FOUND") && p.Contains("MSI"),
+                $"only MSI visible, laptop-san preferred -> fails, no fallback, lists MSI ({p})");
+
+            i = AuraLslReceiver.SelectCandidate(new[] { msi, san }, "", out p);
+            Assert(i == -1 && p.StartsWith("AURA_AMBIGUOUS") && p.Contains("MSI") &&
+                   p.Contains("laptop-san"),
+                $"no preference, two candidates -> AURA_AMBIGUOUS listing both ({p})");
+
+            i = AuraLslReceiver.SelectCandidate(new[] { san }, "  ", out p);
+            Assert(i == 0 && p.Length == 0, $"no preference, one candidate -> selected ({i}; {p})");
+
+            i = AuraLslReceiver.SelectCandidate(new[] { msi, san, san2 }, "laptop-san", out p);
+            Assert(i == -1 && p.StartsWith("AURA_AMBIGUOUS") &&
+                   p.Contains("f44ee346-25af-4b5d-8c85-7bb1191d67d4") && p.Contains("second-uid"),
+                $"two candidates from the preferred host (case-insensitive) -> ambiguous, both listed ({p})");
+
+            i = AuraLslReceiver.SelectCandidate(new LslBinding.StreamMetadata[0], "laptop-san", out p);
+            Assert(i == -1 && p.StartsWith("AURA_NOT_FOUND"), $"no candidates -> explicit error ({p})");
+
+            // Discovery must not stop at the first responder: that was the bug.
+            var binding = File.ReadAllText("Assets/IKEA_EEG/Scripts/Data/LslBinding.cs");
+            Assert(binding.Contains("ResolveByName(streamName, timeoutSeconds, k_ResolveAllCandidates"),
+                "candidate discovery asks liblsl for every match within the timeout, not minimum=1");
+        }
+
+        /// <summary>Batch entry for the selection section alone: no scene, no LSL outlet.</summary>
+        public static void RunAuraSelectionFromCommandLine()
+        {
+            s_Failures = 0;
+            s_Log = new StringBuilder();
+            RunSection("AURA STREAM SELECTION (SOURCE HOST)", CheckAuraStreamSelection);
+            Debug.Log(s_Log.ToString());
+            Debug.Log($"[IKEA_EEG] AURA selection tests: {(s_Failures == 0 ? "PASS" : $"{s_Failures} FAILED")}");
+            EditorApplication.Exit(s_Failures == 0 ? 0 : 1);
+        }
+
+        /// <summary>
         /// The raw-EEG receiver, exercised END TO END against a real LSL stream.
         ///
         /// WHY A SYNTHETIC STREAM: the receiver must be testable whether or not an amplifier
@@ -2167,7 +2226,9 @@ namespace IkeaEeg.EditorTools
                         $"with no AURA on the network the receiver reports NotFound " +
                         $"({receiver.state})");
 
-                    Assert(problem.StartsWith("AURA_NOT_FOUND"),
+                    // AMBIGUOUS when several AURA outlets are on the LAN and this throwaway
+                    // receiver has no preferred host.
+                    Assert(problem.StartsWith("AURA_NOT_FOUND") || problem.StartsWith("AURA_AMBIGUOUS"),
                         $"the failure is the documented reason code ({problem})");
 
                     Assert(receiver.samplesReceived == 0,
@@ -2198,6 +2259,10 @@ namespace IkeaEeg.EditorTools
 
                 if (outlet == null)
                     return;
+
+                // The in-process outlet is published by THIS machine; naming it keeps a real
+                // AURA elsewhere on the LAN from being picked instead.
+                receiver.ConfigureSourceHost(System.Net.Dns.GetHostName());
 
                 Assert(receiver.Connect(out var liveProblem),
                     $"the receiver resolves and opens an inlet on it ({liveProblem})");
@@ -12140,7 +12205,7 @@ namespace IkeaEeg.EditorTools
                 hosted.HandlePhaseEvent(Ev("SESSION_START", "E_HOST", 1, 10d));
                 hosted.HandlePhaseEvent(Ev("PRE_TASK_REST_START", "E_HOST", 1, 100d));
                 hosted.OfferWindow(TimedWindow(101d, 105d));
-                hosted.HandlePhaseEvent(Ev("PRE_TASK_REST_END", "E_HOST", 1, 110d));
+                hosted.HandlePhaseEvent(RestEnd("E_HOST", 1, 110d, Neuro.RestCompletion.Completed));
                 hosted.OfferWindow(TimedWindow(108d, 112d));
 
                 Assert(hosted.sessionBaseline.collected,
@@ -12161,7 +12226,7 @@ namespace IkeaEeg.EditorTools
 
             // ---- D: the estimator is INDETERMINATE for every input ----------------------
             var noBaseline = Neuro.SessionBaselineSummary.None;
-            var baseline = new Neuro.SessionBaselineSummary("E", 1, 0d, 180d, true,
+            var baseline = new Neuro.SessionBaselineSummary("E", 1, 0d, 180d, Neuro.RestCompletion.Completed,
                 new Neuro.FeatureWindowSummary(40, 40, 1d, 1d,
                     Neuro.FeatureWindowSummary.PlaceholderAggregation));
 
@@ -12216,7 +12281,7 @@ namespace IkeaEeg.EditorTools
             neuro.HandlePhaseEvent(Ev("PRE_TASK_REST_START", "E1", 1, 100d));
             neuro.OfferWindow(TimedWindow(101d, 105d));
             neuro.OfferWindow(TimedWindow(105d, 109d));
-            neuro.HandlePhaseEvent(Ev("PRE_TASK_REST_END", "E1", 1, 110d));
+            neuro.HandlePhaseEvent(RestEnd("E1", 1, 110d, Neuro.RestCompletion.Completed));
             neuro.OfferWindow(TimedWindow(108d, 112d));      // straddles the end: excluded
 
             var baselineRow = rows.LastOrDefault();
@@ -12285,7 +12350,7 @@ namespace IkeaEeg.EditorTools
 
             // HEAD behaviour, where NEW TRIAL re-runs the rest: recorded, not used.
             neuro.HandlePhaseEvent(Ev("PRE_TASK_REST_START", "E1", 2, 800d));
-            neuro.HandlePhaseEvent(Ev("PRE_TASK_REST_END", "E1", 2, 980d));
+            neuro.HandlePhaseEvent(RestEnd("E1", 2, 980d, Neuro.RestCompletion.Completed));
 
             Assert(rows.LastOrDefault()?.recordType == "BASELINE_REPEAT_IGNORED" &&
                    neuro.sessionBaseline.sourceRunIndex == 1,
@@ -12309,7 +12374,7 @@ namespace IkeaEeg.EditorTools
 
             neuro.HandlePhaseEvent(Ev("PRE_TASK_REST_START", "E2", 1, 1300d));
             neuro.OfferWindow(TimedWindow(1301d, 1305d));
-            neuro.HandlePhaseEvent(Ev("PRE_TASK_REST_END", "E2", 1, 1310d));
+            neuro.HandlePhaseEvent(RestEnd("E2", 1, 1310d, Neuro.RestCompletion.Completed));
             neuro.OfferWindow(TimedWindow(1308d, 1312d));
 
             Assert(neuro.sessionBaseline.collected &&
@@ -12364,7 +12429,131 @@ namespace IkeaEeg.EditorTools
                         $"{file} contains no {forbidden}");
                 }
             }
+
+            CheckRestCompletionGatesBaseline();
         }
+
+        /// <summary>
+        /// D1/R1: a PRE_TASK_REST becomes the session baseline only when its END marker confirms
+        /// completion. Every case goes through the real path: ExperimentManager's END notes ->
+        /// ExperimentEvent -> EventBus -> NeuroPhaseEvent.From -> BaselineAggregator.
+        /// </summary>
+        static void CheckRestCompletionGatesBaseline()
+        {
+            var skipped = ExperimentManager.FormatRestEndNotes("PRE_TASK", 180f, 12d,
+                aborted: false, devSkipped: true);
+            var aborted = ExperimentManager.FormatRestEndNotes("PRE_TASK", 180f, 40d,
+                aborted: true, devSkipped: false);
+            var completed = ExperimentManager.FormatRestEndNotes("PRE_TASK", 180f, 180d,
+                aborted: false, devSkipped: false);
+
+            Assert(Neuro.RestCompletionLabels.FromEndNotes(skipped) == Neuro.RestCompletion.DeveloperSkipped &&
+                   Neuro.RestCompletionLabels.FromEndNotes(aborted) == Neuro.RestCompletion.Aborted &&
+                   Neuro.RestCompletionLabels.FromEndNotes(completed) == Neuro.RestCompletion.Completed &&
+                   Neuro.RestCompletionLabels.FromEndNotes(string.Empty) == Neuro.RestCompletion.Unconfirmed,
+                "the END notes the experiment writes parse to SKIPPED / ABORTED / COMPLETED; empty " +
+                "notes are UNCONFIRMED");
+
+            Neuro.NeuroadaptiveController Session(out EventBus bus)
+            {
+                var n = new Neuro.NeuroadaptiveController();
+                bus = new EventBus();
+                n.Attach(bus);
+                bus.Publish(BusEvent(EventTypes.SessionStart, "E_D1", 1, 10d, string.Empty));
+                return n;
+            }
+
+            // A rest with (optionally) one valid window inside it, settled by a later window.
+            void Rest(Neuro.NeuroadaptiveController n, EventBus bus, string session, double t0,
+                string endNotes, bool withWindow)
+            {
+                bus.Publish(BusEvent(EventTypes.PreTaskRestStart, session, 1, t0, string.Empty));
+
+                if (withWindow)
+                    n.OfferWindow(TimedWindow(t0 + 1d, t0 + 5d));
+
+                bus.Publish(BusEvent(EventTypes.PreTaskRestEnd, session, 1, t0 + 10d, endNotes));
+                n.OfferWindow(TimedWindow(t0 + 8d, t0 + 12d));
+            }
+
+            // A: developer skip with a valid window.
+            var a = Session(out var busA);
+            Rest(a, busA, "E_D1", 100d, skipped, withWindow: true);
+            Assert(!a.sessionBaseline.collected && a.lastRecord?.recordType == "BASELINE_INCOMPLETE" &&
+                   a.lastRecord.windows.windowsValid == 1 &&
+                   a.lastRecord.notes.Contains("baseline_rejected=REST_DEVELOPER_SKIPPED"),
+                $"D1-A: a skipped rest with a valid window is NOT collected ({a.lastRecord?.notes})");
+
+            // B: abort with a valid window.
+            var b = Session(out var busB);
+            Rest(b, busB, "E_D1", 100d, aborted, withWindow: true);
+            Assert(!b.sessionBaseline.collected &&
+                   b.lastRecord?.notes.Contains("baseline_rejected=REST_ABORTED") == true,
+                $"D1-B: an aborted rest with a valid window is NOT collected ({b.lastRecord?.notes})");
+
+            // C: END whose completion is not stated.
+            var c = Session(out var busC);
+            Rest(c, busC, "E_D1", 100d, "rest_block=PRE_TASK", withWindow: true);
+            Assert(!c.sessionBaseline.collected &&
+                   c.lastRecord?.notes.Contains("baseline_rejected=REST_UNCONFIRMED") == true,
+                $"D1-C: an END without confirmed completion is NOT collected ({c.lastRecord?.notes})");
+
+            // D: completed, no valid window.
+            var d = Session(out var busD);
+            Rest(d, busD, "E_D1", 100d, completed, withWindow: false);
+            Assert(!d.sessionBaseline.collected &&
+                   d.lastRecord?.notes.Contains("baseline_rejected=NO_VALID_REST_WINDOWS") == true,
+                $"D1-D: a completed rest without valid windows is NOT collected ({d.lastRecord?.notes})");
+
+            // E: completed with a valid window — unchanged acceptance.
+            var e = Session(out var busE);
+            Rest(e, busE, "E_D1", 100d, completed, withWindow: true);
+            Assert(e.sessionBaseline.collected && e.lastRecord?.recordType == "BASELINE" &&
+                   e.sessionBaseline.windows.windowsValid == 1,
+                "D1-E: a completed rest with a valid window is collected as before");
+
+            // F: rejected attempt, then a complete one.
+            var f = Session(out var busF);
+            Rest(f, busF, "E_D1", 100d, skipped, withWindow: true);
+            Rest(f, busF, "E_D1", 200d, completed, withWindow: true);
+            Assert(f.sessionBaseline.collected && f.lastRecord?.recordType == "BASELINE" &&
+                   f.sessionBaseline.intervalStartLsl == 200d &&
+                   f.sessionBaseline.windows.windowsValid == 1,
+                $"D1-F: after a skipped rest a complete rest is accepted, not REPEAT_IGNORED, and " +
+                $"carries only its own window ({f.lastRecord?.recordType})");
+
+            // G: accepted baseline, then an invalid rest.
+            var g = Session(out var busG);
+            Rest(g, busG, "E_D1", 100d, completed, withWindow: true);
+            Rest(g, busG, "E_D1", 200d, skipped, withWindow: true);
+            Assert(g.sessionBaseline.collected && g.sessionBaseline.intervalStartLsl == 100d &&
+                   g.lastRecord?.recordType == "BASELINE_REPEAT_IGNORED" &&
+                   g.lastRecord.notes.Contains("rest_completion=DEVELOPER_SKIPPED"),
+                $"D1-G: an accepted baseline survives a later skipped rest ({g.lastRecord?.notes})");
+
+            // H: a new experiment session starts empty.
+            busG.Publish(BusEvent(EventTypes.SessionStart, "E_D1_NEXT", 1, 500d, string.Empty));
+            Assert(!g.sessionBaseline.collected && g.experimentSessionId == "E_D1_NEXT",
+                "D1-H: a new experiment session carries no baseline from the previous one");
+
+            Rest(g, busG, "E_D1_NEXT", 600d, skipped, withWindow: true);
+            Assert(!g.sessionBaseline.collected,
+                "D1-H: and the new session's skipped rest is not collected either");
+
+            foreach (var n in new[] { a, b, c, d, e, f, g })
+                n.Detach();
+        }
+
+        static ExperimentEvent BusEvent(string type, string session, int run, double lsl,
+            string notes) =>
+            new ExperimentEvent
+            {
+                eventType = type,
+                experimentSessionId = session,
+                runIndex = run.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                lslTimestamp = lsl.ToString("R", System.Globalization.CultureInfo.InvariantCulture),
+                notes = notes,
+            };
 
         /// <summary>One completed chair trial as the event log records it.</summary>
         static void RunTrial(Neuro.NeuroadaptiveController neuro, string session, int run,
@@ -12387,6 +12576,11 @@ namespace IkeaEeg.EditorTools
             int trial = 0, int count = 0, string difficulty = "") =>
             new Neuro.NeuroPhaseEvent(type, session, run, trial, count,
                 Neuro.NeuroDifficultyLabels.Parse(difficulty), lsl);
+
+        static Neuro.NeuroPhaseEvent RestEnd(string session, int run, double lsl,
+            Neuro.RestCompletion completion) =>
+            new Neuro.NeuroPhaseEvent("PRE_TASK_REST_END", session, run, 0, 0,
+                Neuro.NeuroDifficulty.Unknown, lsl, completion);
 
         static LatestEegFeatures TimedWindow(double start, double end)
         {
